@@ -1349,7 +1349,7 @@ int main(int argc, char **argv) {
 					pthread_attr_setguardsize(&attr, 0);
 
 					if (i != fd) {
-						data = new(sizeof(struct thread_arg_s));
+						data = (struct thread_arg_s *)new(sizeof(struct thread_arg_s));
 						data->fd = cd;
 						data->target = plist_get(llist, i);
 						tid = pthread_create(&thr, &attr, autotunnel, (void *)data);
