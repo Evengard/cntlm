@@ -1036,9 +1036,9 @@ int main(int argc, char **argv) {
 		cf = config_open(SYSCONFDIR "/cntlm.conf");
 		if (debug) {
 			if (cf)
-				printf("Default config file opened successfully\n\n");
+				printf("Default config file opened successfully\n");
 			else
-				fprintf(stderr, "Could not open default config file\n\n");
+				fprintf(stderr, "Could not open default config file\n");
 		}
 	}
 #endif

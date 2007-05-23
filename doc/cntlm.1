@@ -53,8 +53,8 @@ An example of \fBcntlm\fP compared to NTLMAPS under the same conditions:
 \fBcntlm\fP gave avg 76 kB/s with peak CPU usage of 0.3% whereas with NTLMAPS
 it was avg 48 kB/s with peak CPU at 98% (Pentium M 1.8 GHz). The extreme
 difference in resource usage is one of many important benefits for laptop use.
-Peak memory consumption (several complex sites, 50 paralell
-connections/threads; that):
+Peak memory consumption (several complex sites, 50 paralell connections/threads;
+values are in KiB):
 .PP
 .nf
        VSZ   RSS CMD
@@ -63,13 +63,13 @@ connections/threads; that):
 .fi
 
 .PP
-Inherent part of the development is profiling and memory
-management checking using Valgrind. The source distribution contains a file
-called \fIvalgrind.txt\fP, where you can see the report confirming zero leaks,
-no access to unallocated memory, no usage of uninitialized data - all tracked
-down to each CPU instruction emulated in Valgrind's virtual CPU during a
-typical production lifetime of the proxy. There are also some heap profiling
-graphs, which helped to half the memory requirements of \fBcntlm\fP.
+Inherent part of the development is profiling and memory management checking
+using Valgrind. The source distribution contains a file called
+\fIvalgrind.txt\fP, where you can see the report confirming zero leaks, no
+access to unallocated memory, no usage of uninitialized data - all tracked down
+to each CPU instruction emulated in Valgrind's virtual CPU during a typical
+production lifetime of the proxy. There are also some heap profiling graphs,
+which helped to halve the memory requirements of \fBcntlm\fP.
 
 .SH OPTIONS
 Most options can be pre\-set in a configuration file. Specifying an option more
@@ -206,26 +206,30 @@ literally).
 
 .SH PORTING
 \fBCntlm\fP has been successfully compiled and tested on both little and big endian
-machines. Notably, it runs on Linux/i386 and AIX/PowerPC. When compiling on AIX, use:
+machines. Notably, it runs on Linux/i386 and AIX/PowerPC. For compilation details, see
+README in the source distribution.
 .PP
-.nf
-    user@host:~$ CFLAGS=\-DNTLM_BIG_ENDIAN make
-.fi
 
 .SH TODO
-\fBCntlm\fP aims to be drop\-in replacement for NTLMAPS. We need to implement
+\fBCntlm\fP aims to be drop\-in replacement for NTLMAPS. I need to implement
 the ability to replace custom headers and allow just LM authentication
 (currently only full NTLM is supported as most versatile authentication across
-all ISA server configurations). This is now very easy and will be ready ASAP.
+all ISA server configurations). This is now very easy and should be ready ASAP.
 
 .PP
-But please note that NTLM (WWW) authentication to HTTP servers (i.e. working
+But please note that NTLM (www) authentication to HTTP servers (i.e. working
 without parent proxy as a standalone proxy server in itself) will most probaly
 not be implemented ever. Even though the tasks share common NTLM authentication,
 they are different things and should be handled separately. Not to mention the
 fact that even open source browsers now support NTLM authentication to HTTP
 servers. Such a single\-purpose application can be writted in Perl in a few
 hours. I strive to keep the code of \fBcntlm\fP simple and efficient.
+
+.SH BUGS
+This software is in the BETA phase of development, so there are probably many
+bugs for you to uncloak even though I'm testing every new piece of code AMAP
+and use \fBcntlm\fP daily. I'll be happy to fix all of them, but if you can
+manage, patches would be better. ;)
 
 .SH AUTHOR
 Written by David Kubicek <dave@awk.cz>

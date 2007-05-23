@@ -7,16 +7,32 @@ $ make
 Cntlm does not require any dynamic libraries and there are no dependencies you
 have to satisfy before compilation, except for libpthreads. This library is
 required for all threaded applications and is very likely to be part of your
-system already. Next, install cntlm onto your system like so:
+system already, because it comes with libc. Next, install cntlm onto your
+system like so:
 
 $ make install
 
-This includes the main binary and the man page (see "man cntlm"). Default
-target prefix is /usr/local; that is /usr/local/bin and /usr/local/share/man.
-Should you want to install cntlm to a different location, change the PREFIX
-variable:
+Default installation directories are /usr/local/bin, /usr/local/share/man and
+/usr/local/etc. Should you want to install cntlm into a different location,
+change the BINDIR, MANDIR and SYSCONFDIR in the Makefile. Installation uses
+the "install" helper, which has many differences across various platforms.
+Currently, we use GNU flavour by default and autodetect AIX. You might need
+to change some parameters on other POSIX systems.
 
-$ make install PREFIX=/usr
+Cntlm is compiled with system-wide configuration file by default. That means
+whenever you run cntlm, it looks into a hardcoded path (see SYSCONFDIR in the
+Makefile) and tries to load cntml.conf. You cannot make it not to do so, unless
+you use -c with an alternative file or /dev/null. This is standard behaviour
+and probably what you want. On the other hand, some of you might not want to
+use cntlm as a daemon started by init scripts and you would prefer setting up
+everything on the command line. This is possible, just comment out SYSCONFDIR
+variable definition in the Makefile before you compile cntlm and it will remove
+this feature.
+
+Installation includes the main binary, the man page (see "man cntlm") and if
+the default config feature was not removed, it also installs a configuration
+template. Please note that unlike bin and man targets, existing configuration
+is never overwritten during installation.
 
 
 Architectures
@@ -29,7 +45,7 @@ pSeries. Specification of the proper endianness has to be done for all modules.
 Make sure all of them are compiled with this option:
 
 $ make clean
-$ make CFLAGS=-DNTLM_BIG_ENDIAN
+$ CFLAGS=\-DNTLM_BIG_ENDIAN make
 
 With incorrect endianness specification cntlm compiles seemingly OK, but any
 network communication will malfunction (most notably NTLM authentication).
@@ -43,4 +59,4 @@ for you (then again, they might not).
 
 Contact
 ~~~~~~~
-David Kubicek, <kubicek@gedas.cz> / <dave@awk.cz>
+David Kubicek <dave@awk.cz>, <kubicek@gedas.cz>
