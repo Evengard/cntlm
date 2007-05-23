@@ -1,0 +1,52 @@
+Memory leaks
+~~~~~~~~~~~~
+This is Valgrind report on memory usage after some heavy browsing (60 parallel
+connections) and daemon termination. ;)
+
+==741== malloc/free: in use at exit: 0 bytes in 0 blocks.
+==741== malloc/free: 2,049 allocs, 2,049 frees, 197,861 bytes allocated.
+==741== 
+==741== All heap blocks were freed -- no leaks are possible.
+
+--741--  memcheck: sanity checks: 6 cheap, 1 expensive
+--741--  memcheck: auxmaps: 0 auxmap entries (0k, 0M) in use
+--741--  memcheck: auxmaps: 0 searches, 0 comparisons
+--741--  memcheck: SMs: n_issued      = 29 (464k, 0M)
+--741--  memcheck: SMs: n_deissued    = 6 (96k, 0M)
+--741--  memcheck: SMs: max_noaccess  = 65535 (1048560k, 1023M)
+--741--  memcheck: SMs: max_undefined = 0 (0k, 0M)
+--741--  memcheck: SMs: max_defined   = 782 (12512k, 12M)
+--741--  memcheck: SMs: max_non_DSM   = 28 (448k, 0M)
+--741--  memcheck: max sec V bit nodes:    1 (0k, 0M)
+--741--  memcheck: set_sec_vbits8 calls: 1 (new: 1, updates: 0)
+--741--  memcheck: max shadow mem size:   752k, 0M
+--741-- translate:            fast SP updates identified: 4,916 ( 90.1%)
+--741-- translate:   generic_known SP updates identified: 342 (  6.2%)
+--741-- translate: generic_unknown SP updates identified: 194 (  3.5%)
+--741--     tt/tc: 9,734 tt lookups requiring 10,056 probes
+--741--     tt/tc: 9,734 fast-cache updates, 4 flushes
+--741--  transtab: new        4,484 (100,307 -> 1,609,941; ratio 160:10) [0 scs]
+--741--  transtab: dumped     0 (0 -> ??)
+--741--  transtab: discarded  133 (2,418 -> ??)
+--741-- scheduler: 1,103,546 jumps (bb entries).
+--741-- scheduler: 6/39,639 major/minor sched events.
+--741--    sanity: 7 cheap, 1 expensive checks.
+--741--    exectx: 30,011 lists, 221 contexts (avg 0 per list)
+--741--    exectx: 4,115 searches, 3,894 full compares (946 per 1000)
+--741--    exectx: 0 cmp2, 60 cmp4, 0 cmpAll
+
+Memory usage
+~~~~~~~~~~~~
+Heap allocation per function can be seen in memory_consumption_with_reqex.pdf.
+It is apparent that in cntlm, regular expression matching accounts for more
+that 60% of allocated memory. I don't like that - regex is used for parsing the
+option -L at startup and later in header manipulation, once for each request to
+parse the first HTTP line. Regex was used there as a convenient and transparent
+means to split and partly verify strings, but I'm not willing to pay for it 1.5
+times as much memory as the application would need without it.
+
+Ok, now I have made it optional to use reqex - using NTLM_REGEX. Without this
+#define, everything is parsed by plain C memory manipulation. The graph in
+memory_consumption_without_reqex.pdf shows significant drop in memory usage,
+overall less than a half, actually. Both test were done by an automated test
+with 60 connections in parallel and the same sites fully loaded.

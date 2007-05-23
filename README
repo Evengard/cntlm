@@ -1,0 +1,46 @@
+Installation
+~~~~~~~~~~~~
+First, you have to compile cntlm. Using the Makefile, this should be very easy:
+
+$ make
+
+Cntlm does not require any dynamic libraries and there are no dependencies you
+have to satisfy before compilation, except for libpthreads. This library is
+required for all threaded applications and is very likely to be part of your
+system already. Next, install cntlm onto your system like so:
+
+$ make install
+
+This includes the main binary and the man page (see "man cntlm"). Default
+target prefix is /usr/local; that is /usr/local/bin and /usr/local/share/man.
+Should you want to install cntlm to a different location, change the PREFIX
+variable:
+
+$ make install PREFIX=/usr
+
+
+Architectures
+~~~~~~~~~~~~~
+If you are building cntlm on a non-Linux/i386 platform, you have to deal with
+the endianness of the host machine. Default is to build for little endian
+(i386, ia64, amd64, alpha, s390, mipsel, vax). Alternatively, you can choose
+to build for big endian (powerpc, m68k, sparc, mips) - this includes AIX on
+pSeries. Specification of the proper endianness has to be done for all modules.
+Make sure all of them are compiled with this option:
+
+$ make clean
+$ make CFLAGS=-DNTLM_BIG_ENDIAN
+
+With incorrect endianness specification cntlm compiles seemingly OK, but any
+network communication will malfunction (most notably NTLM authentication).
+
+
+Compilers
+~~~~~~~~~
+Cntlm was tested and successfully compiles with GCC. Other compilers might work
+for you (then again, they might not).
+
+
+Contact
+~~~~~~~
+David Kubicek, <kubicek@gedas.cz> / <dave@awk.cz>
