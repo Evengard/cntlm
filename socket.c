@@ -27,7 +27,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
-#include <syslog.h>
 #include <netdb.h>
 
 #include "utils.h"
@@ -95,7 +94,7 @@ int so_listen(int port, int gateway) {
 	saddr.sin_addr.s_addr = htonl((gateway ? INADDR_ANY : INADDR_LOOPBACK));
 
 	if (bind(fd, (struct sockaddr *)&saddr, sizeof(saddr))) {
-		syslog(LOG_ERR, "Cannot bind port %d: %s!\n", port, strerror(errno));
+		fprintf(stderr, "Cannot bind port %d: %s!\n", port, strerror(errno));
 		return -1;
 	}
 

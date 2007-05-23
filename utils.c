@@ -49,7 +49,7 @@ plist_t plist_add(plist_t list, pthread_t key, char *aux) {
 	if (!key)
 		return NULL;
 
-	tmp = malloc(sizeof(struct plist_s));
+	tmp = (plist_t)new(sizeof(struct plist_s));
 	tmp->key = key;
 	tmp->aux = aux;
 	tmp->next = NULL;
@@ -209,7 +209,7 @@ hlist_t hlist_add(hlist_t list, char *key, char *value, int allockey, int allocv
 	if (key == NULL || value == NULL)
 		return list;
 
-	tmp = malloc(sizeof(struct hlist_s));
+	tmp = (hlist_t)new(sizeof(struct hlist_s));
 	tmp->key = (allockey ? strdup(key) : key);
 	tmp->value = (allocvalue ? strdup(value) : value);
 	tmp->next = NULL;
@@ -386,7 +386,7 @@ char *substr(const char *src, int pos, int len) {
 	if (l <= 0)
 		return NULL;
 
-	tmp = malloc(l+1);
+	tmp = new(l+1);
 	strlcpy(tmp, src+pos, l+1);
 
 	return tmp;
@@ -427,7 +427,7 @@ char *head_value(const char *src) {
 rr_data_t new_rr_data(void) {
 	rr_data_t data;
 	
-	data = malloc(sizeof(struct rr_data_s));
+	data = (rr_data_t)new(sizeof(struct rr_data_s));
 	data->req = 0;
 	data->code = 0;
 	data->headers = NULL;

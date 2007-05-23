@@ -126,6 +126,20 @@ keeps it TCP/IP. This option can be specified multiple times for unlimited
 number of tunnels.
 
 .TP
+.B \-l <lport>
+Main listening port for the \fBcntlm\fP proxy. Use the number you have chosen
+here and the hostname of the machine running \fBcntlm\fP (possibly localhost)
+as the proxy settings in your browser and/or environment. Most applications
+(including console) support the notion of proxy to connect to other hosts. On
+POSIX, set the following variables to use e.g. \fBwget(1)\fP without any
+trouble (fill in actual address of \fBcntlm\fP):
+.nf
+    $ export ftp_proxy=http://localhost:3128
+    $ export http_proxy=$ftp_proxy
+    $ export https_proxy=$ftp_proxy
+.fi
+
+.TP
 .B \-P <pidfile>
 Create a PID file \fIpidfile\fP upon startup. If the specified file exists, it
 is truncated and overwritten. This option is intended for use with
@@ -185,7 +199,7 @@ the same to all tunnels.
 
 .TP
 .B Listen <port_number>
-Local port number for \fBcntlm\fP.
+Main local port number for \fBcntlm\fP proxy.
 
 .TP
 .B Password <password>

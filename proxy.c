@@ -222,7 +222,7 @@ int headers_recv(int fd, rr_data_t data) {
 			printf("HTTP reply: HTTP/1.%s '%d' '%s'\n", data->http, data->code, data->msg);
 	} else {
 #endif
-		fprintf(stderr, "headers_recv: Unknown header (%s).\n", buf);
+		syslog(LOG_ERR, "headers_recv: Unknown header (%s).\n", buf);
 		i = -1;
 		goto bailout;
 	}
@@ -247,7 +247,7 @@ bailout:
 	free(buf);
 
 	if (i <= 0) {
-		fprintf(stderr, "headers_recv: i(%d) error\n", i);
+		syslog(LOG_WARNING, "headers_recv: fd %d warning %d (connection closed)\n", fd, i);
 		return 0;
 	}
 
@@ -315,7 +315,7 @@ int headers_send(int fd, rr_data_t data) {
 	free(buf);
 
 	if (i <= 0 || i != len+2) {
-		fprintf(stderr, "headers_send: error %d instead %d\n", i, len+2);
+		syslog(LOG_WARNING, "headers_send: fd %d warning %d (connection closed)\n", fd, i);
 		return 0;
 	}
 
@@ -341,7 +341,7 @@ int data_drop(int src, int size) {
 
 	free(buf);
 	if (i <= 0) {
-		fprintf(stderr, "data_drop: i(%d) src error\n", i);
+		syslog(LOG_WARNING, "data_drop: fd %d warning %d (connection closed)\n", src, i);
 		return 0;
 	}
 
@@ -391,7 +391,7 @@ int data_send(int dst, int src, int size) {
 		if (i == 0 && j > 0 && (size == -1 || c == size))
 			return 1;
 
-		fprintf(stderr, "data_send: i(%d) dst error\n", i);
+		syslog(LOG_WARNING, "data_send: fds %d:%d warning %d (connection closed)\n", dst, src, i);
 		return 0;
 	}
 
@@ -533,7 +533,7 @@ int authenticate(int sd, rr_data_t data) {
 			free(tmp);
 			free(challenge);
 		} else {
-			fprintf(stderr, "No Proxy-Authenticate received! NTLM not supported??\n");
+			syslog(LOG_WARNING, "No Proxy-Authenticate received! NTLM not supported?\n");
 		}
 	} else if (auth->code >= 500 && auth->code <= 599) {
 		if (debug)
@@ -587,7 +587,7 @@ void *process(void *client) {
 		sd = proxy_connect();
 
 	if (sd <= 0) {
-		fprintf(stderr, "Could not connect to the proxy!\n");
+		syslog(LOG_ERR, "Could not connect to the proxy!\n");
 		goto bailout;
 	}
 
@@ -653,7 +653,7 @@ void *process(void *client) {
 			 */
 			if (!loop && data[0]->req && !authok) {
 				if (!(i = authenticate(*wsocket[0], data[0])))
-					fprintf(stderr, "Authentication requests failed. Will try anyway.\n");
+					syslog(LOG_ERR, "Authentication requests failed. Will try without.\n");
 
 				if (!i || so_closed(sd)) {
 					if (debug)
@@ -661,7 +661,7 @@ void *process(void *client) {
 					close(sd);
 					sd = proxy_connect();
 					if (sd <= 0) {
-						fprintf(stderr, "Could not reconnect to the proxy!\n");
+						syslog(LOG_ERR, "Could not reconnect to the proxy!\n");
 						free_rr_data(data[0]);
 						free_rr_data(data[1]);
 						goto bailout;
@@ -757,7 +757,8 @@ void *process(void *client) {
 					 * might contain unspecified amount of unread data.
 					 */
 					if (!data_send(*wsocket[loop], *rsocket[loop], i)) {
-						printf("Could not send whole body\n");
+						if (debug)
+							printf("Could not send whole body\n");
 						close(sd);
 						free_rr_data(data[0]);
 						free_rr_data(data[1]);
@@ -818,7 +819,7 @@ void *autotunnel(void *client) {
 	free(client);
 
 	if (sd <= 0) {
-		fprintf(stderr, "Could not connect to the proxy!\n");
+		syslog(LOG_ERR, "Could not connect to the proxy!\n");
 		close(cd);
 		return NULL;
 	}
@@ -843,7 +844,7 @@ void *autotunnel(void *client) {
 			close(sd);
 			sd = proxy_connect();
 			if (sd <= 0) {
-				fprintf(stderr, "Could not reconnect to the proxy!\n");
+				syslog(LOG_ERR, "Could not reconnect to the proxy!\n");
 				goto bailout;
 			}
 		}
@@ -867,17 +868,17 @@ void *autotunnel(void *client) {
 
 					tunnel(cd, sd);
 				} else if (data2->code == 407) {
-					fprintf(stderr, "Authentication for tunnel %s failed!\n", thost);
+					syslog(LOG_ERR, "Authentication for tunnel %s failed!\n", thost);
 				} else if (debug)
-					fprintf(stderr, "Request for CONNECT denied!\n");
+					syslog(LOG_ERR, "Request for CONNECT denied!\n");
 			} else if (debug)
 				printf("Reading response failed!\n");
 		} else if (debug)
 			printf("Sending request failed!\n");
 	} else if (i == 500)
-		fprintf(stderr, "Tunneling to %s not allowed!\n", thost);
+		syslog(LOG_ERR, "Tunneling to %s not allowed!\n", thost);
 	else
-		fprintf(stderr, "Authentication requests failed.\n");
+		syslog(LOG_ERR, "Authentication requests failed!\n");
 
 bailout:
 	close(sd);
@@ -1113,6 +1114,8 @@ int main(int argc, char **argv) {
 				"\t    Forwarding/tunneling a la OpenSSH. Same syntax - listen on lport\n"
 				"\t    and forward all connections through the proxy to rhost:rport.\n"
 				"\t    Can be used for direct tunneling without corkscrew, etc.\n");
+		fprintf(stderr, "\t-l  <lport>\n"
+				"\t    Main listening port for the NTLM proxy.\n");
 		fprintf(stderr, "\t-P  <pidfile>\n"
 				"\t    Create a PID file upon successful start.\n");
 		fprintf(stderr, "\t-p  <password>\n"
@@ -1144,16 +1147,16 @@ int main(int argc, char **argv) {
 	if (debug)
 		printf("Resolving proxy hostname...\n");
 	if (!so_resolv(&host, proxy)) {
-		syslog(LOG_ERR, "Cannot resolve proxy host.\n");
+		fprintf(stderr, "Cannot resolve proxy host.\n");
 		exit(1);
-	} else
-		syslog(LOG_INFO, "Using proxy %s:%d\n\n", inet_ntoa(host), port);
+	} else if (debug)
+		printf("Using proxy %s:%d\n\n", inet_ntoa(host), port);
 
 	/*
 	 * Bind the main port and listen; exit if error
 	 */
 	if (strlen(lport) && !atoi(lport)) {
-		syslog(LOG_ERR, "Invalid listening port.\n");
+		fprintf(stderr, "Invalid listening port.\n");
 		exit(1);
 	}
 	fd = so_listen(strlen(lport) ? atoi(lport) : DEFAULT_PORT, gateway);
@@ -1167,7 +1170,7 @@ int main(int argc, char **argv) {
 		printf("Trying proxy connection...\n");
 	i = proxy_connect();
 	if (i <= 0) {
-		syslog(LOG_ERR, "Cannot connect to proxy!\n");
+		fprintf(stderr, "Cannot connect to proxy!\n");
 		exit(1);
 	} else {
 		if (debug)
@@ -1335,7 +1338,10 @@ int main(int argc, char **argv) {
 						continue;
 					}
 
-					if (debug || gateway)
+					/*
+					 * Log peer IP if it's not localhost
+					 */
+					if (debug || (gateway && caddr.sin_addr.s_addr != htonl(INADDR_LOOPBACK)))
 						syslog(LOG_INFO, "Connection accepted from %s:%d\n", inet_ntoa(caddr.sin_addr), ntohs(caddr.sin_port));
 
 					pthread_attr_init(&attr);
@@ -1343,7 +1349,7 @@ int main(int argc, char **argv) {
 					pthread_attr_setguardsize(&attr, 0);
 
 					if (i != fd) {
-						data = malloc(sizeof(struct thread_arg_s));
+						data = new(sizeof(struct thread_arg_s));
 						data->fd = cd;
 						data->target = plist_get(llist, i);
 						tid = pthread_create(&thr, &attr, autotunnel, (void *)data);

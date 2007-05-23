@@ -45,7 +45,7 @@ pSeries. Specification of the proper endianness has to be done for all modules.
 Make sure all of them are compiled with this option:
 
 $ make clean
-$ CFLAGS=\-DNTLM_BIG_ENDIAN make
+$ CFLAGS=-DNTLM_BIG_ENDIAN make
 
 With incorrect endianness specification cntlm compiles seemingly OK, but any
 network communication will malfunction (most notably NTLM authentication).
