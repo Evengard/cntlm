@@ -270,7 +270,9 @@ hlist_t hlist_del(hlist_t list, const char *key) {
 
 /*
  * Change the value of a key. If add is true, we store it in the
- * list if the key is not found.
+ * list if the key is not found. Unlike hlist_add, which offers
+ * pointer storage or memory duplication for both the key and the
+ * value separately, hlist_mod always duplicates.
  *
  * Used to add a header, which might already be present.
  */
@@ -390,6 +392,15 @@ char *substr(const char *src, int pos, int len) {
 	strlcpy(tmp, src+pos, l+1);
 
 	return tmp;
+}
+
+/*
+ * Ture if src is a header. This is just a basic check
+ * for the colon delimiter. Might eventually become more
+ * sophisticated. :)
+ */
+inline int head_ok(const char *src) {
+	return strcspn(src, ":") != strlen(src);
 }
 
 /*

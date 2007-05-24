@@ -91,6 +91,11 @@ static plist_t clist = NULL;
 static pthread_mutex_t clist_mtx = PTHREAD_MUTEX_INITIALIZER;
 
 /*
+ * List of custom header substitutions.
+ */
+static hlist_t sublist = NULL;
+
+/*
  * Regular expression matching patterns. AIX doesn't support perl-like
  * character classes. Regex matching is disabled by default.
  */
@@ -232,8 +237,8 @@ int headers_recv(int fd, rr_data_t data) {
 	 */
 	do {
 		i = so_recvln(fd, &buf, &bsize);
-		if (i > 0) {
-			trimr(buf);
+		trimr(buf);
+		if (i > 0 && head_ok(buf)) {
 			data->headers = hlist_add(data->headers, head_name(buf), head_value(buf), 0, 0);
 		}
 	} while (strlen(buf) != 0 && i > 0);
@@ -562,6 +567,7 @@ void *process(void *client) {
 	int *rsocket[2], *wsocket[2];
 	int i, loop, nobody, keep;
 	rr_data_t data[2];
+	hlist_t tl;
 	char *tmp;
 
 	int cd = (int)client;
@@ -645,7 +651,13 @@ void *process(void *client) {
 					free(tmp);
 				}
 
+				tl = sublist;
+				while (tl) {
+					data[loop]->headers = hlist_mod(data[loop]->headers, tl->key, tl->value, 1);
+					tl = tl->next;
+				}
 				data[loop]->headers = hlist_mod(data[loop]->headers, "Proxy-Connection", "Keep-Alive", 1);
+
 			}
 
 			/*
@@ -927,7 +939,8 @@ void add_tunnel(plist_t *list, char *spec, int gateway) {
 			*list = plist_add(*list, i, tmp);
 			if (debug)
 				printf("New tunnel on port %d to %s (fd = %d)\n", tport, tmp, i);
-		}
+		} else
+			free(tmp);
 	} else {
 		printf("Tunnel specification incorrect (lport:rserver:rport).\n");
 		exit(1);
@@ -935,7 +948,7 @@ void add_tunnel(plist_t *list, char *spec, int gateway) {
 }
 
 int main(int argc, char **argv) {
-	char *tmp, *proxy, *lport, *uid, *pidfile;
+	char *tmp, *head, *proxy, *lport, *uid, *pidfile;
 	struct passwd *pw;
 	int i, fd;
 
@@ -986,6 +999,10 @@ int main(int argc, char **argv) {
 				break;
 			case 'g':
 				gateway = 1;
+				break;
+			case 'h':
+				if (head_ok(optarg))
+					sublist = hlist_add(sublist, head_name(optarg), head_value(optarg), 0, 0);
 				break;
 			case 'l':
 				strlcpy(lport, optarg, AUTHSIZE);
@@ -1054,6 +1071,22 @@ int main(int argc, char **argv) {
 			free(tmp);
 		}
 
+		/*
+		 * Accept only headers not specified on the command line.
+		 * Command line has higher priority.
+		 */
+		while ((tmp = config_pop(cf, "Header"))) {
+			if (head_ok(tmp)) {
+				head = head_name(tmp);
+				if (!hlist_in(sublist, head))
+					sublist = hlist_add(sublist, head_name(tmp), head_value(tmp), 0, 0);
+				free(head);
+			} else
+				fprintf(stderr, "Invalid header format: %s\n", tmp);
+
+			free(tmp);
+		}
+
 		CFG_DEFAULT(cf, "Domain", domain, AUTHSIZE);
 		CFG_DEFAULT(cf, "Listen", lport, AUTHSIZE);
 		CFG_DEFAULT(cf, "Password", password, AUTHSIZE);
@@ -1110,6 +1143,9 @@ int main(int argc, char **argv) {
 				"\t    Domain/workgroup can be set separately.\n");
 		fprintf(stderr, "\t-f  Run in foreground, do not fork into daemon mode.\n");
 		fprintf(stderr, "\t-g  Gateway mode - listen on all interfaces, not only loopback.\n");
+		fprintf(stderr, "\t-h  \"HeaderName: value\"\n"
+				"\t    Add a header substitution. All such headers will be added/replaced"
+				"\t    in the client's requests.\n");
 		fprintf(stderr, "\t-L  <lport>:<rhost>:<rport>\n"
 				"\t    Forwarding/tunneling a la OpenSSH. Same syntax - listen on lport\n"
 				"\t    and forward all connections through the proxy to rhost:rport.\n"
@@ -1394,6 +1430,7 @@ int main(int argc, char **argv) {
 	plist_free(clist);
 	pthread_mutex_unlock(&clist_mtx);
 
+	hlist_free(sublist);
 	plist_free(llist);
 
 	config_close(cf);

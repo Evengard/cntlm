@@ -111,6 +111,12 @@ order matters when tunnels are used. Those positioned before it will bind only
 loopback; those after will be public.
 
 .TP
+.B \-h \fB"<name>: <value>"\fP
+Header substitution. Every client's request will be processed and any headers
+defined using \fB-h\fP or in the configuration file will be added to it. In case
+the header is already present, its value will be replaced.
+
+.TP
 .B \-L <lport>:<rhost>:<rport>
 Tunnel specification. The syntax is the same as in OpenSSH's local forwarding
 (\fB\-L\fP). \fBCntlm\fP will listen for incomming connections on \fIlport\fP.
@@ -198,6 +204,10 @@ Gateway mode. In the configuration file, order doesn't matter. Gateway mode appl
 the same to all tunnels.
 
 .TP
+.B Header <headername: value>
+Header substitution. See \fB-h\fP for details and remember, no quoting.
+
+.TP
 .B Listen <port_number>
 Main local port number for \fBcntlm\fP proxy.
 
@@ -226,9 +236,9 @@ README in the source distribution.
 
 .SH TODO
 \fBCntlm\fP aims to be drop\-in replacement for NTLMAPS. I need to implement
-the ability to replace custom headers and allow just LM authentication
-(currently only full NTLM is supported as most versatile authentication across
-all ISA server configurations). This is now very easy and should be ready ASAP.
+the ability to use just LM authentication (currently only full NTLM is
+supported as most versatile authentication across all ISA server
+configurations). This is now very easy and should be ready ASAP.
 
 .PP
 But please note that NTLM (www) authentication to HTTP servers (i.e. working

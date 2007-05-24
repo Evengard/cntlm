@@ -14,9 +14,9 @@
 #                    have to deal with proxy authentication again.
 #
 # DAEMON             Location of the binary
-# PIDFILE            Make sure that you or, if used, -U uid can create it
-# TIMEOUT            How long to wait before forcing cntlm to stop by a second 
-#                    signal when active connections still exist
+# PIDFILE            Make sure that you or, if used, -U uid can create/write it
+# TIMEOUT            How long to wait before forcing cntlm to stop with a second 
+#                    signal when active connections are still not finished
 # RUNAS              Name or number of the non-privileged account to run as
 #
 ### END INIT INFO

@@ -95,6 +95,7 @@ extern size_t strlcat(char *dst, const char *src, size_t siz);
 extern char *trimr(char *buf);
 extern char *lowercase(char *str);
 extern char *uppercase(char *str);
+extern inline int head_ok(const char *src);
 extern char *head_name(const char *src);
 extern char *head_value(const char *src);
 extern inline int unicode(char **dst, char *src);
