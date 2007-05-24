@@ -1268,7 +1268,6 @@ int main(int argc, char **argv) {
 	free(proxy);
 	free(uid);
 	free(lport);
-	free(pidfile);
 
 	/*
 	 * Change the handler for signals recognized as clean shutdown.
@@ -1403,6 +1402,7 @@ int main(int argc, char **argv) {
 	if (strlen(pidfile))
 		unlink(pidfile);
 
+	free(pidfile);
 	free(user);
 	free(domain);
 	free(password);

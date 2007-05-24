@@ -32,7 +32,8 @@ this feature.
 Installation includes the main binary, the man page (see "man cntlm") and if
 the default config feature was not removed, it also installs a configuration
 template. Please note that unlike bin and man targets, existing configuration
-is never overwritten during installation.
+is never overwritten during installation. In the doc/ directory you can find
+among other things a file called "cntlmd". It can be used as an init.d script.
 
 
 Architectures
