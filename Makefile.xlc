@@ -7,11 +7,10 @@ BINDIR=/usr/local/bin
 MANDIR=/usr/local/man
 
 #
-# Careful now...
 #
-CC=gcc
+CC=xlc_r
 OBJS=utils.o ntlm.o xcrypt.o config.o socket.o proxy.o
-CFLAGS=$(FLAGS) -Wall -pedantic -g -O3 -D_BSD_SOURCE -D_REENTRANT -DVERSION=\"0.24\"
+CFLAGS=$(FLAGS) -O3 -D_BSD_SOURCE -D_REENTRANT -DVERSION=\"0.24\"
 LDFLAGS=-lpthread
 NAME=cntlm
 

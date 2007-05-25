@@ -46,7 +46,7 @@ pSeries. Specification of the proper endianness has to be done for all modules.
 Make sure all of them are compiled with this option:
 
 $ make clean
-$ CFLAGS=-DNTLM_BIG_ENDIAN make
+$ FLAGS=-DNTLM_BIG_ENDIAN make
 
 With incorrect endianness specification cntlm compiles seemingly OK, but any
 network communication will malfunction (most notably NTLM authentication).
@@ -54,8 +54,13 @@ network communication will malfunction (most notably NTLM authentication).
 
 Compilers
 ~~~~~~~~~
-Cntlm was tested and successfully compiles with GCC. Other compilers might work
-for you (then again, they might not).
+Cntlm was tested and successfully compiles with GCC and IBM XL C/C++. Other
+compilers might work for you (then again, they might not). To compile with
+XLC, use:
+
+$ make -f Makefile.xlc ...
+
+or rename Makefile.xlc to Makefile. The rest is the same.
 
 
 Contact

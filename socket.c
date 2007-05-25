@@ -110,10 +110,10 @@ int so_listen(int port, int gateway) {
  * 0 if connection was closed
  * -1 if error (errno is set)
  */
-static int so_recvtest(int fd) {
+int so_recvtest(int fd) {
 	char buf;
 	int i;
-#ifdef NTLM_BIG_ENDIAN
+#ifndef MSG_DONTWAIT
 	unsigned int flags;
 
 	flags = fcntl(fd, F_GETFL);
@@ -138,7 +138,7 @@ int so_dataready(int fd) {
  * Reliable way of finding out whether a connection was closed
  * on the remote end, without actually reading from it.
  */
-inline int so_closed(int fd) {
+int so_closed(int fd) {
 	int i;
 
 	if (fd == -1)
