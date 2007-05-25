@@ -112,11 +112,11 @@ int ntlm_request(char **dst, char *hostname, char *domain, int nt, int lm) {
 	VAL(buf, uint32_t, 28) = U32LE(32);
 
 	if (!nt) {
-		tmp = uppercase(strdup(hostname));
+		tmp = uppercase(strdupl(hostname));
 		memcpy(buf+32, tmp, hlen);
 		free(tmp);
 
-		tmp = uppercase(strdup(domain));
+		tmp = uppercase(strdupl(domain));
 		memcpy(buf+32+hlen, tmp, dlen);
 		free(tmp);
 	} else {
@@ -148,9 +148,9 @@ int ntlm_response(char **dst, char *challenge, char *username, char *password, c
 		ulen = unicode(&uuser, username);
 		hlen = unicode(&uhost, hostname);
 	} else {
-		udomain = uppercase(strdup(domain));
-		uuser = uppercase(strdup(username));
-		uhost = uppercase(strdup(hostname));
+		udomain = uppercase(strdupl(domain));
+		uuser = uppercase(strdupl(username));
+		uhost = uppercase(strdupl(hostname));
 
 		dlen = strlen(domain);
 		ulen = strlen(username);

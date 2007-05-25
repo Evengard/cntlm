@@ -243,9 +243,11 @@ is interpreted literally).
 
 .SH PORTING
 \fBCntlm\fP has been successfully compiled and tested on both little and big
-endian machines. Notably, it runs on Linux/i386 and AIX/PowerPC. For
-compilation details, see README in the source distribution.
-.PP
+endian machines. It is tested on Linux/i386 and AIX/PowerPC. For compilation
+details, see README in the source distribution. Porting to any POSIX conforming
+OS shouldn't be more than a matter of the Makefile rearrangement. \fBCntlm\fP
+uses strictly POSIX.1c interfaces with ISO C99 libc (\fBsnprintf(3)\fP), it is
+also fully compliant with SUSv2.
 
 .SH TODO
 In the much needed NTLM-proxy departement, \fBcntlm\fP aims to be a drop\-in

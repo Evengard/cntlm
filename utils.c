@@ -23,6 +23,7 @@
 #include <sys/socket.h>
 #include <pthread.h>
 #include <string.h>
+#include <strings.h>
 #include <stdlib.h>
 #include <unistd.h>
 #include <stdio.h>
@@ -48,7 +49,7 @@ plist_t plist_add(plist_t list, pthread_t key, char *aux) {
 	if (!key)
 		return NULL;
 
-	tmp = (plist_t)new(sizeof(struct plist_s));
+	tmp = malloc(sizeof(struct plist_s));
 	tmp->key = key;
 	tmp->aux = aux;
 	tmp->next = NULL;
@@ -208,9 +209,9 @@ hlist_t hlist_add(hlist_t list, char *key, char *value, int allockey, int allocv
 	if (key == NULL || value == NULL)
 		return list;
 
-	tmp = (hlist_t)new(sizeof(struct hlist_s));
-	tmp->key = (allockey ? strdup(key) : key);
-	tmp->value = (allocvalue ? strdup(value) : value);
+	tmp = malloc(sizeof(struct hlist_s));
+	tmp->key = (allockey ? strdupl(key) : key);
+	tmp->value = (allocvalue ? strdupl(value) : value);
 	tmp->next = NULL;
 
 	if (list == NULL)
@@ -286,7 +287,7 @@ hlist_t hlist_mod(hlist_t list, char *key, char *value, int add) {
 
 	if (t) {
 		free(t->value);
-		t->value = strdup(value);
+		t->value = strdupl(value);
 	} else if (add) {
 		list = hlist_add(list, key, value, 1, 1);
 	}
@@ -421,12 +422,12 @@ char *head_name(const char *src) {
 char *head_value(const char *src) {
 	char *sub;
 
-	if ((sub = index(src, ':'))) {
+	if ((sub = strchr(src, ':'))) {
 		sub++;
 		while (*sub == ' ')
 			sub++;
 
-		return strdup(sub);
+		return strdupl(sub);
 	} else
 		return NULL;
 }
@@ -437,7 +438,7 @@ char *head_value(const char *src) {
 rr_data_t new_rr_data(void) {
 	rr_data_t data;
 	
-	data = (rr_data_t)new(sizeof(struct rr_data_s));
+	data = malloc(sizeof(struct rr_data_s));
 	data->req = 0;
 	data->code = 0;
 	data->headers = NULL;
@@ -464,13 +465,13 @@ rr_data_t dup_rr_data(rr_data_t data) {
 	if (data->headers)
 		tmp->headers = hlist_dup(data->headers);
 	if (data->method)
-		tmp->method = strdup(data->method);
+		tmp->method = strdupl(data->method);
 	if (data->url)
-		tmp->url = strdup(data->url);
+		tmp->url = strdupl(data->url);
 	if (data->http)
-		tmp->http = strdup(data->http);
+		tmp->http = strdupl(data->http);
 	if (data->msg)
-		tmp->msg = strdup(data->msg);
+		tmp->msg = strdupl(data->msg);
 	
 	return tmp;
 }
@@ -506,7 +507,21 @@ char *trimr(char *buf) {
 }
 
 /*
- * More intuitive version os strncpy with string termination
+ * Our implementation of non-POSIX strdup()
+ */
+char *strdupl(const char *src) {
+	size_t len;
+	char *tmp;
+
+	len = strlen(src)+1;
+	tmp = malloc(len);
+	memcpy(tmp, src, len);
+	
+	return tmp;
+}
+
+/*
+ * More intuitive version of strncpy with string termination
  * from OpenBSD
  */
 size_t strlcpy(char *dst, const char *src, size_t siz) {

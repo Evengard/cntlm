@@ -32,6 +32,7 @@
 #include <unistd.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 #include <netdb.h>
 #include <regex.h>
 #include <ctype.h>
@@ -177,12 +178,12 @@ int headers_recv(int fd, rr_data_t data) {
 
 		tok = strtok_r(NULL, " ", &s3);
 		if (tok)
-			ccode = strdup(tok);
+			ccode = strdupl(tok);
 
 		while (s3 < buf+len && *s3 == ' ')
 			s3++;
 		if (strlen(s3))
-			data->msg = strdup(s3);
+			data->msg = strdupl(s3);
 
 		if (!ccode || strlen(ccode) != 3 || (data->code = atoi(ccode)) == 0 || !data->http || !data->msg) {
 			i = -1;
@@ -194,11 +195,11 @@ int headers_recv(int fd, rr_data_t data) {
 		data->url = NULL;
 		data->http = NULL;
 
-		data->method = strdup(tok);
+		data->method = strdupl(tok);
 
 		tok = strtok_r(NULL, " ", &s3);
 		if (tok)
-			data->url = strdup(tok);
+			data->url = strdupl(tok);
 
 		tok = strtok_r(NULL, " ", &s3);
 		if (tok)
@@ -487,7 +488,7 @@ int authenticate(int sd, rr_data_t data) {
 	 */
 	if (!CONNECT(data)) {
 		free(auth->method);
-		auth->method = strdup("HEAD");
+		auth->method = strdupl("HEAD");
 	}
 	auth->headers = hlist_mod(auth->headers, "Proxy-Authorization", buf, 1);
 	auth->headers = hlist_del(auth->headers, "Content-Length");
@@ -646,7 +647,7 @@ void *process(void *client) {
 			if (!loop && data[loop]->req) {
 				tmp = hlist_get(data[loop]->headers, "Proxy-Connection");
 				if (tmp) {
-					tmp = strdup(tmp);
+					tmp = strdupl(tmp);
 					lowercase(tmp);
 					if (strstr(tmp, "keep-alive"))
 						keep = 1;
@@ -845,9 +846,9 @@ void *autotunnel(void *client) {
 	data2 = new_rr_data();
 
 	data1->req = 1;
-	data1->method = strdup("CONNECT");
-	data1->url = strdup(thost);
-	data1->http = strdup("0");
+	data1->method = strdupl("CONNECT");
+	data1->url = strdupl(thost);
+	data1->http = strdupl("0");
 
 	if (debug)
 		printf("Starting authentication...\n");
@@ -934,7 +935,7 @@ void add_tunnel(plist_t *list, char *spec, int gateway) {
 		tmp = substr(spec, match[1].rm_so, match[1].rm_eo - match[1].rm_so);
 		tport = atoi(tmp);
 		free(tmp);
-		tmp = strdup(spec+match[2].rm_so);
+		tmp = strdupl(spec+match[2].rm_so);
 #endif
 		i = so_listen(tport, gateway);
 		if (i > 0) {
@@ -1295,8 +1296,8 @@ int main(int argc, char **argv) {
 				nuid = pw->pw_uid;
 				ngid = pw->pw_gid;
 			}
-			setregid(ngid, ngid);
-			i = setreuid(nuid, nuid);
+			setgid(ngid);
+			i = setuid(nuid);
 			syslog(LOG_INFO, "Changing uid:gid to %d:%d - %s\n", nuid, ngid, strerror(errno));
 			if (i) {
 				syslog(LOG_ERR, "Terminating\n");
