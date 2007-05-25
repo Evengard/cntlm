@@ -11,7 +11,7 @@ MANDIR=/usr/local/man
 #
 CC=gcc
 OBJS=utils.o ntlm.o xcrypt.o config.o socket.o proxy.o
-CFLAGS=$(FLAGS) -Wall -pedantic -g -O3 -D_BSD_SOURCE -D_REENTRANT -DVERSION=\"0.24\"
+CFLAGS=$(FLAGS) -Wall -pedantic -g -O3 -D_BSD_SOURCE -D_REENTRANT -DVERSION=\"0.25\"
 LDFLAGS=-lpthread
 NAME=cntlm
 
