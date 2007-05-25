@@ -69,6 +69,8 @@ static char *user;			/* authenticate() */
 static char *domain;
 static char *workstation;
 static char *password;
+static int hashnt = 1;
+static int hashlm = 1;
 
 static int port;			/* proxy_connect() */
 static struct in_addr host;
@@ -473,7 +475,7 @@ int authenticate(int sd, rr_data_t data) {
 	buf = new(BUFSIZE);
 
 	strcpy(buf, "NTLM ");
-	len = ntlm_request(&tmp, workstation, domain);
+	len = ntlm_request(&tmp, workstation, domain, hashnt, hashlm);
 	to_base64(MEM(buf, unsigned char, 5), MEM(tmp, unsigned char, 0), len, BUFSIZE-5);
 	free(tmp);
 	
@@ -530,7 +532,7 @@ int authenticate(int sd, rr_data_t data) {
 			challenge = new(strlen(tmp));
 			from_base64(challenge, tmp+5);
 
-			len = ntlm_response(&tmp, challenge, user, password, workstation, domain);
+			len = ntlm_response(&tmp, challenge, user, password, workstation, domain, hashnt, hashlm);
 			strcpy(buf, "NTLM ");
 			to_base64(MEM(buf, unsigned char, 5), MEM(tmp, unsigned char, 0), len, BUFSIZE-5);
 			data->headers = hlist_mod(data->headers, "Proxy-Authorization", buf, 1);
@@ -948,7 +950,7 @@ void add_tunnel(plist_t *list, char *spec, int gateway) {
 }
 
 int main(int argc, char **argv) {
-	char *tmp, *head, *proxy, *lport, *uid, *pidfile;
+	char *tmp, *head, *proxy, *lport, *uid, *pidfile, *auth;
 	struct passwd *pw;
 	int i, fd;
 
@@ -977,11 +979,15 @@ int main(int argc, char **argv) {
 	lport = new(AUTHSIZE);
 	uid = new(AUTHSIZE);
 	proxy = new(AUTHSIZE);
+	auth = new(AUTHSIZE);
 
 	openlog("cntlm", LOG_CONS | LOG_PID, LOG_DAEMON);
 
-	while ((i = getopt(argc, argv, ":c:d:fgl:p:u:vw:L:P:U:")) != -1) {
+	while ((i = getopt(argc, argv, ":a:c:d:fgl:p:u:vw:L:P:U:")) != -1) {
 		switch (i) {
+			case 'a':
+				strlcpy(auth, optarg, AUTHSIZE);
+				break;
 			case 'c':
 				if (!(cf = config_open(optarg))) {
 					fprintf(stderr, "Cannot access specified config file: %s\n", optarg);
@@ -1087,6 +1093,7 @@ int main(int argc, char **argv) {
 			free(tmp);
 		}
 
+		CFG_DEFAULT(cf, "Auth", domain, AUTHSIZE);
 		CFG_DEFAULT(cf, "Domain", domain, AUTHSIZE);
 		CFG_DEFAULT(cf, "Listen", lport, AUTHSIZE);
 		CFG_DEFAULT(cf, "Password", password, AUTHSIZE);
@@ -1136,6 +1143,9 @@ int main(int argc, char **argv) {
 			"For copyright holders of included encryption routines see headers.\n\n");
 
 		fprintf(stderr, "Usage: %s [-cdLvw] -u <user>[@<domain>] -p <pass> <proxy_host>[:]<proxy_port>\n", argv[0]);
+		fprintf(stderr, "\t-a  ntlm | nt | lm\n"
+				"\t    Authentication parameter - combined NTLM, just LM, or just NT. Default is to,\n"
+				"\t    send both, NTLM. It is the most versatile setting and likely to work for you.\n");
 		fprintf(stderr, "\t-c  <config_file>\n"
 				"\t    Configuration file. Other arguments can be used as well, overriding\n"
 				"\t    config file settings.\n");
@@ -1167,8 +1177,26 @@ int main(int argc, char **argv) {
 	}
 
 	if (!strlen(user) || !strlen(password) || !strlen(domain) || !strlen(proxy) || !strlen(lport) || !port) {
-		fprintf(stderr, "Not enough parameters, try %s -h\n", argv[0]);
+		fprintf(stderr, "Incorrect setup, try %s -h\n", argv[0]);
 		exit(1);
+	}
+
+	/*
+	 * Setup selected NTLM hash combination
+	 */
+	if (strlen(auth)) {
+		if (!strcasecmp("ntlm", auth)) {
+			hashnt = hashlm = 1;
+		} else if (!strcasecmp("nt", auth)) {
+			hashnt = 1;
+			hashlm = 0;
+		} else if (!strcasecmp("lm", auth)) {
+			hashnt = 0;
+			hashlm = 1;
+		} else {
+			fprintf(stderr, "Unknown NTLM auth combination.\n");
+			exit(1);
+		}
 	}
 
 	/*
@@ -1301,6 +1329,7 @@ int main(int argc, char **argv) {
 	/*
 	 * Free already processed options.
 	 */
+	free(auth);
 	free(proxy);
 	free(uid);
 	free(lport);

@@ -14,14 +14,13 @@ address of your proxy (\fIhost\fP and \fIport\fP) as a parameter and opens a
 listening socket, forwarding each request to it. Along the way, the forwarded
 connection is created anew and authenticated or, if available, previously
 cached connection is reused to achieve higher efficiency and faster responses.
-\fBCntlm\fP supports only NTLM, because other schemes usually have a good
-support in client applications. When the chain is set up, \fBcntlm\fP is to be
-used as the primary proxy. \fBCntlm\fP also itegrates transparent TCP/IP port
-forwarding (tunneling) through the parent proxy (incl. authentication). Each
-tunnel opens a new listening socket on the specified local port and forwards
-all TCP/IP connections to the given host:port behind the secondary proxy.
-Manual page explains how to setup \fBcntlm\fP properly using configuration file
-or command\-line arguments.
+When the chain is set up, \fBcntlm\fP is to be used as the primary proxy.
+\fBCntlm\fP also itegrates transparent TCP/IP port forwarding (tunneling)
+through the parent proxy (incl. authentication). Each tunnel opens a new
+listening socket on the specified local port and forwards all TCP/IP
+connections to the given host:port behind the secondary proxy.  Manual page
+explains how to setup \fBcntlm\fP properly using configuration file or
+command\-line arguments.
 
 .PP
 Apparently, the authentication part is similar to NTLMAPS, but \fBcntlm\fP
@@ -63,13 +62,14 @@ values are in KiB):
 .fi
 
 .PP
-Inherent part of the development is profiling and memory management checking
+Inherent part of the development is profiling and memory management screening
 using Valgrind. The source distribution contains a file called
 \fIvalgrind.txt\fP, where you can see the report confirming zero leaks, no
 access to unallocated memory, no usage of uninitialized data - all tracked down
 to each CPU instruction emulated in Valgrind's virtual CPU during a typical
 production lifetime of the proxy. There are also some heap profiling graphs,
-which helped to halve the memory requirements of \fBcntlm\fP.
+which helped to halve the memory requirements of \fBcntlm\fP (removing regular
+expression matching in favour of \fI<string.h>\fP primitives).
 
 .SH OPTIONS
 Most options can be pre\-set in a configuration file. Specifying an option more
@@ -78,6 +78,15 @@ last one. This does not apply to options like \fB\-L\fP, each of which creates
 a new instance of some feature. \fBCntlm\fP can be built with a hardcoded
 configuration file (e.g. /etc/cntlm.conf), which is always loaded, if possible.
 See \fB\-c\fP option on how to override some or all of its settings.
+
+.TP 
+.B \-a ntlm | nt | lm
+Authentication type. Basically, NTLM comprises of two hashed responses, NT and
+LM. Some servers might want just one of them, most likely LM (default is to use
+both). For now, \fBCntlm\fP does only NTLM, because other schemes usually have
+a good support in client applications, but if there's solid ground to support
+new authentication scheme implementation (like really \fBmany\fP ppl begging
+and stuff:)), I don't see why not.
 
 .TP 
 .B \-c <filename>
@@ -90,8 +99,8 @@ override it.
 
 .TP
 .B \-d <domain>
-The domain or workgroup of the proxy account. This value can also be specified as a part
-of the username with \fB\-u\fP.
+The domain or workgroup of the proxy account. This value can also be specified
+as a part of the username with \fB\-u\fP.
 
 .TP
 .B \-f
@@ -155,9 +164,9 @@ the daemon finishes cleanly, the file is removed.
 
 .TP
 .B \-p <password>
-Proxy account password. You don't have to use configuration file to keep it private.
-\fBCntlm\fP deletes the password from the memory, so it cannot be seen in /proc
-or with process inspection tools like \fBps(1)\fP, etc.
+Proxy account password. You don't have to use configuration file to keep it
+private.  \fBCntlm\fP deletes the password from the memory, so it cannot be
+seen in /proc or with process inspection tools like \fBps(1)\fP, etc.
 
 .TP
 .B \-U <uid>
@@ -188,11 +197,15 @@ here. Just the first part. Some proxies require this information.
 
 .SH FILES
 Configuration file has the same syntax as OpenSSH ssh_config. It comprises of
-whitespace delimited keywords and values. Comment begins with a hash '#' and can
-begin anywhere in the file. Everything after the hash up until the EOL is a comment.
-Values can contain any characters, including whitespace. Do not quote anything.
-For detailed explanation of keywords, see appropriate command-line options.
-Following keywords are available:
+whitespace delimited keywords and values. Comment begins with a hash '#' and
+can begin anywhere in the file. Everything after the hash up until the EOL is a
+comment.  Values can contain any characters, including whitespace. Do not quote
+anything.  For detailed explanation of keywords, see appropriate command-line
+options.  Following keywords are available:
+
+.TP
+.B Auth ntlm|lm|nt
+Select any possible combination of NTLM hashes using a single parameter.
 
 .TP
 .B Domain <domain_name>
@@ -200,8 +213,8 @@ Proxy account domain/workgroup name.
 
 .TP
 .B Gateway yes|no
-Gateway mode. In the configuration file, order doesn't matter. Gateway mode applies
-the same to all tunnels.
+Gateway mode. In the configuration file, order doesn't matter. Gateway mode
+applies the same to all tunnels.
 
 .TP
 .B Header <headername: value>
@@ -225,29 +238,24 @@ Tunnel specification. The same as the \fB\-L\fP option. Can be entered more than
 
 .TP
 .B Username 
-Proxy account name, without the possibility to include domain name ('at' sign is interpreted
-literally).
+Proxy account name, without the possibility to include domain name ('at' sign
+is interpreted literally).
 
 .SH PORTING
-\fBCntlm\fP has been successfully compiled and tested on both little and big endian
-machines. Notably, it runs on Linux/i386 and AIX/PowerPC. For compilation details, see
-README in the source distribution.
+\fBCntlm\fP has been successfully compiled and tested on both little and big
+endian machines. Notably, it runs on Linux/i386 and AIX/PowerPC. For
+compilation details, see README in the source distribution.
 .PP
 
 .SH TODO
-\fBCntlm\fP aims to be drop\-in replacement for NTLMAPS. I need to implement
-the ability to use just LM authentication (currently only full NTLM is
-supported as most versatile authentication across all ISA server
-configurations). This is now very easy and should be ready ASAP.
-
-.PP
-But please note that NTLM (www) authentication to HTTP servers (i.e. working
-without parent proxy as a standalone proxy server in itself) will most probaly
-not be implemented ever. Even though the tasks share common NTLM authentication,
-they are different things and should be handled separately. Not to mention the
-fact that even open source browsers now support NTLM authentication to HTTP
-servers. Such a single\-purpose application can be writted in Perl in a few
-hours. I strive to keep the code of \fBcntlm\fP simple and efficient.
+In the much needed NTLM-proxy departement, \fBcntlm\fP aims to be a drop\-in
+replacement for NTLMAPS. But please note that NTLM WWW auth (that is auth to
+HTTP servers), when it is running without any parent proxy as a standalone
+proxy server in itself, won't probaly be implemented ever. Even though the
+tasks share common NTLM authentication, they are different things. Also, I've
+never seen any access-protected HTTP server requiring solely NTLM without any
+alternative. Such a narrow-spectrum tool can be written in Perl in a few
+minutes. I strive to keep the code of \fBcntlm\fP simple and efficient.
 
 .SH BUGS
 This software is in the BETA phase of development, so there are probably many
