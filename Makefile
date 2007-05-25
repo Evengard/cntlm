@@ -12,7 +12,7 @@ MANDIR=/usr/local/man
 CC=gcc
 OBJS=utils.o ntlm.o xcrypt.o config.o socket.o proxy.o
 CFLAGS+=-Wall -pedantic -g -O3 -D_REENTRANT -DVERSION=\"0.24\"
-LDFLAGS=-lpthread -g
+LDFLAGS=-lpthread
 NAME=cntlm
 
 $(NAME): $(OBJS)
@@ -20,9 +20,9 @@ $(NAME): $(OBJS)
 
 install: $(NAME)
 	if [ -f /usr/bin/oslevel ]; then \
-		install -O root -G root -M 0755 -S -f $(BINDIR)/ $(NAME); \
-		install -O root -G root -M 0644 -f $(MANDIR)/man1/ doc/$(NAME).1; \
-		install -O root -G root -M 0600 -c $(SYSCONFDIR)/ doc/$(NAME).conf; \
+		install -O root -G system -M 0755 -S -f $(BINDIR) $(NAME); \
+		install -O root -G system -M 0644 -f $(MANDIR)/man1 doc/$(NAME).1; \
+		install -O root -G system -M 0600 -c $(SYSCONFDIR) doc/$(NAME).conf; \
 	else \
 		install -D -o root -g root -m 0755 -s $(NAME) $(BINDIR)/$(NAME); \
 		install -D -o root -g root -m 0644 doc/$(NAME).1 $(MANDIR)/man1/$(NAME).1; \
@@ -38,10 +38,7 @@ clean:
 
 proxy.o: proxy.c
 	if [ -z "$(SYSCONFDIR)" ]; then \
-		$(CC) $(CFLAGS) -c $^ -o $@; \
+		$(CC) $(CFLAGS) -c proxy.c -o $@; \
 	else \
-		$(CC) $(CFLAGS) -DSYSCONFDIR=\"$(SYSCONFDIR)\" -c $^ -o $@; \
+		$(CC) $(CFLAGS) -DSYSCONFDIR=\"$(SYSCONFDIR)\" -c proxy.c -o $@; \
 	fi
-
-%.o: %.c
-	$(CC) $(CFLAGS) -c $^ -o $@
