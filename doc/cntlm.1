@@ -1,4 +1,4 @@
-.TH CNTLM 1 "May 2007" "cntlm 0.21" "Accelerating NTLM Authentication Proxy"
+.TH CNTLM 1 "May 2007" "cntlm 0.25" "Accelerating NTLM Authentication Proxy"
 .SH NAME
 \fBcntlm\fP \- authenticating HTTP(S) proxy with TCP/IP tunneling and acceleration
 
@@ -83,7 +83,7 @@ See \fB\-c\fP option on how to override some or all of its settings.
 .B \-a ntlm | nt | lm
 Authentication type. Basically, NTLM comprises of two hashed responses, NT and
 LM. Some servers might want just one of them, most likely LM (default is to use
-both). For now, \fBCntlm\fP does only NTLM, because other schemes usually have
+both). For now, \fBcntlm\fP does only NTLM, because other schemes usually have
 a good support in client applications, but if there's solid ground to support
 new authentication scheme implementation (like really \fBmany\fP ppl begging
 and stuff:)), I don't see why not.
@@ -106,7 +106,7 @@ as a part of the username with \fB\-u\fP.
 .B \-f
 Run in console as a foreground job, do not fork into background. In this mode, 
 all syslog messages will be echoed to the console (on platforms which support
-syslog LOG_PERROR option). Though \fBCntlm\fP is primarily designed as a
+syslog LOG_PERROR option). Though \fBcntlm\fP is primarily designed as a
 classic UNIX daemon with syslogd logging, it provides detailed debugging/verbose
 mode without detaching from the controlling terminal; see \fB-v\fP.
 
@@ -243,11 +243,11 @@ is interpreted literally).
 
 .SH PORTING
 \fBCntlm\fP has been successfully compiled and tested on both little and big
-endian machines. It is tested on Linux/i386 and AIX/PowerPC. For compilation
-details, see README in the source distribution. Porting to any POSIX conforming
-OS shouldn't be more than a matter of the Makefile rearrangement. \fBCntlm\fP
-uses strictly POSIX.1c interfaces with ISO C99 libc (\fBsnprintf(3)\fP), it is
-also fully compliant with SUSv2.
+endian machines (Linux/i386 and AIX/PowerPC). For compilation details, see
+README in the source distribution. Porting to any POSIX conforming OS shouldn't
+be more than a matter of the Makefile rearrangement. \fBCntlm\fP uses strictly
+POSIX.1c interfaces with ISO C99 libc (\fBsnprintf(3)\fP), it is also fully
+compliant with SUSv2.
 
 .SH TODO
 In the much needed NTLM-proxy departement, \fBcntlm\fP aims to be a drop\-in
