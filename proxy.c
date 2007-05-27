@@ -205,6 +205,12 @@ int headers_recv(int fd, rr_data_t data) {
 		if (tok)
 			data->http = substr(tok, 7, 1);
 
+		tok = strstr(data->url, "://");
+		if (tok) {
+			s3 = strchr(tok+3, '/');
+			host = substr(tok+3, 0, s3 ? s3-tok-3 : 0);
+		}
+
 		if (!data->url || !data->http) {
 			i = -1;
 			goto bailout;
