@@ -43,7 +43,7 @@
  * This list type allows to store an arbitrary pointer
  * associating it with the key.
  */
-plist_t plist_add(plist_t list, pthread_t key, char *aux) {
+plist_t plist_add(plist_t list, unsigned long key, char *aux) {
 	plist_t tmp, t = list;
 
 	if (!key)
@@ -69,7 +69,7 @@ plist_t plist_add(plist_t list, pthread_t key, char *aux) {
  * Delete an item from the list, possibly returning NULL when
  * the list is empty or nothing was found.
  */
-plist_t plist_del(plist_t list, pthread_t key) {
+plist_t plist_del(plist_t list, unsigned long key) {
 	plist_t ot = NULL, t = list;
 
 	while (t) {
@@ -95,7 +95,7 @@ plist_t plist_del(plist_t list, pthread_t key) {
 /*
  * Return true if an item is present in the list.
  */
-int plist_in(plist_t list, pthread_t key) {
+int plist_in(plist_t list, unsigned long key) {
 	plist_t t = list;
 
 	while (t) {

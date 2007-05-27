@@ -71,9 +71,9 @@ struct thread_arg_s {
 	char *target;
 };
 
-extern plist_t plist_add(plist_t list, pthread_t key, char *aux);
-extern plist_t plist_del(plist_t list, pthread_t key);
-extern int plist_in(plist_t list, pthread_t key);
+extern plist_t plist_add(plist_t list, unsigned long key, char *aux);
+extern plist_t plist_del(plist_t list, unsigned long key);
+extern int plist_in(plist_t list, unsigned long key);
 extern void plist_dump(plist_t list);
 extern char *plist_get(plist_t list, int key);
 extern int plist_pop(plist_t *list);

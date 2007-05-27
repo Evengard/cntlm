@@ -73,10 +73,6 @@ static char *password;
 static int hashnt = 1;
 static int hashlm = 1;
 
-static int port;			/* proxy_connect() */
-static struct in_addr host;
-static config_t cf = NULL;
-
 static int quit = 0;			/* sighandler() */
 static int debug = 0;			/* all info printf's */
 
@@ -94,9 +90,19 @@ static plist_t clist = NULL;
 static pthread_mutex_t clist_mtx = PTHREAD_MUTEX_INITIALIZER;
 
 /*
+ * List of available proxies for proxy_connect().
+ */
+static config_t cf = NULL;
+static plist_t plist = NULL;
+typedef struct {
+	struct in_addr host;
+	int port;
+} proxy_t;
+
+/*
  * List of custom header substitutions.
  */
-static hlist_t sublist = NULL;
+static hlist_t sublist = NULL;		/* process() */
 
 /*
  * Regular expression matching patterns. AIX doesn't support perl-like
@@ -132,10 +138,64 @@ void sighandler(int p) {
  * in the line or ignore or quit.
  */
 int proxy_connect(void) {
-	int i;
+	int i, port;
+	struct in_addr host;
+
+	/*
+	printf("Using proxy %s:%d\n\n", inet_ntoa(host), port);
 
 	i = so_connect(host, port);
+	*/
 	return i;
+}
+
+/*
+ * Parse proxy parameter and add it to the global list.
+ * Note that it modifies the string (0 term. hostname).
+ */
+int proxy_add(plist_t *list, char *proxy, int port) {
+	int len, i;
+	proxy_t *aux;
+	struct in_addr host;
+
+	printf("h: %s, p: %d.\n", proxy, port);
+	/*
+	 * Check format and parse it.
+	 */
+	len = strlen(proxy);
+	i = strcspn(proxy, ": ");
+	if (i != len) {
+		proxy[i++] = 0;
+		while (i < len && (proxy[i] == ' ' || proxy[i] == '\t'))
+			i++;
+
+		if (i >= len)
+			return 0;
+
+		port = atoi(proxy+i);
+	}
+
+	/*
+	 * No port argument and not parsed from proxy?
+	 */
+	if (!port)
+		return 0;
+
+	/*
+	 * Try to resolve proxy address
+	 */
+	if (debug)
+		printf("Resolving proxy %s...\n", proxy);
+	if (!so_resolv(&host, proxy)) {
+		fprintf(stderr, "Cannot resolve proxy %s, discarding.\n", proxy);
+		return 0;
+	}
+
+	aux = (proxy_t *)new(sizeof(proxy_t));
+	aux->host = host;
+	aux->port = port;
+
+	return 1;
 }
 
 /*
@@ -957,7 +1017,7 @@ void add_tunnel(plist_t *list, char *spec, int gateway) {
 }
 
 int main(int argc, char **argv) {
-	char *tmp, *head, *proxy, *lport, *uid, *pidfile, *auth;
+	char *tmp, *head, *lport, *uid, *pidfile, *auth;
 	struct passwd *pw;
 	int i, fd;
 
@@ -970,6 +1030,7 @@ int main(int argc, char **argv) {
 	int tc = 0;
 	int tj = 0;
 	plist_t llist = NULL;
+	plist_t cfgplist = NULL;
 
 #ifdef NTLM_REGEX
 	regcomp(&req_match, HTTP_REQUEST, REG_EXTENDED | REG_ICASE);
@@ -985,7 +1046,6 @@ int main(int argc, char **argv) {
 	pidfile = new(AUTHSIZE);
 	lport = new(AUTHSIZE);
 	uid = new(AUTHSIZE);
-	proxy = new(AUTHSIZE);
 	auth = new(AUTHSIZE);
 
 	openlog("cntlm", LOG_CONS | LOG_PID, LOG_DAEMON);
@@ -1100,11 +1160,15 @@ int main(int argc, char **argv) {
 			free(tmp);
 		}
 
+		while ((tmp = config_pop(cf, "Proxy"))) {
+			proxy_add(&cfgplist, tmp, 0);
+			free(tmp);
+		}
+
 		CFG_DEFAULT(cf, "Auth", domain, AUTHSIZE);
 		CFG_DEFAULT(cf, "Domain", domain, AUTHSIZE);
 		CFG_DEFAULT(cf, "Listen", lport, AUTHSIZE);
 		CFG_DEFAULT(cf, "Password", password, AUTHSIZE);
-		CFG_DEFAULT(cf, "Proxy", proxy, AUTHSIZE);
 		CFG_DEFAULT(cf, "Username", user, AUTHSIZE);
 		CFG_DEFAULT(cf, "Workstation", workstation, AUTHSIZE);
 
@@ -1123,21 +1187,17 @@ int main(int argc, char **argv) {
 	/*
 	 * More arguments on the command-line? Must be proxy and port.
 	 */
-	if (optind < argc) {
-		strlcpy(proxy, argv[optind], AUTHSIZE);
-		if (optind + 2 == argc)
-			port = atoi(argv[optind+1]);
+	i = optind;
+	while (i < argc) {
+		tmp = strchr(argv[i], ':');
+		proxy_add(&plist, argv[i], !tmp ? atoi(argv[i+1]) : 0);
+		i += (!tmp ? 2 : 1);
 	}
 
 	/*
-	 * At this point, if we have any proxy specification, check its format
-	 * and parse it.
-	 */
-	i = strcspn(proxy, ": ");
-	if (i != strlen(proxy)) {
-		proxy[i] = 0;
-		port = atoi(proxy+i+1);
-	}
+	plist_cat(plist, cfgplist);
+	plist_free(cfgplist);
+	*/
 
 	/*
 	 * Any of the vital variables not set?
@@ -1183,7 +1243,7 @@ int main(int argc, char **argv) {
 		exit(1);
 	}
 
-	if (!strlen(user) || !strlen(password) || !strlen(domain) || !strlen(proxy) || !strlen(lport) || !port) {
+	if (!strlen(user) || !strlen(password) || !strlen(domain) || !strlen(lport) || !plist) {
 		fprintf(stderr, "Incorrect setup, try %s -h\n", argv[0]);
 		exit(1);
 	}
@@ -1211,17 +1271,6 @@ int main(int argc, char **argv) {
 	 */
 	if (!strlen(workstation))
 		strlcpy(workstation, user, AUTHSIZE);
-
-	/*
-	 * Try to resolve proxy address
-	 */
-	if (debug)
-		printf("Resolving proxy hostname...\n");
-	if (!so_resolv(&host, proxy)) {
-		fprintf(stderr, "Cannot resolve proxy host.\n");
-		exit(1);
-	} else if (debug)
-		printf("Using proxy %s:%d\n\n", inet_ntoa(host), port);
 
 	/*
 	 * Bind the main port and listen; exit if error
@@ -1337,7 +1386,6 @@ int main(int argc, char **argv) {
 	 * Free already processed options.
 	 */
 	free(auth);
-	free(proxy);
 	free(uid);
 	free(lport);
 
@@ -1480,6 +1528,11 @@ int main(int argc, char **argv) {
 	free(domain);
 	free(password);
 	free(workstation);
+
+	/*
+	 * TODO: might need mutex in case of forced shutdown
+	 */
+	plist = plist_free(plist);
 
 #ifdef NTLM_REGEX
 	regfree(&req_match);
