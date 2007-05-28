@@ -580,7 +580,7 @@ size_t strlcat(char *dst, const char *src, size_t siz) {
 }
 
 /*
- * Shortcut for malloc/memset.
+ * Shortcut for malloc/memset zero.
  */
 inline char *new(size_t size) {
 	char *tmp;
