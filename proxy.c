@@ -200,8 +200,6 @@ int proxy_add(char *proxy, int port) {
 	proxy_t *aux;
 	struct in_addr host;
 
-	printf("h: %s, p: %d.\n", proxy, port);
-
 	/*
 	 * Check format and parse it.
 	 */
