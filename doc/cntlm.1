@@ -6,21 +6,21 @@
 .B cntlm
 [
 .B \-cdLpuvw
-] [ \fIhost\fP \fIport\fP | \fIhost\fP:\fIport\fP ]
+] [ \fIhost1\fP \fIport1\fP | \fIhost1\fP:\fIport1\fP ] ... \fIhostN\fP \fIportN\fP
 
 .SH DESCRIPTION
 \fBCntlm\fP is an authenticating component for HTTP communication. It takes the
-address of your proxy (\fIhost\fP and \fIport\fP) as a parameter and opens a
-listening socket, forwarding each request to it. Along the way, the forwarded
-connection is created anew and authenticated or, if available, previously
-cached connection is reused to achieve higher efficiency and faster responses.
-When the chain is set up, \fBcntlm\fP is to be used as the primary proxy.
-\fBCntlm\fP also itegrates transparent TCP/IP port forwarding (tunneling)
-through the parent proxy (incl. authentication). Each tunnel opens a new
-listening socket on the specified local port and forwards all TCP/IP
-connections to the given host:port behind the secondary proxy.  Manual page
-explains how to setup \fBcntlm\fP properly using configuration file or
-command\-line arguments.
+address of your proxies (\fIhost1..N\fP and \fIport1..N\fP) as a parameter and
+opens a listening socket, forwarding each request to it (moving in a circular
+list if any proxy stops working). Along the way, the forwarded connection is
+created anew and authenticated or, if available, previously cached connection
+is reused to achieve higher efficiency and faster responses. When the chain is
+set up, \fBcntlm\fP is to be used as the primary proxy. \fBCntlm\fP also
+itegrates transparent TCP/IP port forwarding (tunneling) through the parent
+proxy (incl. authentication). Each tunnel opens a new listening socket on the
+specified local port and forwards all TCP/IP connections to the given host:port
+behind the secondary proxy.  Manual page explains how to setup \fBcntlm\fP
+properly using configuration file or command\-line arguments.
 
 .PP
 Apparently, the authentication part is similar to NTLMAPS, but \fBcntlm\fP
@@ -80,7 +80,7 @@ configuration file (e.g. /etc/cntlm.conf), which is always loaded, if possible.
 See \fB\-c\fP option on how to override some or all of its settings.
 
 .TP 
-.B \-a ntlm | nt | lm
+.B \-a ntlm|lm|nt
 Authentication type. Basically, NTLM comprises of two hashed responses, NT and
 LM. Some servers might want just one of them, most likely LM (default is to use
 both). For now, \fBcntlm\fP does only NTLM, because other schemes usually have
@@ -230,7 +230,12 @@ Proxy account password.
 
 .TP
 .B Proxy <host:port>
-Parent proxy, which requires authentication.
+Parent proxy, which requires authentication. The same as proxy on the
+command\-line, can be used more than once to specify unlimited number of
+proxies. Should one proxy fail, \fBcntlm\fP automatically moves on to the
+next one. The connect request fails only if the whole list of proxies is
+scanned and (for each request) and found to be invalid. Command\-line takes
+precedence over the configuration file.
 
 .TP
 .B Tunnel <lport>:<rhost>:<rport>

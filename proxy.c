@@ -92,7 +92,10 @@ static pthread_mutex_t clist_mtx = PTHREAD_MUTEX_INITIALIZER;
 /*
  * List of available proxies for proxy_connect().
  */
-static config_t cf = NULL;
+static int pcount = 0;
+static int pcurr = 0;
+static pthread_mutex_t pcurr_mtx = PTHREAD_MUTEX_INITIALIZER;
+
 static plist_t plist = NULL;
 typedef struct {
 	struct in_addr host;
@@ -135,17 +138,56 @@ void sighandler(int p) {
 
 /*
  * Connect to the selected proxy. If the request fails, pick next proxy
- * in the line or ignore or quit.
+ * in the line. Each request scans the whole list until all items are tried
+ * or a working proxy is found, in which case it is selected and used by
+ * all threads until it stops working. Then the search starts again.
  */
 int proxy_connect(void) {
-	int i, port;
-	struct in_addr host;
+	proxy_t *aux;
+	int i, prev;
+	plist_t list, tmp;
+	int loop = 0;
+
+	prev = pcurr;
+	pthread_mutex_lock(&pcurr_mtx);
+	if (pcurr == 0) {
+		aux = (proxy_t *)plist_get(plist, ++pcurr);
+		syslog(LOG_INFO, "Using proxy %s:%d\n", inet_ntoa(aux->host), aux->port);
+	}
+	pthread_mutex_unlock(&pcurr_mtx);
+
+	do {
+		aux = (proxy_t *)plist_get(plist, pcurr);
+		i = so_connect(aux->host, aux->port);
+		if (i <= 0) {
+			pthread_mutex_lock(&pcurr_mtx);
+			if (pcurr >= pcount)
+				pcurr = 0;
+			aux = (proxy_t *)plist_get(plist, ++pcurr);
+			pthread_mutex_unlock(&pcurr_mtx);
+			syslog(LOG_ERR, "Proxy connect failed, will try %s:%d\n", inet_ntoa(aux->host), aux->port);
+		}
+	} while (i <= 0 && ++loop < pcount);
+
+	if (i <= 0 && loop >= pcount)
+		syslog(LOG_ERR, "No proxy on the list works. You lose.\n");
 
 	/*
-	printf("Using proxy %s:%d\n\n", inet_ntoa(host), port);
+	 * We have to invalidate the cached connections if we moved to a different proxy
+	 */
+	if (prev != pcurr) {
+		pthread_mutex_lock(&clist_mtx);
+		list = clist;
+		while (list) {
+			tmp = list->next;
+			close(list->key);
+			list = tmp;
+		}
+		plist_free(clist);
+		pthread_mutex_unlock(&clist_mtx);
+	}
+		
 
-	i = so_connect(host, port);
-	*/
 	return i;
 }
 
@@ -153,12 +195,13 @@ int proxy_connect(void) {
  * Parse proxy parameter and add it to the global list.
  * Note that it modifies the string (0 term. hostname).
  */
-int proxy_add(plist_t *list, char *proxy, int port) {
+int proxy_add(char *proxy, int port) {
 	int len, i;
 	proxy_t *aux;
 	struct in_addr host;
 
 	printf("h: %s, p: %d.\n", proxy, port);
+
 	/*
 	 * Check format and parse it.
 	 */
@@ -194,6 +237,7 @@ int proxy_add(plist_t *list, char *proxy, int port) {
 	aux = (proxy_t *)new(sizeof(proxy_t));
 	aux->host = host;
 	aux->port = port;
+	plist = plist_add(plist, ++pcount, (char *)aux);
 
 	return 1;
 }
@@ -265,15 +309,15 @@ int headers_recv(int fd, rr_data_t data) {
 		if (tok)
 			data->http = substr(tok, 7, 1);
 
+		if (!data->url || !data->http) {
+			i = -1;
+			goto bailout;
+		}
+
 		tok = strstr(data->url, "://");
 		if (tok) {
 			s3 = strchr(tok+3, '/');
 			host = substr(tok+3, 0, s3 ? s3-tok-3 : 0);
-		}
-
-		if (!data->url || !data->http) {
-			i = -1;
-			goto bailout;
 		}
 	} else {
 #else
@@ -661,10 +705,8 @@ void *process(void *client) {
 	if (!sd)
 		sd = proxy_connect();
 
-	if (sd <= 0) {
-		syslog(LOG_ERR, "Could not connect to the proxy!\n");
+	if (sd <= 0)
 		goto bailout;
-	}
 
 	do {
 		/* data[0] is for the first loop pass
@@ -742,7 +784,6 @@ void *process(void *client) {
 					close(sd);
 					sd = proxy_connect();
 					if (sd <= 0) {
-						syslog(LOG_ERR, "Could not reconnect to the proxy!\n");
 						free_rr_data(data[0]);
 						free_rr_data(data[1]);
 						goto bailout;
@@ -900,7 +941,6 @@ void *autotunnel(void *client) {
 	free(client);
 
 	if (sd <= 0) {
-		syslog(LOG_ERR, "Could not connect to the proxy!\n");
 		close(cd);
 		return NULL;
 	}
@@ -924,10 +964,8 @@ void *autotunnel(void *client) {
 		if (so_closed(sd)) {
 			close(sd);
 			sd = proxy_connect();
-			if (sd <= 0) {
-				syslog(LOG_ERR, "Could not reconnect to the proxy!\n");
+			if (sd <= 0) 
 				goto bailout;
-			}
 		}
 
 		if (debug) {
@@ -1030,7 +1068,7 @@ int main(int argc, char **argv) {
 	int tc = 0;
 	int tj = 0;
 	plist_t llist = NULL;
-	plist_t cfgplist = NULL;
+	config_t cf = NULL;
 
 #ifdef NTLM_REGEX
 	regcomp(&req_match, HTTP_REQUEST, REG_EXTENDED | REG_ICASE);
@@ -1120,6 +1158,16 @@ int main(int argc, char **argv) {
 	}
 
 	/*
+	 * More arguments on the command-line? Must be proxies.
+	 */
+	i = optind;
+	while (i < argc) {
+		tmp = strchr(argv[i], ':');
+		proxy_add(argv[i], !tmp ? atoi(argv[i+1]) : 0);
+		i += (!tmp ? 2 : 1);
+	}
+
+	/*
 	 * No configuration loaded yet? Try ".rc" file...
 	 */
 #ifdef SYSCONFDIR
@@ -1136,7 +1184,7 @@ int main(int argc, char **argv) {
 
 	/*
 	 * If any configuration file was successfully opened, parse it and load
-	 * parameters not entered on the command line.
+	 * configuration.
 	 */
 	if (cf) {
 		while ((tmp = config_pop(cf, "Tunnel"))) {
@@ -1161,7 +1209,7 @@ int main(int argc, char **argv) {
 		}
 
 		while ((tmp = config_pop(cf, "Proxy"))) {
-			proxy_add(&cfgplist, tmp, 0);
+			proxy_add(tmp, 0);
 			free(tmp);
 		}
 
@@ -1183,21 +1231,6 @@ int main(int argc, char **argv) {
 		CFG_DEFAULT(cf, "Uid", uid, AUTHSIZE);
 		*/
 	}
-
-	/*
-	 * More arguments on the command-line? Must be proxy and port.
-	 */
-	i = optind;
-	while (i < argc) {
-		tmp = strchr(argv[i], ':');
-		proxy_add(&plist, argv[i], !tmp ? atoi(argv[i+1]) : 0);
-		i += (!tmp ? 2 : 1);
-	}
-
-	/*
-	plist_cat(plist, cfgplist);
-	plist_free(cfgplist);
-	*/
 
 	/*
 	 * Any of the vital variables not set?
@@ -1282,21 +1315,6 @@ int main(int argc, char **argv) {
 	fd = so_listen(strlen(lport) ? atoi(lport) : DEFAULT_PORT, gateway);
 	if (fd == -1)
 		exit(1);
-
-	/*
-	 * Test proxy connection
-	 */
-	if (debug)
-		printf("Trying proxy connection...\n");
-	i = proxy_connect();
-	if (i <= 0) {
-		fprintf(stderr, "Cannot connect to proxy!\n");
-		exit(1);
-	} else {
-		if (debug)
-			printf("Ok (%d).\n", i);
-		close(i);
-	}
 
 	/*
 	 * Ok, we are ready to rock. If daemon mode was requested,
