@@ -14,10 +14,13 @@ $ make install
 
 Default installation directories are /usr/local/bin, /usr/local/share/man and
 /usr/local/etc. Should you want to install cntlm into a different location,
-change the BINDIR, MANDIR and SYSCONFDIR in the Makefile. Installation uses
-the "install" helper, which has many differences across various platforms.
-Currently, we use GNU flavour by default and autodetect AIX. You might need
-to change some parameters on other POSIX systems.
+change the BINDIR, MANDIR and SYSCONFDIR in the Makefile or on the command line
+(see below). Installation uses the "install" helper, which has many differences
+across various platforms. Currently, we use GNU flavour by default and
+autodetect AIX. You might need to change some parameters on other POSIX
+systems.
+
+$ make install BINDIR=/usr/bin MANDIR=/usr/share/man
 
 Cntlm is compiled with system-wide configuration file by default. That means
 whenever you run cntlm, it looks into a hardcoded path (see SYSCONFDIR in the

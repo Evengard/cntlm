@@ -24,7 +24,6 @@
 
 #include <pthread.h>
 
-
 #define BUFSIZE			1024
 #define VAL(var, type, offset)	*((type *)(var+offset))
 #define MEM(var, type, offset)	(type *)(var+offset)
