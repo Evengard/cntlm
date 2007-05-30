@@ -19,7 +19,7 @@ set up, \fBcntlm\fP is to be used as the primary proxy. \fBCntlm\fP also
 itegrates transparent TCP/IP port forwarding (tunneling) through the parent
 proxy (incl. authentication). Each tunnel opens a new listening socket on the
 specified local port and forwards all TCP/IP connections to the given host:port
-behind the secondary proxy.  Manual page explains how to setup \fBcntlm\fP
+behind the secondary proxy. Manual page explains how to setup \fBcntlm\fP
 properly using configuration file or command\-line arguments.
 
 .PP
@@ -28,7 +28,7 @@ removes many of its shortcomings and inefficiencies. It supports real
 keep\-alive (on both sides) and it caches all authenticated connections for
 reuse in subsequent requests. It can be restarted without TIME_WAIT delay, uses
 just a fraction of memory compared to NTLMAPS and by orders of magnitude less
-CPU.
+CPU. Each thread is completely independent and one cannot block another.
 
 .PP
 In addition to lower usage of system resources, \fBcntlm\fP achieves higher
@@ -104,20 +104,24 @@ as a part of the username with \fB\-u\fP.
 
 .TP
 .B \-f
-Run in console as a foreground job, do not fork into background. In this mode, 
+Run in console as a foreground job, do not fork into background. In this mode,
 all syslog messages will be echoed to the console (on platforms which support
 syslog LOG_PERROR option). Though \fBcntlm\fP is primarily designed as a
-classic UNIX daemon with syslogd logging, it provides detailed debugging/verbose
-mode without detaching from the controlling terminal; see \fB-v\fP.
+classic UNIX daemon with syslogd logging, it provides detailed verbose mode
+without detaching from the controlling terminal; see \fB-v\fP. In any case, all
+error and diagnostic messages are always sent to the system logger.
 
 .TP
 .B \-g
 Gateway mode, \fBcntlm\fP listens on all network interfaces. Default is to bind
-just loopback. That way, only local processes can connect to \fBcntlm\fP. In
-the gateway mode though, \fBcntlm\fP listens on public interfaces too and is
-accessible to other machines on the network. With this option the command\-line
-order matters when tunnels are used. Those positioned before it will bind only
-loopback; those after will be public.
+just loopback. That way, only local processes can connect to
+\fBcntlm\fP. In the gateway mode though, \fBcntlm\fP listens on all interfaces
+and is accessible to other machines on the network. Please note that with this
+option the command\-line order matters when specifying proxy or tunnel local (listening)
+ports. Those positioned before it will bind only loopback; those after will be
+public. IMPORTANT: All of the above applies only to local ports, for which you
+didn't specify any source address. If you did, \fBcntlm\fP tries to bind the
+given port only on the specified interface (or rather IP address).
 
 .TP
 .B \-h \fB"<name>: <value>"\fP
@@ -126,33 +130,46 @@ defined using \fB-h\fP or in the configuration file will be added to it. In case
 the header is already present, its value will be replaced.
 
 .TP
-.B \-L <lport>:<rhost>:<rport>
+.B \-L [<saddr>:]<lport>:<rhost>:<rport>
 Tunnel specification. The syntax is the same as in OpenSSH's local forwarding
-(\fB\-L\fP). \fBCntlm\fP will listen for incomming connections on \fIlport\fP.
-When a new client connects, it will forward the connection through proxy to the
-\fIrhost\fP:\fIrport\fP (authenticating on the go). Please note that many
-corporate proxies do not allow connecting to ports other than 443 (https), but
-if you run your service on this port, you should be safe. Connect to HTTPS is
-"always" allowed, otherwise nobody would be able to browse https:// sites. In
-any way, first try if you can establish a connection through the tunnel, before
-you rely on it. This feature does the same job as tools like
-\fBcorkscrew(1)\fP, but instead of communicating over a terminal, \fBcntlm\fP
-keeps it TCP/IP. This option can be specified multiple times for unlimited
-number of tunnels.
+(\fB\-L\fP), with a new optional prefix, \fIsaddr\fP - the source IP address to
+bind the \fIlport\fP to. \fBCntlm\fP will listen for incomming connections on
+the local port \fIlport\fP, forwarding every new connection through the parent
+proxy to the \fIrhost\fP:\fIrport\fP (authenticating on the go). This option
+can be used multiple times for unlimited number of tunnels, with or without the
+\fIsaddr\fP option. See \fB-g\fP for the details concerning local port binding
+when \fIsaddr\fP is not used.
+
+Please note that many corporate proxies do not allow connections to ports other
+than 443 (https), but if you run your target service on this port, you should
+be safe. Connect to HTTPS is "always" allowed, otherwise nobody would be able
+to browse https:// sites. In any case, first try if you can establish a
+connection through the tunnel, before you rely on it. This feature does the
+same job as tools like \fBcorkscrew(1)\fP, but instead of communicating over a
+terminal, \fBcntlm\fP keeps it TCP/IP.
 
 .TP
-.B \-l <lport>
-Main listening port for the \fBcntlm\fP proxy. Use the number you have chosen
+.B \-l [<saddr>:]<lport>
+Local port for the \fBcntlm\fP proxy service. Use the number you have chosen
 here and the hostname of the machine running \fBcntlm\fP (possibly localhost)
-as the proxy settings in your browser and/or environment. Most applications
+as proxy settings in your browser and/or the environment. Most applications
 (including console) support the notion of proxy to connect to other hosts. On
 POSIX, set the following variables to use e.g. \fBwget(1)\fP without any
-trouble (fill in actual address of \fBcntlm\fP):
+trouble (fill in the actual address of \fBcntlm\fP):
 .nf
     $ export ftp_proxy=http://localhost:3128
     $ export http_proxy=$ftp_proxy
     $ export https_proxy=$ftp_proxy
 .fi
+
+You can choose to run the proxy service on more than one port, in such case
+just use this option as many times as neccessary. But unlike tunnel specification,
+\fBcntlm\fP fails to start if it cannot bind all of the proxy service ports.
+Proxy service port can also be bound selectively. Use \fIsaddr\fP to pick
+source IP address to bind the \fIlport\fP to. This allows you, for example, to
+run the service on different ports for subnet A and B and make it invisible for
+subnet C. See \fB-g\fP for the details concerning local port binding when
+\fIsaddr\fP is not used.
 
 .TP
 .B \-P <pidfile>
@@ -165,7 +182,7 @@ the daemon finishes cleanly, the file is removed.
 .TP
 .B \-p <password>
 Proxy account password. You don't have to use configuration file to keep it
-private.  \fBCntlm\fP deletes the password from the memory, so it cannot be
+private. \fBCntlm\fP deletes the password from the memory, so it cannot be
 seen in /proc or with process inspection tools like \fBps(1)\fP, etc.
 
 .TP
@@ -199,9 +216,9 @@ here. Just the first part. Some proxies require this information.
 Configuration file has the same syntax as OpenSSH ssh_config. It comprises of
 whitespace delimited keywords and values. Comment begins with a hash '#' and
 can begin anywhere in the file. Everything after the hash up until the EOL is a
-comment.  Values can contain any characters, including whitespace. Do not quote
-anything.  For detailed explanation of keywords, see appropriate command-line
-options.  Following keywords are available:
+comment. Values can contain any characters, including whitespace. Do not quote
+anything. For detailed explanation of keywords, see appropriate command-line
+options. Following keywords are available:
 
 .TP
 .B Auth ntlm|lm|nt
@@ -221,8 +238,8 @@ applies the same to all tunnels.
 Header substitution. See \fB-h\fP for details and remember, no quoting.
 
 .TP
-.B Listen <port_number>
-Main local port number for \fBcntlm\fP proxy.
+.B Listen [<saddr>:]<port_number>
+Local port number for the \fBcntlm\fP's proxy service. See \fB-l\fP for more.
 
 .TP
 .B Password <password>
@@ -238,8 +255,8 @@ scanned and (for each request) and found to be invalid. Command\-line takes
 precedence over the configuration file.
 
 .TP
-.B Tunnel <lport>:<rhost>:<rport>
-Tunnel specification. The same as the \fB\-L\fP option. Can be entered more than once.
+.B Tunnel [<saddr>:]<lport>:<rhost>:<rport>
+Tunnel specification. See \fB-L\fP for more.
 
 .TP
 .B Username 

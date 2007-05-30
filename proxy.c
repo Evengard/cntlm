@@ -96,7 +96,7 @@ static int pcount = 0;
 static int pcurr = 0;
 static pthread_mutex_t pcurr_mtx = PTHREAD_MUTEX_INITIALIZER;
 
-static plist_t plist = NULL;
+static plist_t lparents = NULL;
 typedef struct {
 	struct in_addr host;
 	int port;
@@ -105,24 +105,7 @@ typedef struct {
 /*
  * List of custom header substitutions.
  */
-static hlist_t sublist = NULL;		/* process() */
-
-/*
- * Regular expression matching patterns. AIX doesn't support perl-like
- * character classes. Regex matching is disabled by default.
- */
-#ifdef NTLM_REGEX
-# define HTTP_MAXMATCH	4
-# define HTTP_HOSTNAME	"^([^:]+://)?([^/: ]+)"
-# define CMD_TUNNEL	"^([0-9]+):([-a-z0-9.]+):([0-9]+)$"
-# define HTTP_REQUEST	"^([a-z]+)[ \t]+([^ \t]+)[ \t]+HTTP/1\\.([0-9])"
-# define HTTP_REPLY	"^HTTP/1\\.([0-9])[ \t]+([0-9]+)[ \t]*(.*)"
-
-  static regex_t tun_match;		/* add_tunnel() */
-  static regex_t req_match;		/* headers_recv() */
-  static regex_t rep_match;
-  static regex_t url_match;
-#endif
+static hlist_t lheaders = NULL;		/* process() */
 
 /*
  * General signal handler. Fast exit, no waiting for threads and shit.
@@ -151,19 +134,19 @@ int proxy_connect(void) {
 	prev = pcurr;
 	pthread_mutex_lock(&pcurr_mtx);
 	if (pcurr == 0) {
-		aux = (proxy_t *)plist_get(plist, ++pcurr);
+		aux = (proxy_t *)plist_get(lparents, ++pcurr);
 		syslog(LOG_INFO, "Using proxy %s:%d\n", inet_ntoa(aux->host), aux->port);
 	}
 	pthread_mutex_unlock(&pcurr_mtx);
 
 	do {
-		aux = (proxy_t *)plist_get(plist, pcurr);
+		aux = (proxy_t *)plist_get(lparents, pcurr);
 		i = so_connect(aux->host, aux->port);
 		if (i <= 0) {
 			pthread_mutex_lock(&pcurr_mtx);
 			if (pcurr >= pcount)
 				pcurr = 0;
-			aux = (proxy_t *)plist_get(plist, ++pcurr);
+			aux = (proxy_t *)plist_get(lparents, ++pcurr);
 			pthread_mutex_unlock(&pcurr_mtx);
 			syslog(LOG_ERR, "Proxy connect failed, will try %s:%d\n", inet_ntoa(aux->host), aux->port);
 		}
@@ -193,9 +176,8 @@ int proxy_connect(void) {
 
 /*
  * Parse proxy parameter and add it to the global list.
- * Note that it modifies the string (0 term. hostname).
  */
-int proxy_add(char *proxy, int port) {
+int parent_proxy(char *proxy, int port) {
 	int len, i;
 	proxy_t *aux;
 	struct in_addr host;
@@ -203,6 +185,7 @@ int proxy_add(char *proxy, int port) {
 	/*
 	 * Check format and parse it.
 	 */
+	proxy = strdupl(proxy);
 	len = strlen(proxy);
 	i = strcspn(proxy, ": ");
 	if (i != len) {
@@ -210,8 +193,10 @@ int proxy_add(char *proxy, int port) {
 		while (i < len && (proxy[i] == ' ' || proxy[i] == '\t'))
 			i++;
 
-		if (i >= len)
+		if (i >= len) {
+			free(proxy);
 			return 0;
+		}
 
 		port = atoi(proxy+i);
 	}
@@ -219,24 +204,28 @@ int proxy_add(char *proxy, int port) {
 	/*
 	 * No port argument and not parsed from proxy?
 	 */
-	if (!port)
+	if (!port) {
+		free(proxy);
 		return 0;
+	}
 
 	/*
 	 * Try to resolve proxy address
 	 */
 	if (debug)
-		printf("Resolving proxy %s...\n", proxy);
+		syslog(LOG_INFO, "Resolving proxy %s...\n", proxy);
 	if (!so_resolv(&host, proxy)) {
-		fprintf(stderr, "Cannot resolve proxy %s, discarding.\n", proxy);
+		syslog(LOG_ERR, "Cannot resolve proxy %s, discarding.\n", proxy);
+		free(proxy);
 		return 0;
 	}
 
 	aux = (proxy_t *)new(sizeof(proxy_t));
 	aux->host = host;
 	aux->port = port;
-	plist = plist_add(plist, ++pcount, (char *)aux);
+	lparents = plist_add(lparents, ++pcount, (char *)aux);
 
+	free(proxy);
 	return 1;
 }
 
@@ -246,12 +235,8 @@ int proxy_add(char *proxy, int port) {
  * Returns: 1 if OK, 0 in case of socket EOF or other error
  */
 int headers_recv(int fd, rr_data_t data) {
-#ifdef NTLM_REGEX
-	regmatch_t match[HTTP_MAXMATCH];
-#else
 	char *tok, *s3;
 	int len;
-#endif
 	char *buf;
 	char *ccode = NULL;
 	char *host = NULL;
@@ -267,7 +252,6 @@ int headers_recv(int fd, rr_data_t data) {
 	/*
 	 * Are we reading HTTP request (from client) or response (from server)?
 	 */
-#ifndef NTLM_REGEX
 	trimr(buf);
 	len = strlen(buf);
 	tok = strtok_r(buf, " ", &s3);
@@ -318,26 +302,6 @@ int headers_recv(int fd, rr_data_t data) {
 			host = substr(tok+3, 0, s3 ? s3-tok-3 : 0);
 		}
 	} else {
-#else
-	if (!regexec(&req_match, buf, HTTP_MAXMATCH, match, 0)) {
-		data->req = 1;
-		data->method = substr(buf, match[1].rm_so, match[1].rm_eo - match[1].rm_so);
-		data->url = substr(buf, match[2].rm_so, match[2].rm_eo - match[2].rm_so);
-		data->http = substr(buf, match[3].rm_so, match[3].rm_eo - match[3].rm_so);
-		if (!regexec(&url_match, data->url, HTTP_MAXMATCH, match, 0))
-			host = substr(data->url, match[2].rm_so, match[2].rm_eo - match[2].rm_so);
-		if (debug)
-			printf("HTTP request: '%s' '%s' HTTP/1.%s\n", data->method, data->url, data->http);
-	} else if (!regexec(&rep_match, buf, HTTP_MAXMATCH, match, 0)) {
-		data->req = 0;
-		data->http = substr(buf, match[1].rm_so, match[1].rm_eo - match[1].rm_so);
-		ccode = substr(buf, match[2].rm_so, match[2].rm_eo - match[2].rm_so);
-		data->msg = trimr(substr(buf, match[3].rm_so, match[3].rm_eo - match[3].rm_so));
-		data->code = atoi(ccode);
-		if (debug)
-			printf("HTTP reply: HTTP/1.%s '%d' '%s'\n", data->http, data->code, data->msg);
-	} else {
-#endif
 		syslog(LOG_ERR, "headers_recv: Unknown header (%s).\n", buf);
 		i = -1;
 		goto bailout;
@@ -363,7 +327,8 @@ bailout:
 	free(buf);
 
 	if (i <= 0) {
-		syslog(LOG_WARNING, "headers_recv: fd %d warning %d (connection closed)\n", fd, i);
+		if (debug)
+			syslog(LOG_WARNING, "headers_recv: fd %d warning %d (connection closed)\n", fd, i);
 		return 0;
 	}
 
@@ -431,7 +396,8 @@ int headers_send(int fd, rr_data_t data) {
 	free(buf);
 
 	if (i <= 0 || i != len+2) {
-		syslog(LOG_WARNING, "headers_send: fd %d warning %d (connection closed)\n", fd, i);
+		if (debug)
+			syslog(LOG_WARNING, "headers_send: fd %d warning %d (connection closed)\n", fd, i);
 		return 0;
 	}
 
@@ -457,7 +423,8 @@ int data_drop(int src, int size) {
 
 	free(buf);
 	if (i <= 0) {
-		syslog(LOG_WARNING, "data_drop: fd %d warning %d (connection closed)\n", src, i);
+		if (debug)
+			syslog(LOG_WARNING, "data_drop: fd %d warning %d (connection closed)\n", src, i);
 		return 0;
 	}
 
@@ -507,7 +474,8 @@ int data_send(int dst, int src, int size) {
 		if (i == 0 && j > 0 && (size == -1 || c == size))
 			return 1;
 
-		syslog(LOG_WARNING, "data_send: fds %d:%d warning %d (connection closed)\n", dst, src, i);
+		if (debug)
+			syslog(LOG_WARNING, "data_send: fds %d:%d warning %d (connection closed)\n", dst, src, i);
 		return 0;
 	}
 
@@ -760,7 +728,7 @@ void *process(void *client) {
 					free(tmp);
 				}
 
-				tl = sublist;
+				tl = lheaders;
 				while (tl) {
 					data[loop]->headers = hlist_mod(data[loop]->headers, tl->key, tl->value, 1);
 					tl = tl->next;
@@ -1014,48 +982,102 @@ bailout:
 	return NULL;
 }
 
-void add_tunnel(plist_t *list, char *spec, int gateway) {
-#ifdef NTLM_REGEX
-	regmatch_t match[HTTP_MAXMATCH];
-#else
-	int p, len;
-#endif
-	int i, tport;
+void proxy_add(plist_t *list, char *spec, int gateway) {
+	struct in_addr source;
+	int i, p, len, port;
 	char *tmp;
 
-#ifndef NTLM_REGEX
 	len = strlen(spec);
 	p = strcspn(spec, ":");
-	i = strcspn(spec+p+1, ":");
-	if (p != len && i != len-p-1) {
+	if (p < len-1) {
 		tmp = substr(spec, 0, p);
-		tport = atoi(tmp);
+		if (!so_resolv(&source, tmp)) {
+			syslog(LOG_ERR, "Cannot resolve listen address %s\n", tmp);
+			exit(1);
+		}
 		free(tmp);
-		tmp = substr(spec, p+1, 0);
-#else
-	if (!regexec(&tun_match, spec, HTTP_MAXMATCH, match, 0)) {
-		tmp = substr(spec, match[1].rm_so, match[1].rm_eo - match[1].rm_so);
-		tport = atoi(tmp);
-		free(tmp);
-		tmp = strdupl(spec+match[2].rm_so);
-#endif
-		i = so_listen(tport, gateway);
-		if (i > 0) {
-			*list = plist_add(*list, i, tmp);
-			if (debug)
-				printf("New tunnel on port %d to %s (fd = %d)\n", tport, tmp, i);
-		} else
-			free(tmp);
+		port = atoi(tmp = spec+p+1);
 	} else {
-		printf("Tunnel specification incorrect (lport:rserver:rport).\n");
+		source.s_addr = htonl(gateway ? INADDR_ANY : INADDR_LOOPBACK);
+		port = atoi(tmp = spec);
+	}
+
+	if (port == 0) {
+		syslog(LOG_ERR, "Invalid listen port %s.\n", tmp);
+		exit(1);
+	}
+
+	i = so_listen(port, source);
+	if (i > 0) {
+		*list = plist_add(*list, i, NULL);
+		syslog(LOG_INFO, "Proxy listening on %s:%d\n", inet_ntoa(source), port);
+	} else {
+		syslog(LOG_ERR, "Cannot bind local address %s\n", spec);
 		exit(1);
 	}
 }
 
+void tunnel_add(plist_t *list, char *spec, int gateway) {
+	struct in_addr source;
+	int i, len, count, pos, port;
+	char *field[4];
+	char *tmp;
+
+	spec = strdupl(spec);
+	len = strlen(spec);
+	field[0] = spec;
+	for (count = 1, i = 0; i < len; ++i)
+		if (spec[i] == ':') {
+			spec[i] = 0;
+			field[count++] = spec+i+1;
+		}
+
+	pos = 0;
+	if (count == 4) {
+		if (!so_resolv(&source, field[pos])) {
+                        syslog(LOG_ERR, "Cannot resolve tunel listen address: %s\n", field[pos]);
+                        exit(1);
+                }
+		pos++;
+	} else
+		source.s_addr = htonl(gateway ? INADDR_ANY : INADDR_LOOPBACK);
+
+	if (count-pos == 3) {
+		port = atoi(field[pos]);
+		if (port == 0) {
+			syslog(LOG_ERR, "Invalid tunnel local port: %s\n", field[pos]);
+			exit(1);
+		}
+
+		if (!strlen(field[pos+1]) || !strlen(field[pos+2])) {
+			syslog(LOG_ERR, "Invalid tunnel target: %s:%s\n", field[pos+1], field[pos+2]);
+			exit(1);
+		}
+
+		tmp = new(strlen(field[pos+1]) + strlen(field[pos+2]) + 2 + 1);
+		strcpy(tmp, field[pos+1]);
+		strcat(tmp, ":");
+		strcat(tmp, field[pos+2]);
+
+		i = so_listen(port, source);
+		if (i > 0) {
+			*list = plist_add(*list, i, tmp);
+			syslog(LOG_INFO, "New tunnel from %s:%d to %s\n", inet_ntoa(source), port, tmp);
+		} else
+			free(tmp);
+	} else {
+		printf("Tunnel specification incorrect ([laddress:]lport:rserver:rport).\n");
+		exit(1);
+	}
+
+	free(spec);
+}
+
 int main(int argc, char **argv) {
-	char *tmp, *head, *lport, *uid, *pidfile, *auth;
+	char *tmp, *head, *uid, *pidfile, *auth;
 	struct passwd *pw;
-	int i, fd;
+	hlist_t list;
+	int i;
 
 	int cd = 0;
 	int help = 0;
@@ -1065,26 +1087,20 @@ int main(int argc, char **argv) {
 	int gateway = 0;
 	int tc = 0;
 	int tj = 0;
-	plist_t llist = NULL;
+	plist_t ltunnel = NULL;
+	plist_t lproxy = NULL;
 	config_t cf = NULL;
-
-#ifdef NTLM_REGEX
-	regcomp(&req_match, HTTP_REQUEST, REG_EXTENDED | REG_ICASE);
-	regcomp(&rep_match, HTTP_REPLY, REG_EXTENDED | REG_ICASE);
-	regcomp(&url_match, HTTP_HOSTNAME, REG_EXTENDED | REG_ICASE);
-	regcomp(&tun_match, CMD_TUNNEL, REG_EXTENDED | REG_ICASE);
-#endif
 
 	user = new(AUTHSIZE);
 	domain = new(AUTHSIZE);
 	password = new(AUTHSIZE);
 	workstation = new(AUTHSIZE);
 	pidfile = new(AUTHSIZE);
-	lport = new(AUTHSIZE);
 	uid = new(AUTHSIZE);
 	auth = new(AUTHSIZE);
 
-	openlog("cntlm", LOG_CONS | LOG_PID, LOG_DAEMON);
+	openlog("cntlm", LOG_CONS, LOG_DAEMON);
+	syslog(LOG_INFO, "Starting cntlm version " VERSION);
 
 	while ((i = getopt(argc, argv, ":a:c:d:fgl:p:u:vw:L:P:U:")) != -1) {
 		switch (i) {
@@ -1093,7 +1109,7 @@ int main(int argc, char **argv) {
 				break;
 			case 'c':
 				if (!(cf = config_open(optarg))) {
-					fprintf(stderr, "Cannot access specified config file: %s\n", optarg);
+					syslog(LOG_ERR, "Cannot access specified config file: %s\n", optarg);
 					exit(1);
 				}
 				break;
@@ -1104,17 +1120,17 @@ int main(int argc, char **argv) {
 				debug++;
 			case 'f':
 				daemon = 0;
-				openlog("cntlm", LOG_CONS | LOG_PID | LOG_PERROR, LOG_DAEMON);
+				openlog("cntlm", LOG_CONS | LOG_PERROR, LOG_DAEMON);
 				break;
 			case 'g':
 				gateway = 1;
 				break;
 			case 'h':
 				if (head_ok(optarg))
-					sublist = hlist_add(sublist, head_name(optarg), head_value(optarg), 0, 0);
+					lheaders = hlist_add(lheaders, head_name(optarg), head_value(optarg), 0, 0);
 				break;
 			case 'l':
-				strlcpy(lport, optarg, AUTHSIZE);
+				proxy_add(&lproxy, optarg, gateway);
 				break;
 			case 'p':
 				/*
@@ -1122,7 +1138,7 @@ int main(int argc, char **argv) {
 				 * invisible in "ps", /proc, etc.
 				 */
 				strlcpy(password, optarg, AUTHSIZE);
-				for (i = strlen(optarg)-1; i >= 0; i--)
+				for (i = strlen(optarg)-1; i >= 0; --i)
 					optarg[i] = '*';
 				break;
 			case 'u':
@@ -1140,9 +1156,9 @@ int main(int argc, char **argv) {
 			case 'L':
 				/*
 				 * Parse and validate the argument using regex.
-				 * Create a listening socket and store with target to a linked list
+				 * Create a listening socket and store the target to a linked list
 				 */
-				add_tunnel(&llist, optarg, gateway);
+				tunnel_add(&ltunnel, optarg, gateway);
 				break;
 			case 'P':
 				strlcpy(pidfile, optarg, AUTHSIZE);
@@ -1161,7 +1177,7 @@ int main(int argc, char **argv) {
 	i = optind;
 	while (i < argc) {
 		tmp = strchr(argv[i], ':');
-		proxy_add(argv[i], !tmp ? atoi(argv[i+1]) : 0);
+		parent_proxy(argv[i], !tmp && i+1 < argc ? atoi(argv[i+1]) : 0);
 		i += (!tmp ? 2 : 1);
 	}
 
@@ -1175,7 +1191,7 @@ int main(int argc, char **argv) {
 			if (cf)
 				printf("Default config file opened successfully\n");
 			else
-				fprintf(stderr, "Could not open default config file\n");
+				syslog(LOG_ERR, "Could not open default config file\n");
 		}
 	}
 #endif
@@ -1186,7 +1202,12 @@ int main(int argc, char **argv) {
 	 */
 	if (cf) {
 		while ((tmp = config_pop(cf, "Tunnel"))) {
-			add_tunnel(&llist, tmp, gateway);
+			tunnel_add(&ltunnel, tmp, gateway);
+			free(tmp);
+		}
+
+		while ((tmp = config_pop(cf, "Listen"))) {
+			proxy_add(&lproxy, tmp, gateway);
 			free(tmp);
 		}
 
@@ -1197,23 +1218,22 @@ int main(int argc, char **argv) {
 		while ((tmp = config_pop(cf, "Header"))) {
 			if (head_ok(tmp)) {
 				head = head_name(tmp);
-				if (!hlist_in(sublist, head))
-					sublist = hlist_add(sublist, head_name(tmp), head_value(tmp), 0, 0);
+				if (!hlist_in(lheaders, head))
+					lheaders = hlist_add(lheaders, head_name(tmp), head_value(tmp), 0, 0);
 				free(head);
 			} else
-				fprintf(stderr, "Invalid header format: %s\n", tmp);
+				syslog(LOG_ERR, "Invalid header format: %s\n", tmp);
 
 			free(tmp);
 		}
 
 		while ((tmp = config_pop(cf, "Proxy"))) {
-			proxy_add(tmp, 0);
+			parent_proxy(tmp, 0);
 			free(tmp);
 		}
 
 		CFG_DEFAULT(cf, "Auth", domain, AUTHSIZE);
 		CFG_DEFAULT(cf, "Domain", domain, AUTHSIZE);
-		CFG_DEFAULT(cf, "Listen", lport, AUTHSIZE);
 		CFG_DEFAULT(cf, "Password", password, AUTHSIZE);
 		CFG_DEFAULT(cf, "Username", user, AUTHSIZE);
 		CFG_DEFAULT(cf, "Workstation", workstation, AUTHSIZE);
@@ -1224,11 +1244,19 @@ int main(int argc, char **argv) {
 			gateway = 1;
 		free(tmp);
 
+		list = cf->options;
+		while (list) {
+			syslog(LOG_INFO, "Ignoring option: %s\n", list->key);
+			list = list->next;
+		}
+
 		/*
 		CFG_DEFAULT(cf, "PidFile", pidfile, AUTHSIZE);
 		CFG_DEFAULT(cf, "Uid", uid, AUTHSIZE);
 		*/
 	}
+
+	config_close(cf);
 
 	/*
 	 * Any of the vital variables not set?
@@ -1240,7 +1268,7 @@ int main(int argc, char **argv) {
 			"or newer. For more information about these matters, see the file LICENSE.\n"
 			"For copyright holders of included encryption routines see headers.\n\n");
 
-		fprintf(stderr, "Usage: %s [-cdLvw] -u <user>[@<domain>] -p <pass> <proxy_host>[:]<proxy_port>\n", argv[0]);
+		fprintf(stderr, "Usage: %s [-acdfghlvwLPU] -u <user>[@<domain>] -p <pass> <proxy_host>[:]<proxy_port>\n", argv[0]);
 		fprintf(stderr, "\t-a  ntlm | nt | lm\n"
 				"\t    Authentication parameter - combined NTLM, just LM, or just NT. Default is to,\n"
 				"\t    send both, NTLM. It is the most versatile setting and likely to work for you.\n");
@@ -1254,7 +1282,7 @@ int main(int argc, char **argv) {
 		fprintf(stderr, "\t-h  \"HeaderName: value\"\n"
 				"\t    Add a header substitution. All such headers will be added/replaced"
 				"\t    in the client's requests.\n");
-		fprintf(stderr, "\t-L  <lport>:<rhost>:<rport>\n"
+		fprintf(stderr, "\t-L  [<srcaddress>:]<lport>:<rhost>:<rport>\n"
 				"\t    Forwarding/tunneling a la OpenSSH. Same syntax - listen on lport\n"
 				"\t    and forward all connections through the proxy to rhost:rport.\n"
 				"\t    Can be used for direct tunneling without corkscrew, etc.\n");
@@ -1274,8 +1302,8 @@ int main(int argc, char **argv) {
 		exit(1);
 	}
 
-	if (!strlen(user) || !strlen(password) || !strlen(domain) || !strlen(lport) || !plist) {
-		fprintf(stderr, "Incorrect setup, try %s -h\n", argv[0]);
+	if (!strlen(user) || !strlen(password) || !strlen(domain) || !lproxy | !lparents) {
+		syslog(LOG_ERR, "Incorrect setup, try %s -h\n", argv[0]);
 		exit(1);
 	}
 
@@ -1292,7 +1320,7 @@ int main(int argc, char **argv) {
 			hashnt = 0;
 			hashlm = 1;
 		} else {
-			fprintf(stderr, "Unknown NTLM auth combination.\n");
+			syslog(LOG_ERR, "Unknown NTLM auth combination.\n");
 			exit(1);
 		}
 	}
@@ -1302,17 +1330,6 @@ int main(int argc, char **argv) {
 	 */
 	if (!strlen(workstation))
 		strlcpy(workstation, user, AUTHSIZE);
-
-	/*
-	 * Bind the main port and listen; exit if error
-	 */
-	if (strlen(lport) && !atoi(lport)) {
-		fprintf(stderr, "Invalid listening port.\n");
-		exit(1);
-	}
-	fd = so_listen(strlen(lport) ? atoi(lport) : DEFAULT_PORT, gateway);
-	if (fd == -1)
-		exit(1);
 
 	/*
 	 * Ok, we are ready to rock. If daemon mode was requested,
@@ -1342,6 +1359,18 @@ int main(int argc, char **argv) {
 			if (i > 2)
 				close(i);
 		}
+	}
+
+	/*
+	 * Reinit syslog logging to include our PID, after forking
+	 * it is going to be OK
+	 */
+	if (daemon) {
+		openlog("cntlm", LOG_CONS | LOG_PID, LOG_DAEMON);
+		syslog(LOG_INFO, "Daemon ready");
+	} else {
+		openlog("cntlm", LOG_CONS | LOG_PID | LOG_PERROR, LOG_DAEMON);
+		syslog(LOG_INFO, "Cntlm ready, staying in the foreground");
 	}
 
 	/*
@@ -1396,14 +1425,11 @@ int main(int argc, char **argv) {
 		close(cd);
 	}
 
-	syslog(LOG_INFO, "Starting cntlm version " VERSION);
-
 	/*
 	 * Free already processed options.
 	 */
 	free(auth);
 	free(uid);
-	free(lport);
 
 	/*
 	 * Change the handler for signals recognized as clean shutdown.
@@ -1443,9 +1469,20 @@ int main(int argc, char **argv) {
 		int tid;
 
 		FD_ZERO(&set);
-		FD_SET(fd, &set);
 
-		t = llist;
+		/*
+		 * Watch for proxy ports.
+		 */
+		t = lproxy;
+		while (t) {
+			FD_SET(t->key, &set);
+			t = t->next;
+		}
+
+		/*
+		 * Watch for tunneled ports.
+		 */
+		t = ltunnel;
 		while (t) {
 			FD_SET(t->key, &set);
 			t = t->next;
@@ -1483,10 +1520,10 @@ int main(int argc, char **argv) {
 					pthread_attr_setstacksize(&attr, STACK_SIZE);
 					pthread_attr_setguardsize(&attr, 0);
 
-					if (i != fd) {
+					if (!plist_in(lproxy, i)) {
 						data = (struct thread_arg_s *)new(sizeof(struct thread_arg_s));
 						data->fd = cd;
-						data->target = plist_get(llist, i);
+						data->target = plist_get(ltunnel, i);
 						tid = pthread_create(&thr, &attr, autotunnel, (void *)data);
 					} else {
 						tid = pthread_create(&thr, &attr, process, (void *)cd);
@@ -1530,11 +1567,9 @@ int main(int argc, char **argv) {
 	plist_free(clist);
 	pthread_mutex_unlock(&clist_mtx);
 
-	hlist_free(sublist);
-	plist_free(llist);
-
-	config_close(cf);
-	close(fd);
+	hlist_free(lheaders);
+	plist_free(ltunnel);
+	plist_free(lproxy);
 
 	if (strlen(pidfile))
 		unlink(pidfile);
@@ -1546,16 +1581,9 @@ int main(int argc, char **argv) {
 	free(workstation);
 
 	/*
-	 * TODO: might need mutex in case of forced shutdown
+	 * Might need mutex in case of forced shutdown
 	 */
-	plist = plist_free(plist);
-
-#ifdef NTLM_REGEX
-	regfree(&req_match);
-	regfree(&rep_match);
-	regfree(&url_match);
-	regfree(&tun_match);
-#endif
+	lparents = plist_free(lparents);
 
 	exit(0);
 }

@@ -26,7 +26,7 @@
 
 extern int so_resolv(struct in_addr *host, const char *name);
 extern int so_connect(struct in_addr host, int port);
-extern int so_listen(int port, int gateway);
+extern int so_listen(int port, struct in_addr source);
 extern int so_dataready(int fd);
 extern int so_closed(int fd);
 extern int so_recvln(int fd, char **buf, int *size);

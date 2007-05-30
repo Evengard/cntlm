@@ -76,7 +76,7 @@ int so_connect(struct in_addr host, int port) {
  * Bind the specified port and listen on it.
  * Return socket descriptor if OK, otherwise 0.
  */
-int so_listen(int port, int gateway) {
+int so_listen(int port, struct in_addr source) {
 	struct sockaddr_in saddr;
 	int fd;
 	socklen_t clen;
@@ -92,7 +92,7 @@ int so_listen(int port, int gateway) {
 	memset((void *)&saddr, 0, sizeof(saddr));
 	saddr.sin_family = AF_INET;
 	saddr.sin_port = htons(port);
-	saddr.sin_addr.s_addr = htonl((gateway ? INADDR_ANY : INADDR_LOOPBACK));
+	saddr.sin_addr.s_addr = source.s_addr;
 
 	if (bind(fd, (struct sockaddr *)&saddr, sizeof(saddr))) {
 		fprintf(stderr, "Cannot bind port %d: %s!\n", port, strerror(errno));
