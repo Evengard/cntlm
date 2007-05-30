@@ -1201,6 +1201,12 @@ int main(int argc, char **argv) {
 	 * configuration.
 	 */
 	if (cf) {
+		tmp = new(AUTHSIZE);
+		CFG_DEFAULT(cf, "Gateway", tmp, AUTHSIZE);
+		if (!strcasecmp("yes", tmp))
+			gateway = 1;
+		free(tmp);
+
 		while ((tmp = config_pop(cf, "Tunnel"))) {
 			tunnel_add(&ltunnel, tmp, gateway);
 			free(tmp);
@@ -1237,12 +1243,6 @@ int main(int argc, char **argv) {
 		CFG_DEFAULT(cf, "Password", password, AUTHSIZE);
 		CFG_DEFAULT(cf, "Username", user, AUTHSIZE);
 		CFG_DEFAULT(cf, "Workstation", workstation, AUTHSIZE);
-
-		tmp = new(AUTHSIZE);
-		CFG_DEFAULT(cf, "Gateway", tmp, AUTHSIZE);
-		if (!strcasecmp("yes", tmp))
-			gateway = 1;
-		free(tmp);
 
 		list = cf->options;
 		while (list) {
