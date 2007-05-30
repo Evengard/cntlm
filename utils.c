@@ -73,7 +73,7 @@ plist_t plist_del(plist_t list, unsigned long key) {
 	plist_t ot = NULL, t = list;
 
 	while (t) {
-		if (pthread_equal(t->key, key))
+		if (t->key == key)
 			break;
 		ot = t;
 		t = t->next;
@@ -99,7 +99,7 @@ int plist_in(plist_t list, unsigned long key) {
 	plist_t t = list;
 
 	while (t) {
-		if (!pthread_equal(t->key, key))
+		if (t->key == key)
 			break;
 		t = t->next;
 	}
