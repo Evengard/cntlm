@@ -103,6 +103,19 @@ typedef struct {
 } proxy_t;
 
 /*
+ * ACL rules datatypes, the list, etc.
+ */
+enum acl_t {
+	ACL_ALLOW = 0,
+	ACL_DENY
+};
+static plist_t rules = NULL;
+typedef struct {
+	unsigned long ip;
+	int mask;
+} network_t;
+
+/*
  * List of custom header substitutions.
  */
 static hlist_t lheaders = NULL;		/* process() */
@@ -227,6 +240,46 @@ int parent_proxy(char *proxy, int port) {
 
 	free(proxy);
 	return 1;
+}
+
+void acl_add(char *spec, enum acl_t acl) {
+	struct in_addr source;
+	network_t *aux;
+	int i, mask;
+
+	spec = strdupl(spec);
+	aux = (network_t *)new(sizeof(network_t));
+	i = strcspn(spec, "/");
+	if (i < strlen(spec)) {
+		spec[i] = 0;
+		mask = atoi(spec+i+1);
+		if (mask < 0 || mask > 32) {
+			syslog(LOG_ERR, "ACL netmask for %s is invalid\n", spec);
+			free(aux);
+			free(spec);
+			return;
+		}
+	} else
+		mask = 32;
+
+	if (strcmp("*", spec)) {
+		if (!so_resolv(&source, spec)) {
+			syslog(LOG_ERR, "ACL source address %s is invalid\n", spec);
+			free(aux);
+			free(spec);
+			return;
+		}
+	} else {
+		source.s_addr = 0;
+		mask = 0;
+	}
+
+	aux->ip = source.s_addr;
+	aux->mask = mask;
+	syslog(LOG_INFO, "New ACL rule: %s %s/%d\n", (acl == ACL_ALLOW ? "allow" : "deny"), inet_ntoa(source), mask);
+	rules = plist_add(rules, acl, (char *)aux);
+
+	free(spec);
 }
 
 /*
@@ -1011,8 +1064,9 @@ void proxy_add(plist_t *list, char *spec, int gateway) {
 	if (i > 0) {
 		*list = plist_add(*list, i, NULL);
 		syslog(LOG_INFO, "Proxy listening on %s:%d\n", inet_ntoa(source), port);
-	} else
+	}/* else
 		exit(1);
+	*/
 }
 
 void tunnel_add(plist_t *list, char *spec, int gateway) {
@@ -1250,11 +1304,23 @@ int main(int argc, char **argv) {
 		/*
 		 * Single options.
 		 */
-		CFG_DEFAULT(cf, "Auth", domain, AUTHSIZE);
+		CFG_DEFAULT(cf, "Auth", auth, AUTHSIZE);
 		CFG_DEFAULT(cf, "Domain", domain, AUTHSIZE);
 		CFG_DEFAULT(cf, "Password", password, AUTHSIZE);
 		CFG_DEFAULT(cf, "Username", user, AUTHSIZE);
 		CFG_DEFAULT(cf, "Workstation", workstation, AUTHSIZE);
+
+		list = cf->options;
+		while (list) {
+			if (!(i=strcasecmp("Allow", list->key)) || !strcasecmp("Deny", list->key))
+				acl_add(list->value, i ? ACL_DENY : ACL_ALLOW);
+			list = list->next;
+		}
+
+		while ((tmp = config_pop(cf, "Allow")))
+			free(tmp);
+		while ((tmp = config_pop(cf, "Deny")))
+			free(tmp);
 
 		/*
 		 * Print out unused/unknown options.
