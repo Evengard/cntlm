@@ -47,6 +47,7 @@
 #include "socket.h"
 #include "utils.h"
 #include "ntlm.h"
+#include "swap.h"
 #include "config.h"
 
 #define DEFAULT_PORT	"3128"
@@ -103,15 +104,15 @@ typedef struct {
 } proxy_t;
 
 /*
- * ACL rules datatypes, the list, etc.
+ * ACL rule datatypes.
  */
 enum acl_t {
 	ACL_ALLOW = 0,
 	ACL_DENY
 };
-static plist_t rules = NULL;
+
 typedef struct {
-	unsigned long ip;
+	unsigned int ip;
 	int mask;
 } network_t;
 
@@ -242,44 +243,82 @@ int parent_proxy(char *proxy, int port) {
 	return 1;
 }
 
-void acl_add(char *spec, enum acl_t acl) {
+/*
+ * Add the rule spec to the ACL list.
+ */
+int acl_add(plist_t *rules, char *spec, enum acl_t acl) {
 	struct in_addr source;
 	network_t *aux;
-	int i, mask;
+	int i, mask = 32;
+	char *tmp;
+	
+	if (rules == NULL)
+		return 0;
 
 	spec = strdupl(spec);
 	aux = (network_t *)new(sizeof(network_t));
 	i = strcspn(spec, "/");
 	if (i < strlen(spec)) {
 		spec[i] = 0;
-		mask = atoi(spec+i+1);
-		if (mask < 0 || mask > 32) {
+		mask = strtol(spec+i+1, &tmp, 10);
+		if (mask < 0 || mask > 32 || spec[i+1] == 0 || *tmp != 0) {
 			syslog(LOG_ERR, "ACL netmask for %s is invalid\n", spec);
 			free(aux);
 			free(spec);
-			return;
+			return 0;
 		}
-	} else
-		mask = 32;
+	}
 
-	if (strcmp("*", spec)) {
+	if (!strcmp("*", spec)) {
+		source.s_addr = 0;
+		mask = 0;
+	} else {
 		if (!so_resolv(&source, spec)) {
 			syslog(LOG_ERR, "ACL source address %s is invalid\n", spec);
 			free(aux);
 			free(spec);
-			return;
+			return 0;
 		}
-	} else {
-		source.s_addr = 0;
-		mask = 0;
 	}
 
 	aux->ip = source.s_addr;
 	aux->mask = mask;
-	syslog(LOG_INFO, "New ACL rule: %s %s/%d\n", (acl == ACL_ALLOW ? "allow" : "deny"), inet_ntoa(source), mask);
-	rules = plist_add(rules, acl, (char *)aux);
+	mask = swap32(~(((uint64_t)1 << (32-mask)) - 1));
+	if ((source.s_addr & mask) != source.s_addr)
+		syslog(LOG_WARNING, "Subnet specification might be incorrect: %s/%d\n", inet_ntoa(source), aux->mask);
+
+	syslog(LOG_INFO, "New ACL rule: %s %s/%d\n", (acl == ACL_ALLOW ? "allow" : "deny"), inet_ntoa(source), aux->mask);
+	*rules = plist_add(*rules, acl, (char *)aux);
 
 	free(spec);
+	return 1;
+}
+
+/*
+ * Takes client IP address (network order) and walks the
+ * ACL rules until a match is found, returning ACL_ALLOW
+ * or ACL_DENY accordingly. If no rule matches, connection
+ * is allowed (such is the case with no ACLs).
+ *
+ * Proper policy should always end with a default rule,
+ * targetting either "*" or "0/0" to explicitly express
+ * one's intentions.
+ */
+enum acl_t acl_check(plist_t rules, struct in_addr naddr) {
+	network_t *aux;
+	int mask;
+
+	while (rules) {
+		aux = (network_t *)rules->aux;
+		mask = swap32(~(((uint64_t)1 << (32-aux->mask)) - 1));
+
+		if ((naddr.s_addr & mask) == (aux->ip & mask))
+			return rules->key;
+
+		rules = rules->next;
+	}
+
+	return ACL_ALLOW;
 }
 
 /*
@@ -1141,6 +1180,7 @@ int main(int argc, char **argv) {
 	int tj = 0;
 	plist_t ltunnel = NULL;
 	plist_t lproxy = NULL;
+	plist_t rules = NULL;
 	config_t cf = NULL;
 
 	user = new(AUTHSIZE);
@@ -1154,7 +1194,7 @@ int main(int argc, char **argv) {
 	openlog("cntlm", LOG_CONS, LOG_DAEMON);
 	syslog(LOG_INFO, "Starting cntlm version " VERSION);
 
-	while ((i = getopt(argc, argv, ":a:c:d:fgl:p:u:vw:L:P:U:")) != -1) {
+	while ((i = getopt(argc, argv, ":a:c:d:fgl:p:u:vw:A:D:L:P:U:")) != -1) {
 		switch (i) {
 			case 'a':
 				strlcpy(auth, optarg, AUTHSIZE);
@@ -1204,6 +1244,11 @@ int main(int argc, char **argv) {
 				break;
 			case 'w':
 				strlcpy(workstation, optarg, AUTHSIZE);
+				break;
+			case 'A':
+			case 'D':
+				if (!acl_add(&rules, optarg, (i == 'A' ? ACL_ALLOW : ACL_DENY)))
+					exit(1);
 				break;
 			case 'L':
 				/*
@@ -1313,7 +1358,8 @@ int main(int argc, char **argv) {
 		list = cf->options;
 		while (list) {
 			if (!(i=strcasecmp("Allow", list->key)) || !strcasecmp("Deny", list->key))
-				acl_add(list->value, i ? ACL_DENY : ACL_ALLOW);
+				if (!acl_add(&rules, list->value, i ? ACL_DENY : ACL_ALLOW))
+					exit(1);
 			list = list->next;
 		}
 
@@ -1342,44 +1388,50 @@ int main(int argc, char **argv) {
 	/*
 	 * Any of the vital options missing?
 	 */
-	if (help || !strlen(user) || !strlen(password) || !lparents) {
-		printf("CNTLM - Accelerating NTLM Authentication Proxy version " VERSION "\nCopyright (c) 2oo7 David Kubicek\n\n"
-			"This program comes with NO WARRANTY, to the extent permitted by law. You\n"
-			"may redistribute copies of it under the terms of the GNU GPL Version 2.1\n"
-			"or newer. For more information about these matters, see the file LICENSE.\n"
-			"For copyright holders of included encryption routines see headers.\n\n");
+	if (help || !strlen(user) || !strlen(password) || !lparents || !lproxy) {
+		if (help) {
+			printf("CNTLM - Accelerating NTLM Authentication Proxy version " VERSION "\nCopyright (c) 2oo7 David Kubicek\n\n"
+				"This program comes with NO WARRANTY, to the extent permitted by law. You\n"
+				"may redistribute copies of it under the terms of the GNU GPL Version 2.1\n"
+				"or newer. For more information about these matters, see the file LICENSE.\n"
+				"For copyright holders of included encryption routines see headers.\n\n");
 
-		fprintf(stderr, "Usage: %s [-acdfghlvwLPU] -u <user>[@<domain>] -p <pass> <proxy_host>[:]<proxy_port>\n", argv[0]);
-		fprintf(stderr, "\t-a  ntlm | nt | lm\n"
-				"\t    Authentication parameter - combined NTLM, just LM, or just NT. Default is to,\n"
-				"\t    send both, NTLM. It is the most versatile setting and likely to work for you.\n");
-		fprintf(stderr, "\t-c  <config_file>\n"
-				"\t    Configuration file. Other arguments can be used as well, overriding\n"
-				"\t    config file settings.\n");
-		fprintf(stderr, "\t-d  <domain>\n"
-				"\t    Domain/workgroup can be set separately.\n");
-		fprintf(stderr, "\t-f  Run in foreground, do not fork into daemon mode.\n");
-		fprintf(stderr, "\t-g  Gateway mode - listen on all interfaces, not only loopback.\n");
-		fprintf(stderr, "\t-h  \"HeaderName: value\"\n"
-				"\t    Add a header substitution. All such headers will be added/replaced\n"
-				"\t    in the client's requests.\n");
-		fprintf(stderr, "\t-L  [<saddr>:]<lport>:<rhost>:<rport>\n"
-				"\t    Forwarding/tunneling a la OpenSSH. Same syntax - listen on lport\n"
-				"\t    and forward all connections through the proxy to rhost:rport.\n"
-				"\t    Can be used for direct tunneling without corkscrew, etc.\n");
-		fprintf(stderr, "\t-l  [<saddr>:]<lport>\n"
-				"\t    Main listening port for the NTLM proxy.\n");
-		fprintf(stderr, "\t-P  <pidfile>\n"
-				"\t    Create a PID file upon successful start.\n");
-		fprintf(stderr, "\t-p  <password>\n"
-				"\t    Account password. Will not be visible in \"ps\", /proc, etc.\n");
-		fprintf(stderr, "\t-U  <uid>\n"
-				"\t    Run as uid. It is an important security measure not to run as root.\n");
-		fprintf(stderr, "\t-u  <user>[@<domain]\n"
-				"\t    Domain/workgroup can be set separately.\n");
-		fprintf(stderr, "\t-v  Print debugging information.\n");
-		fprintf(stderr, "\t-w  <workstation>\n"
-				"\t    Some proxies require correct NetBIOS hostname.\n\n");
+			fprintf(stderr, "Usage: %s [-acdfghlvwLPU] -u <user>[@<domain>] -p <pass> <proxy_host>[:]<proxy_port>\n", argv[0]);
+			fprintf(stderr, "\t-A  <address>[/<net>]\n"
+					"\t    New ACL allow rule. Address can be an IP or a hostname, net must be a number (CIDR notation)\n");
+			fprintf(stderr, "\t-a  ntlm | nt | lm\n"
+					"\t    Authentication parameter - combined NTLM, just LM, or just NT. Default is to,\n"
+					"\t    send both, NTLM. It is the most versatile setting and likely to work for you.\n");
+			fprintf(stderr, "\t-c  <config_file>\n"
+					"\t    Configuration file. Other arguments can be used as well, overriding\n"
+					"\t    config file settings.\n");
+			fprintf(stderr, "\t-D  <address>[/<net>]\n"
+					"\t    New ACL deny rule. Syntax same as -A.\n");
+			fprintf(stderr, "\t-d  <domain>\n"
+					"\t    Domain/workgroup can be set separately.\n");
+			fprintf(stderr, "\t-f  Run in foreground, do not fork into daemon mode.\n");
+			fprintf(stderr, "\t-g  Gateway mode - listen on all interfaces, not only loopback.\n");
+			fprintf(stderr, "\t-h  \"HeaderName: value\"\n"
+					"\t    Add a header substitution. All such headers will be added/replaced\n"
+					"\t    in the client's requests.\n");
+			fprintf(stderr, "\t-L  [<saddr>:]<lport>:<rhost>:<rport>\n"
+					"\t    Forwarding/tunneling a la OpenSSH. Same syntax - listen on lport\n"
+					"\t    and forward all connections through the proxy to rhost:rport.\n"
+					"\t    Can be used for direct tunneling without corkscrew, etc.\n");
+			fprintf(stderr, "\t-l  [<saddr>:]<lport>\n"
+					"\t    Main listening port for the NTLM proxy.\n");
+			fprintf(stderr, "\t-P  <pidfile>\n"
+					"\t    Create a PID file upon successful start.\n");
+			fprintf(stderr, "\t-p  <password>\n"
+					"\t    Account password. Will not be visible in \"ps\", /proc, etc.\n");
+			fprintf(stderr, "\t-U  <uid>\n"
+					"\t    Run as uid. It is an important security measure not to run as root.\n");
+			fprintf(stderr, "\t-u  <user>[@<domain]\n"
+					"\t    Domain/workgroup can be set separately.\n");
+			fprintf(stderr, "\t-v  Print debugging information.\n");
+			fprintf(stderr, "\t-w  <workstation>\n"
+					"\t    Some proxies require correct NetBIOS hostname.\n\n");
+		}
 
 		if (!strlen(user)) {
 			syslog(LOG_ERR, "Parent proxy username missing.\n");
@@ -1389,6 +1441,9 @@ int main(int argc, char **argv) {
 		}
 		if (!lparents) {
 			syslog(LOG_ERR, "Parent proxy address missing.\n");
+		}
+		if (!lproxy) {
+			syslog(LOG_ERR, "No proxy service ports were successfully opened.\n");
 		}
 
 		exit(1);
@@ -1417,9 +1472,6 @@ int main(int argc, char **argv) {
 	 */
 	if (!strlen(workstation))
 		strlcpy(workstation, user, AUTHSIZE);
-
-	if (!lproxy)
-		proxy_add(&lproxy, DEFAULT_PORT, gateway);
 
 	/*
 	 * Ok, we are ready to rock. If daemon mode was requested,
@@ -1601,6 +1653,15 @@ int main(int argc, char **argv) {
 					}
 
 					/*
+					 * Check main access control list.
+					 */
+					if (acl_check(rules, caddr.sin_addr) != ACL_ALLOW) {
+						syslog(LOG_WARNING, "Connection denied for %s:%d\n", inet_ntoa(caddr.sin_addr), ntohs(caddr.sin_port));
+						close(cd);
+						continue;
+					}
+
+					/*
 					 * Log peer IP if it's not localhost
 					 */
 					if (debug || (gateway && caddr.sin_addr.s_addr != htonl(INADDR_LOOPBACK)))
@@ -1660,6 +1721,7 @@ int main(int argc, char **argv) {
 	hlist_free(lheaders);
 	plist_free(ltunnel);
 	plist_free(lproxy);
+	plist_free(rules);
 
 	if (strlen(pidfile))
 		unlink(pidfile);

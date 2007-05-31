@@ -45,9 +45,6 @@
 plist_t plist_add(plist_t list, unsigned long key, char *aux) {
 	plist_t tmp, t = list;
 
-	if (!key)
-		return NULL;
-
 	tmp = malloc(sizeof(struct plist_s));
 	tmp->key = key;
 	tmp->aux = aux;
@@ -170,6 +167,21 @@ int plist_pop(plist_t *list) {
 	*list = t;
 
 	return (ok ? id : 0);
+}
+
+/*
+ * Return the number of items in a list.
+ */
+int plist_count(plist_t list) {
+	plist_t t = list;
+	int ret = 0;
+
+	while (t) {
+		ret++;
+		t = t->next;
+	}
+
+	return ret;
 }
 
 /*

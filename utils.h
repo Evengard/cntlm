@@ -77,6 +77,7 @@ extern int plist_in(plist_t list, unsigned long key);
 extern void plist_dump(plist_t list);
 extern char *plist_get(plist_t list, int key);
 extern int plist_pop(plist_t *list);
+extern int plist_count(plist_t list);
 extern plist_t plist_free(plist_t list);
 
 extern hlist_t hlist_add(hlist_t list, char *key, char *value, int allockey, int allocvalue);
