@@ -49,7 +49,7 @@
 #include "ntlm.h"
 #include "config.h"
 
-#define DEFAULT_PORT	3128
+#define DEFAULT_PORT	"3128"
 
 #define BLOCK		2048
 #define AUTHSIZE	100
@@ -90,7 +90,7 @@ static plist_t clist = NULL;
 static pthread_mutex_t clist_mtx = PTHREAD_MUTEX_INITIALIZER;
 
 /*
- * List of available proxies for proxy_connect().
+ * List of available proxies and current proxy id for proxy_connect().
  */
 static int pcount = 0;
 static int pcurr = 0;
@@ -1011,10 +1011,8 @@ void proxy_add(plist_t *list, char *spec, int gateway) {
 	if (i > 0) {
 		*list = plist_add(*list, i, NULL);
 		syslog(LOG_INFO, "Proxy listening on %s:%d\n", inet_ntoa(source), port);
-	} else {
-		syslog(LOG_ERR, "Cannot bind local address %s\n", spec);
+	} else
 		exit(1);
-	}
 }
 
 void tunnel_add(plist_t *list, char *spec, int gateway) {
@@ -1182,7 +1180,7 @@ int main(int argc, char **argv) {
 	}
 
 	/*
-	 * No configuration loaded yet? Try ".rc" file...
+	 * No configuration file yet? Load the default.
 	 */
 #ifdef SYSCONFDIR
 	if (!cf) {
@@ -1197,21 +1195,29 @@ int main(int argc, char **argv) {
 #endif
 
 	/*
-	 * If any configuration file was successfully opened, parse it and load
-	 * configuration.
+	 * If any configuration file was successfully opened, parse it.
 	 */
 	if (cf) {
+		/*
+		 * Check if gateway mode is requested before actually binding any ports.
+		 */
 		tmp = new(AUTHSIZE);
 		CFG_DEFAULT(cf, "Gateway", tmp, AUTHSIZE);
 		if (!strcasecmp("yes", tmp))
 			gateway = 1;
 		free(tmp);
 
+		/*
+		 * Setup the rest of tunnels.
+		 */
 		while ((tmp = config_pop(cf, "Tunnel"))) {
 			tunnel_add(&ltunnel, tmp, gateway);
 			free(tmp);
 		}
 
+		/*
+		 * Bind the rest of proxy service ports.
+		 */
 		while ((tmp = config_pop(cf, "Listen"))) {
 			proxy_add(&lproxy, tmp, gateway);
 			free(tmp);
@@ -1233,17 +1239,26 @@ int main(int argc, char **argv) {
 			free(tmp);
 		}
 
+		/*
+		 * Add the rest of parent proxies.
+		 */
 		while ((tmp = config_pop(cf, "Proxy"))) {
 			parent_proxy(tmp, 0);
 			free(tmp);
 		}
 
+		/*
+		 * Single options.
+		 */
 		CFG_DEFAULT(cf, "Auth", domain, AUTHSIZE);
 		CFG_DEFAULT(cf, "Domain", domain, AUTHSIZE);
 		CFG_DEFAULT(cf, "Password", password, AUTHSIZE);
 		CFG_DEFAULT(cf, "Username", user, AUTHSIZE);
 		CFG_DEFAULT(cf, "Workstation", workstation, AUTHSIZE);
 
+		/*
+		 * Print out unused/unknown options.
+		 */
 		list = cf->options;
 		while (list) {
 			syslog(LOG_INFO, "Ignoring option: %s\n", list->key);
@@ -1259,9 +1274,9 @@ int main(int argc, char **argv) {
 	config_close(cf);
 
 	/*
-	 * Any of the vital variables not set?
+	 * Any of the vital options missing?
 	 */
-	if (help) {
+	if (help || !strlen(user) || !strlen(password) || !lparents) {
 		printf("CNTLM - Accelerating NTLM Authentication Proxy version " VERSION "\nCopyright (c) 2oo7 David Kubicek\n\n"
 			"This program comes with NO WARRANTY, to the extent permitted by law. You\n"
 			"may redistribute copies of it under the terms of the GNU GPL Version 2.1\n"
@@ -1280,13 +1295,13 @@ int main(int argc, char **argv) {
 		fprintf(stderr, "\t-f  Run in foreground, do not fork into daemon mode.\n");
 		fprintf(stderr, "\t-g  Gateway mode - listen on all interfaces, not only loopback.\n");
 		fprintf(stderr, "\t-h  \"HeaderName: value\"\n"
-				"\t    Add a header substitution. All such headers will be added/replaced"
+				"\t    Add a header substitution. All such headers will be added/replaced\n"
 				"\t    in the client's requests.\n");
-		fprintf(stderr, "\t-L  [<srcaddress>:]<lport>:<rhost>:<rport>\n"
+		fprintf(stderr, "\t-L  [<saddr>:]<lport>:<rhost>:<rport>\n"
 				"\t    Forwarding/tunneling a la OpenSSH. Same syntax - listen on lport\n"
 				"\t    and forward all connections through the proxy to rhost:rport.\n"
 				"\t    Can be used for direct tunneling without corkscrew, etc.\n");
-		fprintf(stderr, "\t-l  <lport>\n"
+		fprintf(stderr, "\t-l  [<saddr>:]<lport>\n"
 				"\t    Main listening port for the NTLM proxy.\n");
 		fprintf(stderr, "\t-P  <pidfile>\n"
 				"\t    Create a PID file upon successful start.\n");
@@ -1299,16 +1314,22 @@ int main(int argc, char **argv) {
 		fprintf(stderr, "\t-v  Print debugging information.\n");
 		fprintf(stderr, "\t-w  <workstation>\n"
 				"\t    Some proxies require correct NetBIOS hostname.\n\n");
-		exit(1);
-	}
 
-	if (!strlen(user) || !strlen(password) || !strlen(domain) || !lproxy | !lparents) {
-		syslog(LOG_ERR, "Incorrect setup, try %s -h\n", argv[0]);
+		if (!strlen(user)) {
+			syslog(LOG_ERR, "Parent proxy username missing.\n");
+		}
+		if (!strlen(password)) {
+			syslog(LOG_ERR, "Parent proxy account password missing.\n");
+		}
+		if (!lparents) {
+			syslog(LOG_ERR, "Parent proxy address missing.\n");
+		}
+
 		exit(1);
 	}
 
 	/*
-	 * Setup selected NTLM hash combination
+	 * Setup selected NTLM hash combination.
 	 */
 	if (strlen(auth)) {
 		if (!strcasecmp("ntlm", auth)) {
@@ -1326,10 +1347,13 @@ int main(int argc, char **argv) {
 	}
 
 	/*
-	 * Setup default parameters
+	 * Set default values.
 	 */
 	if (!strlen(workstation))
 		strlcpy(workstation, user, AUTHSIZE);
+
+	if (!lproxy)
+		proxy_add(&lproxy, DEFAULT_PORT, gateway);
 
 	/*
 	 * Ok, we are ready to rock. If daemon mode was requested,
