@@ -1,0 +1,26 @@
+#!/bin/sh
+#
+# Postrm script for cntlm
+#
+
+set -e
+
+NAME=cntlm
+
+if [ "$1" = "purge" ]; then
+	if [ -e /usr/share/debconf/confmodule ]; then
+		. /usr/share/debconf/confmodule
+		db_purge
+	fi
+
+	# Remove SysV initscript
+	update-rc.d $NAME remove >/dev/null || true
+
+	# Remove user fetchmail
+	home=`getent passwd $NAME | cut -d : -f 6`
+	rm -f "$home/$NAME.pid" >/dev/null 2>&1 || true
+	userdel $NAME || true
+	rmdir "$home" >/dev/null 2>&1 || true
+fi
+
+exit 0

@@ -1,0 +1,15 @@
+This package was debianized by David Kubicek <dave@awk.cz> on
+Fri, 01 Jun 2007 10:46:26 +0200.
+
+It was downloaded from <http://svn.awk.cz/cntlm>
+
+Copyright: 
+
+    Copyright (C) 2007 David Kubicek
+
+License:
+
+    GNU General Public Licence Version 2
+
+The Debian packaging is (C) 2007, David Kubicek <dave@awk.cz> and
+is licensed under the GPL, see `/usr/share/common-licenses/GPL'.

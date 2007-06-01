@@ -10,7 +10,7 @@ MANDIR=/usr/local/man
 #
 CC=xlc_r
 OBJS=utils.o ntlm.o xcrypt.o config.o socket.o proxy.o
-CFLAGS=$(FLAGS) -O3 -D_POSIX_C_SOURCE=199506L -D_ISOC99_SOURCE -D_REENTRANT -DVERSION=\"0.28.1\"
+CFLAGS=$(FLAGS) -O3 -D_POSIX_C_SOURCE=199506L -D_ISOC99_SOURCE -D_REENTRANT -DVERSION=\"`cat VERSION`\"
 LDFLAGS=-lpthread
 NAME=cntlm
 

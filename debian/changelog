@@ -1,0 +1,7 @@
+cntlm (0.28.1-1) unstable; urgency=low
+
+  * Initial release
+  * Makefile adjustments regarding installation directories
+
+ -- David Kubicek <dave@awk.cz>  Fri, 01 Jun 2007 10:46:26 +0200
+

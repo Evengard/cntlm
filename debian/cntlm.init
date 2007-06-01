@@ -1,0 +1,50 @@
+#!/bin/sh
+#
+# Start/stop the cntlm proxy.
+#
+
+PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin
+DAEMON=/usr/sbin/cntlm
+NAME=cntlm
+DESC="CNTLM Authentication Proxy"
+
+# Set default values
+PIDFILE=/var/run/cntlm/cntlm.pid
+TIMEOUT=5
+RUNAS=cntlm
+
+test -x $DAEMON || exit 0
+
+set -e
+
+# Include cntlm defaults if available
+if [ -f /etc/default/cntlm ] ; then
+	. /etc/default/cntlm
+fi
+
+DAEMON_OPTS="$DAEMON_OPTS -U $RUNAS -P $PIDFILE"
+
+case "$1" in
+	start)
+		echo -n "Starting $DESC: "
+		start-stop-daemon --start --pidfile $PIDFILE --name $NAME --startas $DAEMON -- $DAEMON_OPTS
+		echo "$NAME."
+		;;
+	stop)
+		echo -n "Stopping $DESC: "
+		start-stop-daemon --stop --retry -HUP/$TIMEOUT/-HUP/2/-KILL/forever --pidfile $PIDFILE --name $NAME
+		echo "$NAME."
+		;;
+	restart|reload)
+		echo -n "Restarting $DESC: "
+		start-stop-daemon --stop --retry -HUP/$TIMEOUT/-HUP/2/-KILL/forever --pidfile $PIDFILE --name $NAME
+		start-stop-daemon --start --pidfile $PIDFILE --name $NAME --startas $DAEMON -- $DAEMON_OPTS
+		echo "$NAME."
+		;;
+	*)
+		echo "Usage: $0 {start|stop|restart|reload}" >&2
+		exit 2
+		;;
+esac
+
+exit 0

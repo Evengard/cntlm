@@ -1,0 +1,14 @@
+#!/bin/sh
+
+NAME=cntlm
+
+# Stops daemon if it is running under our control
+if [ -x /etc/init.d/$NAME ]; then
+	if [ -x /usr/sbin/invoke-rc.d ]; then
+		invoke-rc.d --quiet $NAME stop
+	else
+		/etc/init.d/$NAME stop
+	fi
+fi
+
+exit 0

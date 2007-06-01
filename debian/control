@@ -1,0 +1,17 @@
+Source: cntlm
+Section: net
+Priority: optional
+Maintainer: David Kubicek <dave@awk.cz>
+Build-Depends: debhelper (>= 5)
+Standards-Version: 3.7.2
+
+Package: cntlm
+Architecture: i386
+Depends: libc6 (>= 2.5-5)
+Replaces: ntlmaps
+Description: Fast NTLM authentication proxy with tunneling
+ Cntlm is a fast and efficient NTLM proxy, with support for TCP/IP tunneling,
+ authenticated connection caching, ACLs, proper daemon logging and behaviour
+ and much more. It has up to ten times faster responses than similar NTLM
+ proxies, while using by orders or magnitude less RAM and CPU. Manual page 
+ contains detailed information.
