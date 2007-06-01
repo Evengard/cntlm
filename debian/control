@@ -6,7 +6,7 @@ Build-Depends: debhelper (>= 5)
 Standards-Version: 3.7.2
 
 Package: cntlm
-Architecture: i386
+Architecture: any
 Depends: libc6 (>= 2.5-5)
 Replaces: ntlmaps
 Description: Fast NTLM authentication proxy with tunneling

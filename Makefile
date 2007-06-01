@@ -20,14 +20,14 @@ $(NAME): $(OBJS)
 
 install: $(NAME)
 	if [ -f /usr/bin/oslevel ]; then \
-		install -O root -G system -M 0755 -S -f $(BINDIR) $(NAME); \
-		install -O root -G system -M 0644 -f $(MANDIR)/man1 doc/$(NAME).1; \
-		install -O root -G system -M 0600 -c $(SYSCONFDIR) doc/$(NAME).conf; \
+		install -O root -G system -M 755 -S -f $(BINDIR) $(NAME); \
+		install -O root -G system -M 644 -f $(MANDIR)/man1 doc/$(NAME).1; \
+		install -O root -G system -M 600 -c $(SYSCONFDIR) doc/$(NAME).conf; \
 	else \
-		install -D -o root -g root -m 0755 -s $(NAME) $(BINDIR)/$(NAME); \
-		install -D -o root -g root -m 0644 doc/$(NAME).1 $(MANDIR)/man1/$(NAME).1; \
+		install -D -o root -g root -m 755 -s $(NAME) $(BINDIR)/$(NAME); \
+		install -D -o root -g root -m 644 doc/$(NAME).1 $(MANDIR)/man1/$(NAME).1; \
 		[ -f $(SYSCONFDIR)/$(NAME).conf -o -z "$(SYSCONFDIR)" ] \
-			|| install -D -o root -g root -m 0600 doc/$(NAME).conf $(SYSCONFDIR)/$(NAME).conf; \
+			|| install -D -o root -g root -m 600 doc/$(NAME).conf $(SYSCONFDIR)/$(NAME).conf; \
 	fi
 
 uninstall:

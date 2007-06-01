@@ -1,5 +1,32 @@
-Installation
-~~~~~~~~~~~~
+Installation using packages
+~~~~~~~~~~~~~~~~~~~~~~~~~~~
+You can use the integration with the Debian packaging system or install cntlm
+the traditional way. To build a debian package, go the source directory and
+type as root:
+
+# debian/rules binary
+
+or if you don't have the root access, use fakeroot:
+
+$ fakeroot debian/rules binary
+
+When everything is finished, you should have a new .deb package ready in the
+parent directory. To install the .deb file use:
+
+# dpkg -i cntlm_X.XX-X_arch.deb
+
+Upon installation, the package takes care of creating a dedicated user for
+cntlm, init script integration, manages eventual configuration file updates
+with new upstream versions, things like restart of the daemon after future
+updates, etc. You can later revert all these changes with one command, should
+you decide to remove cntlm from your system. Basic "apt-get remove" keeps your
+configuration file intact, so you can easily reinstall cntlm when you've grown
+older and wiser. :) Alternatively, you can get rid of everything using "apt-get
+--purge remove".
+
+
+Traditional installation
+~~~~~~~~~~~~~~~~~~~~~~~~
 First, you have to compile cntlm. Using the Makefile, this should be very easy:
 
 $ make

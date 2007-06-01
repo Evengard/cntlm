@@ -1,7 +1,13 @@
+cntlm (0.29-1) unstable; urgency=low
+
+  * New upstream version
+
+ -- David Kubicek <dave@awk.cz>  Fri, 01 Jun 2007 17:41:23 +0200
+
 cntlm (0.28.1-1) unstable; urgency=low
 
   * Initial release
   * Makefile adjustments regarding installation directories
 
- -- David Kubicek <dave@awk.cz>  Fri, 01 Jun 2007 10:46:26 +0200
+ -- David Kubicek <dave@awk.cz>  Fri, 01 Jun 2007 17:36:34 +0200
 

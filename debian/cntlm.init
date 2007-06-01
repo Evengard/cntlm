@@ -15,8 +15,6 @@ RUNAS=cntlm
 
 test -x $DAEMON || exit 0
 
-set -e
-
 # Include cntlm defaults if available
 if [ -f /etc/default/cntlm ] ; then
 	. /etc/default/cntlm
@@ -24,22 +22,36 @@ fi
 
 DAEMON_OPTS="$DAEMON_OPTS -U $RUNAS -P $PIDFILE"
 
+function start {
+	echo -n "Starting $DESC: "
+	start-stop-daemon --oknodo --quiet --start --pidfile $PIDFILE --name $NAME --startas $DAEMON -- $DAEMON_OPTS
+	if [ $? -eq 0 ]; then
+		echo "$NAME."
+	else
+		echo "failed!"
+	fi
+}
+
+function stop {
+	echo -n "Stopping $DESC: "
+	start-stop-daemon --oknodo --quiet --stop --retry -HUP/$TIMEOUT/-HUP/2/-KILL/forever --pidfile $PIDFILE --name $NAME
+	if [ $? -eq 0 ]; then
+		echo "$NAME."
+	else
+		echo "failed!"
+	fi
+}
+
 case "$1" in
 	start)
-		echo -n "Starting $DESC: "
-		start-stop-daemon --start --pidfile $PIDFILE --name $NAME --startas $DAEMON -- $DAEMON_OPTS
-		echo "$NAME."
+		start
 		;;
 	stop)
-		echo -n "Stopping $DESC: "
-		start-stop-daemon --stop --retry -HUP/$TIMEOUT/-HUP/2/-KILL/forever --pidfile $PIDFILE --name $NAME
-		echo "$NAME."
+		stop
 		;;
 	restart|reload)
-		echo -n "Restarting $DESC: "
-		start-stop-daemon --stop --retry -HUP/$TIMEOUT/-HUP/2/-KILL/forever --pidfile $PIDFILE --name $NAME
-		start-stop-daemon --start --pidfile $PIDFILE --name $NAME --startas $DAEMON -- $DAEMON_OPTS
-		echo "$NAME."
+		stop
+		start
 		;;
 	*)
 		echo "Usage: $0 {start|stop|restart|reload}" >&2

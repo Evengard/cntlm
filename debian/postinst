@@ -15,11 +15,9 @@ fi
 
 if ! [ -d $HOME ]; then
 	mkdir -p $HOME
+	chmod 755 $HOME
+	chown -h -R $NAME:nogroup $HOME
 fi
-
-chmod 600 /etc/$NAME.conf
-chmod 700 $HOME
-chown -h -R $NAME:nogroup $HOME
 
 if [ -x /etc/init.d/$NAME ]; then
 	update-rc.d $NAME defaults 99 15 >/dev/null
