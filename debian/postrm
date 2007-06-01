@@ -8,13 +8,13 @@ set -e
 NAME=cntlm
 
 if [ "$1" = "purge" ]; then
-	if [ -e /usr/share/debconf/confmodule ]; then
-		. /usr/share/debconf/confmodule
-		db_purge
-	fi
+	#if [ -e /usr/share/debconf/confmodule ]; then
+	#	. /usr/share/debconf/confmodule
+	#	db_purge
+	#fi
 
 	# Remove SysV initscript
-	update-rc.d $NAME remove >/dev/null || true
+	#update-rc.d $NAME remove >/dev/null || true
 
 	# Remove user fetchmail
 	home=`getent passwd $NAME | cut -d : -f 6`
@@ -23,4 +23,8 @@ if [ "$1" = "purge" ]; then
 	rmdir "$home" >/dev/null 2>&1 || true
 fi
 
-exit 0
+# Automatically added by dh_installinit
+if [ "$1" = "purge" ] ; then
+	update-rc.d cntlm remove >/dev/null || exit $?
+fi
+# End automatically added section

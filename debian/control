@@ -7,7 +7,7 @@ Standards-Version: 3.7.2
 
 Package: cntlm
 Architecture: any
-Depends: libc6 (>= 2.5-5)
+Depends: adduser, libc6 (>= 2.5-5)
 Replaces: ntlmaps
 Description: Fast NTLM authentication proxy with tunneling
  Cntlm is a fast and efficient NTLM proxy, with support for TCP/IP tunneling,

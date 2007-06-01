@@ -19,14 +19,13 @@ if ! [ -d $HOME ]; then
 	chown -h -R $NAME:nogroup $HOME
 fi
 
-if [ -x /etc/init.d/$NAME ]; then
-	update-rc.d $NAME defaults 99 15 >/dev/null
-
-	if [ -x /usr/sbin/invoke-rc.d ]; then
-		invoke-rc.d --quiet $NAME start || true
+# Automatically added by dh_installinit
+if [ -x "/etc/init.d/cntlm" ]; then
+	update-rc.d cntlm defaults >/dev/null
+	if [ -x "`which invoke-rc.d 2>/dev/null`" ]; then
+		invoke-rc.d cntlm start || exit $?
 	else
-		/etc/init.d/$NAME start || true
+		/etc/init.d/cntlm start || exit $?
 	fi
 fi
-
-exit 0
+# End automatically added section

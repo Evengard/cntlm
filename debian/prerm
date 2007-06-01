@@ -11,4 +11,12 @@ if [ -x /etc/init.d/$NAME ]; then
 	fi
 fi
 
-exit 0
+# Automatically added by dh_installinit
+if [ -x "/etc/init.d/cntlm" ]; then
+	if [ -x "`which invoke-rc.d 2>/dev/null`" ]; then
+		invoke-rc.d cntlm stop || exit $?
+	else
+		/etc/init.d/cntlm stop || exit $?
+	fi
+fi
+# End automatically added section

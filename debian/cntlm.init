@@ -1,6 +1,23 @@
 #!/bin/sh
 #
-# Start/stop the cntlm proxy.
+### BEGIN INIT INFO
+# Provides:          cntlm
+# Required-Start:    $syslog $time
+# Required-Stop:     $syslog $time
+# Default-Start:     2 3 4 5
+# Default-Stop:      0 1 6
+# Short-Description: Authenticating HTTP accelerator for NTLM secured proxies
+# Description:       Cntlm is meant to be given your proxy address and becomming
+#                    the primary proxy then, listening on a selected local port. 
+#                    You point all your proxy-aware programs to it and don't ever
+#                    have to deal with proxy authentication again.
+### END INIT INFO
+#
+# DAEMON             Location of the binary
+# PIDFILE            Make sure that you or, if used, -U uid can create/write it
+# TIMEOUT            How long to wait for active connections to finish before 
+#                    forcing cntlm to stop with a second signal 
+# RUNAS              Name or number of the non-privileged account to run as
 #
 
 PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin
@@ -15,7 +32,7 @@ RUNAS=cntlm
 
 test -x $DAEMON || exit 0
 
-# Include cntlm defaults if available
+# Include custom values if available
 if [ -f /etc/default/cntlm ] ; then
 	. /etc/default/cntlm
 fi
@@ -49,12 +66,12 @@ case "$1" in
 	stop)
 		stop
 		;;
-	restart|reload)
+	restart|reload|force-reload)
 		stop
 		start
 		;;
 	*)
-		echo "Usage: $0 {start|stop|restart|reload}" >&2
+		echo "Usage: $0 {start|stop|restart|reload|force-reload}" >&2
 		exit 2
 		;;
 esac
