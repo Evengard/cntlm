@@ -1,13 +1,13 @@
 #! /bin/sh /usr/share/dpatch/dpatch-run
-## 01-make.dpatch by  <dave@awk.cz>
+## 01-make.dpatch by David Kubicek <dave@awk.cz>
 ##
 ## All lines beginning with `## DP:' are a description of the patch.
 ## DP: Change installation paths in Makefile
 
 @DPATCH@
-
---- cntlm-0.28.1.orig/Makefile
-+++ cntlm-0.28.1/Makefile
+diff -urNad cntlm~/Makefile cntlm/Makefile
+--- cntlm~/Makefile	2007-06-01 19:01:11.000000000 +0200
++++ cntlm/Makefile	2007-06-01 19:16:12.000000000 +0200
 @@ -2,9 +2,9 @@
  # You can tweak these three variables to make things install where you
  # like, but do not touch more unless you know what you are doing. ;)

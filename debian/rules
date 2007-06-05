@@ -28,16 +28,15 @@ configure-stamp:
 
 build: build-stamp
 
-build-stamp: configure-stamp 
+build-stamp: patch configure-stamp 
 	dh_testdir
 
 	# Add here commands to compile the package.
-	dpatch apply-all
 	$(MAKE)
 
 	touch $@
 
-clean:
+clean: unpatch
 	dh_testdir
 	dh_testroot
 	rm -f build-stamp configure-stamp
@@ -87,6 +86,12 @@ binary-arch: build install
 	dh_gencontrol
 	dh_md5sums
 	dh_builddeb
+
+patch:
+	dpatch apply-all
+
+unpatch:
+	dpatch deapply-all
 
 binary: binary-indep binary-arch
 .PHONY: build clean binary-indep binary-arch binary install configure
