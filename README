@@ -1,5 +1,8 @@
 Installation using packages
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+*** DEBIAN PACKAGES ***
+
 You can use the integration with the Debian packaging system or install cntlm
 the traditional way. To build a debian package, go the source directory and
 type as root:
@@ -23,6 +26,48 @@ you decide to remove cntlm from your system. Basic "apt-get remove" keeps your
 configuration file intact, so you can easily reinstall cntlm when you've grown
 older and wiser. :) Alternatively, you can get rid of everything using "apt-get
 --purge remove".
+
+
+*** RPM FROM SCRATCH ***
+
+To build an RPM package from scratch, as root change to
+/usr/src/[redhat|rpm|whatever]/SOURCES
+
+copy there all files from cntlm's rpm/ directory plus appropriate version of
+the source tar.gz and type:
+
+# rpmbuild -ba cntlm.spec
+
+Shortly after, you'll have source and binary RPMs ready in your ../SRPMS, resp.
+../RPMS directories.
+
+
+*** RPM FROM *.SRC.RPM ***
+
+If you just want to create a binary package from src.rpm, as root type:
+
+# rpmbuild --rebuild pkgname.src.rpm
+
+Resulting binary RPM will be at /usr/src/..../RPMS
+
+
+*** BUILDING RPM WITHOUT ROOT PRIVILEGES ****
+
+1) Install "fakeroot" utility
+2) Create and change to the main rpm directory, say /home/user/rpm/
+3) Create rpm db subdirectories: BUILD, RPMS, SOURCES, SPECS, SRPMS
+4) Create/edit your ~/.rpmmacros and append the following:
+%_builddir      %{_topdir}/BUILD
+%_rpmdir        %{_topdir}/RPMS
+%_sourcedir     %{_topdir}/SOURCES
+%_specdir       %{_topdir}/SPECS
+%_srcrpmdir     %{_topdir}/SRPMS
+%_topdir        /home/user/rpm
+
+The rest is the same, go to SOURCES, SRPMS, etc. When you want to run rpmbuild, 
+use the same command, but prepend fakeroot; like this:
+
+$ fakeroot rpmbuild -ba cntlm.spec
 
 
 Traditional installation

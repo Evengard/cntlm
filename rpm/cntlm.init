@@ -1,0 +1,82 @@
+#!/bin/sh
+#
+# cntlmd: Start/stop the cntlm proxy.
+#
+# chkconfig:  2345 26 89 
+# Description:       Cntlm is meant to be given your proxy address and becomming
+#                    the primary proxy then, listening on a selected local port. 
+#                    You point all your proxy-aware programs to it and don't ever
+#                    have to deal with proxy authentication again.
+#
+## BEGIN INIT INFO
+# Provides:          cntlm
+# Required-Start:    $syslog $time
+# Required-Stop:     $syslog $time
+# Default-Start:     2 3 4 5
+# Default-Stop:      0 1 6
+# Short-Description: Authenticating HTTP accelerator for NTLM secured proxies
+# Description:       Cntlm is meant to be given your proxy address and becomming
+#                    the primary proxy then, listening on a selected local port. 
+#                    You point all your proxy-aware programs to it and don't ever
+#                    have to deal with proxy authentication again.
+### END INIT INFO
+#
+
+# Source function library.
+. /etc/rc.d/init.d/functions
+
+# Source networking configuration.
+[ -r /etc/sysconfig/network ] && . /etc/sysconfig/network
+
+# Check that networking is up.
+[ ${NETWORKING} = "no" ] && exit 0
+
+[ -r /etc/sysconfig/cntlmd ] && . /etc/sysconfig/cntlmd
+
+RETVAL=0
+
+test -f $DAEMON  || exit 0
+
+start() {
+		# Start daemons.
+		echo -n "Starting $DESC: "
+		daemon cntlm $OPTARGS
+		RETVAL=$?
+		echo
+		[ $RETVAL -eq 0 ] && touch $LOCKFILE
+		return $RETVAL
+}
+
+stop() {
+		echo -n "Shutting down $DESC: "
+		killproc cntlm
+		RETVAL=$?
+		echo
+		[ $RETVAL -eq 0 ] && rm -f $LOCKFILE
+}
+
+
+# See how we were called.
+case "$1" in
+  start)
+        start
+        ;;
+  stop)
+        stop
+        ;;
+  status)
+        status cntlm
+        RETVAL=$?
+        ;;
+  restart|reload)
+        stop
+        start
+        RETVAL=$?
+        ;;
+  *)
+        echo $"Usage: $0 {start|stop|restart|status}"
+        exit 1
+esac
+
+exit $RETVAL
+

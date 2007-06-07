@@ -1,0 +1,15 @@
+#
+# DAEMON             Location of the binary
+# PIDFILE            Make sure that you or, if used, -U uid can create/write it
+# TIMEOUT            How long to wait before forcing cntlm to stop with a second
+#                    signal when active connections are still not finished
+# RUNAS              Name or number of the non-privileged account to run as
+#
+
+DAEMON=/usr/sbin/cntlm
+PIDFILE=/var/run/cntlm/cntlmd.pid
+LOCKFILE=/var/lock/subsys/cntlmd
+TIMEOUT=5
+RUNAS=cntlm
+DESC="CNTLM Authentication Proxy"
+OPTARGS="-U $RUNAS -P $PIDFILE"
