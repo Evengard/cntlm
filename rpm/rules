@@ -1,0 +1,42 @@
+#!/bin/sh
+#
+# Usage: rules [binary|clean]
+#
+
+if [ ! -f VERSION -o ! -f Makefile ]; then
+	echo "This command must be run from the main source directory!" >&2
+	exit 1
+fi
+
+RC=~/.rpmmacros
+RPMS="BUILD RPMS SOURCES SPECS SRPMS tmp"
+DIR=`pwd`/tmp
+NAME=cntlm-`cat VERSION`
+
+if [ "$1" = "binary" ]; then
+	cp $RC $RC.tmp$$ 2>/dev/null			# Save originam rpm configuration
+	cat > $RC << _EOF_
+%_builddir      %{_topdir}/BUILD
+%_rpmdir        %{_topdir}/RPMS
+%_sourcedir     %{_topdir}/SOURCES
+%_specdir       %{_topdir}/SPECS
+%_srcrpmdir     %{_topdir}/SRPMS
+%_topdir        $DIR
+_EOF_
+
+	for i in $RPMS; do mkdir -p $DIR/$i; done	# Create new rpm build structure
+	TMP=`pwd`
+	ln -s $TMP $DIR/tmp/$NAME			# Generate source .tar.gz
+	tar zchf $DIR/SOURCES/$NAME.tar.gz --exclude .svn --exclude tmp -C $DIR/tmp $NAME
+	cp rpm/cntlm.* $DIR/SOURCES/			# Prepare build environment
+
+	rpmbuild -ba $DIR/SOURCES/cntlm.spec		# Build RPM and copy to current dir
+	cp $DIR/SRPMS/*rpm . 2>/dev/null
+	cp $DIR/RPMS/*/cntlm*rpm . 2>/dev/null
+
+	rm -f $RC					# In case it didn't exist before
+	mv $RC.tmp$$ $RC 2>/dev/null			# mv wouldn't overwrite it, there'd be no source
+elif [ "$1" = "clean" ]; then
+	for i in $RPMS; do rm -rf $DIR/$i; done	# Clean the whole mess, keep packages
+	rmdir $DIR 2>/dev/null
+fi
