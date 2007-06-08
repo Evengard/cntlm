@@ -30,29 +30,34 @@ install: $(NAME)
 			|| install -D -o root -g root -m 600 doc/$(NAME).conf $(SYSCONFDIR)/$(NAME).conf; \
 	fi
 
-rpm: clean
+rpm:
 	if [ `id -u` = 0 ]; then \
-		rpm/rules binary; \
-		rpm/rules clean; \
+		redhat/rules binary; \
 	else \
-		fakeroot rpm/rules binary; \
-		fakeroot rpm/rules clean; \
+		fakeroot redhat/rules binary; \
 	fi
 
-deb: clean
+deb:
 	if [ `id -u` = 0 ]; then \
 		debian/rules binary; \
-		debian/rules clean; \
 	else \
 		fakeroot debian/rules binary; \
-		fakeroot debian/rules clean; \
 	fi
 
 uninstall:
 	rm -f $(BINDIR)/$(NAME) $(MANDIR)/man1/$(NAME).1 2>/dev/null || true
 
 clean:
-	rm -f *.o tags cntlm pid massif* callgrind* *.rpm *.deb 2>/dev/null
+	rm -f *.o tags cntlm pid massif* callgrind* 2>/dev/null
+
+distclean: clean
+	if [ `id -u` = 0 ]; then \
+		debian/rules clean; \
+		redhat/rules clean; \
+	else \
+		fakeroot debian/rules clean; \
+		fakeroot redhat/rules clean; \
+	fi
 
 proxy.o: proxy.c
 	if [ -z "$(SYSCONFDIR)" ]; then \

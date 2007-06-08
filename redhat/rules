@@ -28,7 +28,7 @@ _EOF_
 	TMP=`pwd`
 	ln -s $TMP $DIR/tmp/$NAME			# Generate source .tar.gz
 	tar zchf $DIR/SOURCES/$NAME.tar.gz --exclude .svn --exclude tmp -C $DIR/tmp $NAME
-	cp rpm/cntlm.* $DIR/SOURCES/			# Prepare build environment
+	cp redhat/cntlm.* $DIR/SOURCES/			# Prepare build environment
 
 	rpmbuild -ba $DIR/SOURCES/cntlm.spec		# Build RPM and copy to current dir
 	cp $DIR/SRPMS/*rpm . 2>/dev/null

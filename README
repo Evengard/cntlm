@@ -52,11 +52,11 @@ NOT package installation. To install you packages, you have to be real root.
 
 	As root:
 
-	# rpm/build binary
+	# redhat/build binary
 
 	of as an unprivileged user:
 
-	$ fakeroot rpm/build binary
+	$ fakeroot redhat/build binary
 
 	Either way, packages will then be in your current directory.
 
@@ -65,7 +65,7 @@ NOT package installation. To install you packages, you have to be real root.
 	To build an RPM package from scratch, as root change to
 	/usr/src/[redhat|rpm|whatever]/SOURCES
 
-	Copy there all files from cntlm's rpm/ directory plus appropriate version of
+	Copy there all files from cntlm's redhat/ directory plus appropriate version of
 	the source tar.gz and type:
 
 	# rpmbuild -ba cntlm.spec
