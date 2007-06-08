@@ -1347,6 +1347,24 @@ int main(int argc, char **argv) {
 		}
 
 		/*
+		 * No ACLs on the command line? Use config file.
+		 */
+		if (rules == NULL) {
+			list = cf->options;
+			while (list) {
+				if (!(i=strcasecmp("Allow", list->key)) || !strcasecmp("Deny", list->key))
+					if (!acl_add(&rules, list->value, i ? ACL_DENY : ACL_ALLOW))
+						exit(1);
+				list = list->next;
+			}
+
+			while ((tmp = config_pop(cf, "Allow")))
+				free(tmp);
+			while ((tmp = config_pop(cf, "Deny")))
+				free(tmp);
+		}
+
+		/*
 		 * Single options.
 		 */
 		CFG_DEFAULT(cf, "Auth", auth, AUTHSIZE);
@@ -1355,25 +1373,12 @@ int main(int argc, char **argv) {
 		CFG_DEFAULT(cf, "Username", user, AUTHSIZE);
 		CFG_DEFAULT(cf, "Workstation", workstation, AUTHSIZE);
 
-		list = cf->options;
-		while (list) {
-			if (!(i=strcasecmp("Allow", list->key)) || !strcasecmp("Deny", list->key))
-				if (!acl_add(&rules, list->value, i ? ACL_DENY : ACL_ALLOW))
-					exit(1);
-			list = list->next;
-		}
-
-		while ((tmp = config_pop(cf, "Allow")))
-			free(tmp);
-		while ((tmp = config_pop(cf, "Deny")))
-			free(tmp);
-
 		/*
 		 * Print out unused/unknown options.
 		 */
 		list = cf->options;
 		while (list) {
-			syslog(LOG_INFO, "Ignoring option: %s\n", list->key);
+			syslog(LOG_INFO, "Ignoring config file option: %s\n", list->key);
 			list = list->next;
 		}
 

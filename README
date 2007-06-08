@@ -123,8 +123,8 @@ Make sure all of them are compiled with this option:
 $ make clean
 $ FLAGS=-DNTLM_BIG_ENDIAN make
 
-With incorrect endianness specification cntlm compiles seemingly OK, but any
-network communication will malfunction (most notably NTLM authentication).
+With incorrect endianness cntlm compiles seemingly OK, but any network
+communication will malfunction (most notably NTLM authentication).
 
 
 Compilers
