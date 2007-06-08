@@ -24,6 +24,7 @@ trap restorerc INT					# Make sure we don't destroy original rc file
 
 if [ "$1" = "binary" ]; then
 	make clean
+	rm -f cntlm*.rpm 2>/dev/null
 	cp $RC $RC.tmp$$ 2>/dev/null			# Save originam rpm configuration
 	cat >> $RC << _EOF_
 %_builddir      %{_topdir}/BUILD
@@ -36,9 +37,9 @@ _EOF_
 
 	for i in $RPMS; do mkdir -p $DIR/$i; done	# Create new rpm build structure
 	TMP=`pwd`
-	rm $DIR/tmp/$NAME 2>/dev/null
+	rm -f $DIR/tmp/$NAME 2>/dev/null
 	ln -s $TMP $DIR/tmp/$NAME			# Generate source .tar.gz
-	tar zchf $DIR/SOURCES/$NAME.tar.gz --exclude .svn --exclude tmp -C $DIR/tmp $NAME
+	sed "s/^\./$NAME/" doc/files.txt | tar zchf $DIR/SOURCES/$NAME.tar.gz --no-recursion -C $DIR/tmp -T -
 	cp redhat/cntlm.* $DIR/SOURCES/			# Prepare build environment
 
 	rpmbuild -ba $DIR/SOURCES/cntlm.spec		# Build RPM and copy to current dir
