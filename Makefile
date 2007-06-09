@@ -14,6 +14,8 @@ OBJS=utils.o ntlm.o xcrypt.o config.o socket.o proxy.o
 CFLAGS=$(FLAGS) -Wall -pedantic -O3 -D_POSIX_C_SOURCE=199506L -D_ISOC99_SOURCE -D_REENTRANT -DVERSION=\"`cat VERSION`\"
 LDFLAGS=-lpthread
 NAME=cntlm
+VER=`cat VERSION`
+DIR=`pwd`
 
 $(NAME): $(OBJS)
 	$(CC) $(CFLAGS) -o $@ $(OBJS) $(LDFLAGS)
@@ -43,6 +45,14 @@ deb:
 	else \
 		fakeroot debian/rules binary; \
 	fi
+
+tgz:
+	mkdir -p tmp
+	rm -f tmp/$(NAME)-$(VER)
+	ln -s $(DIR) tmp/$(NAME)-$(VER)
+	sed "s/^\./$(NAME)-$(VER)/" doc/files.txt | tar zchf $(NAME)-$(VER).tar.gz --no-recursion -C tmp -T -
+	rm tmp/$(NAME)-$(VER)
+	rmdir tmp 2>/dev/null || true
 
 uninstall:
 	rm -f $(BINDIR)/$(NAME) $(MANDIR)/man1/$(NAME).1 2>/dev/null || true
