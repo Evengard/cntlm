@@ -15,5 +15,5 @@ Description: Fast NTLM authentication proxy with tunneling
  and much more. It has up to ten times faster responses than similar NTLM
  proxies, while using by orders or magnitude less RAM and CPU. Manual page 
  contains detailed information.
-
+ .
  See http://cntlm.sourceforge.net/
