@@ -341,6 +341,9 @@ int headers_recv(int fd, rr_data_t data) {
 	if (i <= 0)
 		goto bailout;
 
+	if (debug)
+		printf("HEAD: %s\n", buf);
+
 	/*
 	 * Are we reading HTTP request (from client) or response (from server)?
 	 */
@@ -915,7 +918,8 @@ void *process(void *client) {
 
 				tmp = hlist_get(data[loop]->headers, "Content-Length");
 				if (!nobody && tmp == NULL && (hlist_in(data[loop]->headers, "Content-Type")
-						|| hlist_in(data[loop]->headers, "Transfer-Encoding"))) {
+						|| hlist_in(data[loop]->headers, "Transfer-Encoding")
+						|| data[1]->code == 200)) {
 					i = -1;
 					if (debug) {
 						printf("*************************\n");
