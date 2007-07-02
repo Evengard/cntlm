@@ -1,3 +1,11 @@
+cntlm (0.31) unstable; urgency=low
+
+  * New upstream release
+  * Important feature added for HTTP/1.1 clients - chunked TE
+  * Major fix for FTP downloads (some didn't work at all)
+
+ -- David Kubicek <dave@awk.cz>  Mon, 02 Jul 2007 19:54:39 +0200
+
 cntlm (0.30-1) unstable; urgency=low
 
   * New upstream release
