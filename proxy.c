@@ -578,6 +578,63 @@ int data_send(int dst, int src, int size) {
 }
 
 /*
+ * Forward "size" of data from "src" to "dst". If size == -1 then keep
+ * forwarding until src reaches EOF.
+ */
+int chunked_data_send(int dst, int src) {
+	char *buf;
+	int bsize;
+	int i, csize;
+
+	char *err = NULL;
+
+	bsize = BUFSIZE;
+	buf = new(bsize);
+
+	do {
+		i = so_recvln(src, &buf, &bsize);
+		if (i <= 0) {
+			err = NULL;
+			break;
+		}
+
+		/* printf("Line: %s\n", buf); */
+		csize = strtol(buf, &err, 16);
+		/* printf("strtol: %d (%x) - err: %s\n", csize, csize, err); */
+		if (*err != '\r') {
+			err = NULL;
+			break;
+		}
+
+		if (debug) {
+			if (csize) {
+				printf("chunk: %d\n", csize);
+			} else {
+				printf("last chunk: %d\n", csize);
+			}
+		}
+
+		write(dst, buf, strlen(buf));
+		if (csize)
+			data_send(dst, src, csize);
+
+		i = read(src, buf, 2);
+		write(dst, buf, i);
+
+	} while (csize != 0);
+
+	free(buf);
+
+	if (err == NULL) {
+		if (debug)
+			syslog(LOG_WARNING, "chunked_data_send: fds %d:%d warning %d (connection closed)\n", dst, src, i);
+		return 0;
+	}
+
+	return 1;
+}
+
+/*
  * Full-duplex forwarding between proxy and client descriptors.
  * Used for the HTTP CONNECT method.
  */
@@ -739,7 +796,7 @@ int authenticate(int sd, rr_data_t data) {
  */
 void *process(void *client) {
 	int *rsocket[2], *wsocket[2];
-	int i, loop, nobody, keep;
+	int i, loop, nobody, keep, chunked;
 	rr_data_t data[2];
 	hlist_t tl;
 	char *tmp;
@@ -786,6 +843,7 @@ void *process(void *client) {
 		rsocket[1] = wsocket[0] = &sd;
 
 		keep = 0;
+		chunked = 0;
 
 		for (loop = 0; loop < 2; loop++) {
 			if (debug) {
@@ -890,7 +948,7 @@ void *process(void *client) {
 				/*
 				 * Was the request first and did we authenticated with proxy?
 				 * Remember not to authenticate this connection any more, should
-				 * it be keep-alive reused for more client requests.
+				 * it be reused for future client requests.
 				 */
 				if (!authok && data[1]->code != 407)
 					authok = 1;
@@ -933,22 +991,46 @@ void *process(void *client) {
 					i = (tmp == NULL || nobody ? 0 : atol(tmp));
 
 				if (i) {
-					if (debug)
-						printf("Body included. Lenght: %d\n", i);
-
 					/*
 					 * Not all data transfered to the client. Close proxy connection as it
 					 * might contain unspecified amount of unread data.
 					 */
-					if (!data_send(*wsocket[loop], *rsocket[loop], i)) {
+					tmp = hlist_get(data[loop]->headers, "Transfer-Encoding");
+					if (tmp) {
+						tmp = strdupl(tmp);
+						lowercase(tmp);
+						if (strstr(tmp, "chunked"))
+							chunked = 1;
+					}
+
+					if (chunked) {
 						if (debug)
-							printf("Could not send whole body\n");
-						close(sd);
-						free_rr_data(data[0]);
-						free_rr_data(data[1]);
-						goto bailout;
-					} else if (debug) {
-						printf("Body sent.\n");
+							printf("Chunked body included.\n");
+
+						if (!chunked_data_send(*wsocket[loop], *rsocket[loop])) {
+							if (debug)
+								printf("Could not chunk send whole body\n");
+							close(sd);
+							free_rr_data(data[0]);
+							free_rr_data(data[1]);
+							goto bailout;
+						} else if (debug) {
+							printf("Chunked body sent.\n");
+						}
+					} else {
+						if (debug)
+							printf("Body included. Lenght: %d\n", i);
+
+						if (!data_send(*wsocket[loop], *rsocket[loop], i)) {
+							if (debug)
+								printf("Could not send whole body\n");
+							close(sd);
+							free_rr_data(data[0]);
+							free_rr_data(data[1]);
+							goto bailout;
+						} else if (debug) {
+							printf("Body sent.\n");
+						}
 					}
 				} else if (debug)
 					printf("No body.\n");
