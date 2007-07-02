@@ -49,6 +49,7 @@
 #include "ntlm.h"
 #include "swap.h"
 #include "config.h"
+#include "acl.h"
 
 #define DEFAULT_PORT	"3128"
 
@@ -102,19 +103,6 @@ typedef struct {
 	struct in_addr host;
 	int port;
 } proxy_t;
-
-/*
- * ACL rule datatypes.
- */
-enum acl_t {
-	ACL_ALLOW = 0,
-	ACL_DENY
-};
-
-typedef struct {
-	unsigned int ip;
-	int mask;
-} network_t;
 
 /*
  * List of custom header substitutions.
@@ -241,84 +229,6 @@ int parent_proxy(char *proxy, int port) {
 
 	free(proxy);
 	return 1;
-}
-
-/*
- * Add the rule spec to the ACL list.
- */
-int acl_add(plist_t *rules, char *spec, enum acl_t acl) {
-	struct in_addr source;
-	network_t *aux;
-	int i, mask = 32;
-	char *tmp;
-	
-	if (rules == NULL)
-		return 0;
-
-	spec = strdupl(spec);
-	aux = (network_t *)new(sizeof(network_t));
-	i = strcspn(spec, "/");
-	if (i < strlen(spec)) {
-		spec[i] = 0;
-		mask = strtol(spec+i+1, &tmp, 10);
-		if (mask < 0 || mask > 32 || spec[i+1] == 0 || *tmp != 0) {
-			syslog(LOG_ERR, "ACL netmask for %s is invalid\n", spec);
-			free(aux);
-			free(spec);
-			return 0;
-		}
-	}
-
-	if (!strcmp("*", spec)) {
-		source.s_addr = 0;
-		mask = 0;
-	} else {
-		if (!so_resolv(&source, spec)) {
-			syslog(LOG_ERR, "ACL source address %s is invalid\n", spec);
-			free(aux);
-			free(spec);
-			return 0;
-		}
-	}
-
-	aux->ip = source.s_addr;
-	aux->mask = mask;
-	mask = swap32(~(((uint64_t)1 << (32-mask)) - 1));
-	if ((source.s_addr & mask) != source.s_addr)
-		syslog(LOG_WARNING, "Subnet specification might be incorrect: %s/%d\n", inet_ntoa(source), aux->mask);
-
-	syslog(LOG_INFO, "New ACL rule: %s %s/%d\n", (acl == ACL_ALLOW ? "allow" : "deny"), inet_ntoa(source), aux->mask);
-	*rules = plist_add(*rules, acl, (char *)aux);
-
-	free(spec);
-	return 1;
-}
-
-/*
- * Takes client IP address (network order) and walks the
- * ACL rules until a match is found, returning ACL_ALLOW
- * or ACL_DENY accordingly. If no rule matches, connection
- * is allowed (such is the case with no ACLs).
- *
- * Proper policy should always end with a default rule,
- * targetting either "*" or "0/0" to explicitly express
- * one's intentions.
- */
-enum acl_t acl_check(plist_t rules, struct in_addr naddr) {
-	network_t *aux;
-	int mask;
-
-	while (rules) {
-		aux = (network_t *)rules->aux;
-		mask = swap32(~(((uint64_t)1 << (32-aux->mask)) - 1));
-
-		if ((naddr.s_addr & mask) == (aux->ip & mask))
-			return rules->key;
-
-		rules = rules->next;
-	}
-
-	return ACL_ALLOW;
 }
 
 /*
@@ -843,7 +753,6 @@ void *process(void *client) {
 		rsocket[1] = wsocket[0] = &sd;
 
 		keep = 0;
-		chunked = 0;
 
 		for (loop = 0; loop < 2; loop++) {
 			if (debug) {
@@ -856,6 +765,8 @@ void *process(void *client) {
 				free_rr_data(data[1]);
 				goto bailout;
 			}
+
+			chunked = 0;
 
 			if (debug)
 				hlist_dump(data[loop]->headers);

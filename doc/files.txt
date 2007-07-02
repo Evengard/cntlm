@@ -4,6 +4,8 @@
 ./Makefile.xlc
 ./README
 ./VERSION
+./acl.c
+./acl.h
 ./config.c
 ./config.h
 ./ntlm.c

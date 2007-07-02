@@ -10,18 +10,18 @@
 
 .SH DESCRIPTION
 \fBCntlm\fP is an authenticating proxy for HTTP communication. It takes the
-address of your proxies (\fIhost1..N\fP and \fIport1..N\fP) as a parameter and
-opens a listening socket, forwarding each request to it (moving in a circular
-list if the active parent proxy stops working). Along the way, the forwarded
-connection is created anew and authenticated or, if available, previously
-cached connection is reused to achieve higher efficiency and faster responses.
-When the chain is set up, \fBcntlm\fP is to be used as the primary proxy in
-your applications. \fBCntlm\fP also itegrates transparent TCP/IP port
-forwarding (tunneling) through the parent proxy (incl. authentication). Each
-tunnel opens a new listening socket on the specified local port and forwards
-all TCP/IP connections to the given host:port behind the secondary proxy.
-Manual page explains how to setup \fBcntlm\fP properly using configuration file
-or command\-line arguments.
+address of your proxy or proxies (\fIhost1..N\fP and \fIport1..N\fP) as a
+parameter and opens a listening socket, forwarding each request to one of them
+(moving in a circular list if the active parent proxy stops working). Along the
+way, the forwarded connection is created anew and authenticated or, if
+available, previously cached connection is reused to achieve higher efficiency
+and faster responses.  When the chain is set up, \fBcntlm\fP is to be used as
+the primary proxy in your applications. \fBCntlm\fP also itegrates transparent
+TCP/IP port forwarding (tunneling) through the parent proxy (incl.
+authentication). Each tunnel opens a new listening socket on the specified
+local port and forwards all TCP/IP connections to the given host:port behind
+the secondary proxy.  Manual page explains how to setup \fBcntlm\fP properly
+using configuration file or command\-line arguments.
 
 .PP
 Apparently, the authentication part is similar to NTLMAPS, but \fBcntlm\fP
