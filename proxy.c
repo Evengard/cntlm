@@ -501,6 +501,7 @@ int chunked_data_send(int dst, int src) {
 	bsize = BUFSIZE;
 	buf = new(bsize);
 
+	/* Take care of all chunks */
 	do {
 		i = so_recvln(src, &buf, &bsize);
 		if (i <= 0) {
@@ -508,10 +509,25 @@ int chunked_data_send(int dst, int src) {
 			break;
 		}
 
-		/* printf("Line: %s\n", buf); */
+		if (debug)
+			printf("Line: %s\n", buf);
+
+		/*
+		printf("*buf = ");
+		for (i = 0; i < 100; i++) {
+			printf("%02x ", buf[i]);
+			if (i % 8 == 7)
+				printf("\n       ");
+		}
+		printf("\n");
+		*/
+
 		csize = strtol(buf, &err, 16);
-		/* printf("strtol: %d (%x) - err: %s\n", csize, csize, err); */
-		if (*err != '\r') {
+
+		if (debug)
+			printf("strtol: %d (%x) - err: %s\n", csize, csize, err);
+
+		if (*err != '\r' && *err != '\n' && *err != ';' && *err != ' ' && *err != '\t') {
 			err = NULL;
 			break;
 		}
@@ -526,12 +542,17 @@ int chunked_data_send(int dst, int src) {
 
 		write(dst, buf, strlen(buf));
 		if (csize)
-			data_send(dst, src, csize);
-
-		i = read(src, buf, 2);
-		write(dst, buf, i);
+			data_send(dst, src, csize+2);
 
 	} while (csize != 0);
+
+	/* Take care of possible trailer */
+	do {
+		i = so_recvln(src, &buf, &bsize);
+		if (debug)
+			printf("Trailer header: %s", buf);
+		write(dst, buf, strlen(buf));
+	} while (buf[0] != '\r' && buf[0] != '\n');
 
 	free(buf);
 
