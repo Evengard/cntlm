@@ -35,15 +35,19 @@ install: $(NAME)
 rpm:
 	if [ `id -u` = 0 ]; then \
 		redhat/rules binary; \
+		redhat/rules clean; \
 	else \
 		fakeroot redhat/rules binary; \
+		fakeroot redhat/rules clean; \
 	fi
 
 deb:
 	if [ `id -u` = 0 ]; then \
 		debian/rules binary; \
+		debian/rules clean; \
 	else \
 		fakeroot debian/rules binary; \
+		fakeroot debian/rules clean; \
 	fi
 
 tgz:

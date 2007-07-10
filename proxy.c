@@ -77,6 +77,7 @@ static int hashlm = 1;
 
 static int quit = 0;			/* sighandler() */
 static int debug = 0;			/* all info printf's */
+static int daemon = 1;			/* myexit() */
 
 /*
  * List of finished threads. Each thread process() adds itself to it when
@@ -119,6 +120,13 @@ void sighandler(int p) {
 		syslog(LOG_INFO, "Signal %d received, forcing shutdown\n", p);
 
 	quit++;
+}
+
+void myexit(int rc) {
+	if (rc)
+		fprintf(stderr, "Exitting with error. Check daemon logs or run with -v.\n");
+	
+	exit(rc);
 }
 
 /*
@@ -1103,7 +1111,7 @@ void proxy_add(plist_t *list, char *spec, int gateway) {
 		tmp = substr(spec, 0, p);
 		if (!so_resolv(&source, tmp)) {
 			syslog(LOG_ERR, "Cannot resolve listen address %s\n", tmp);
-			exit(1);
+			myexit(1);
 		}
 		free(tmp);
 		port = atoi(tmp = spec+p+1);
@@ -1114,7 +1122,7 @@ void proxy_add(plist_t *list, char *spec, int gateway) {
 
 	if (port == 0) {
 		syslog(LOG_ERR, "Invalid listen port %s.\n", tmp);
-		exit(1);
+		myexit(1);
 	}
 
 	i = so_listen(port, source);
@@ -1145,7 +1153,7 @@ void tunnel_add(plist_t *list, char *spec, int gateway) {
 	if (count == 4) {
 		if (!so_resolv(&source, field[pos])) {
                         syslog(LOG_ERR, "Cannot resolve tunel listen address: %s\n", field[pos]);
-                        exit(1);
+                        myexit(1);
                 }
 		pos++;
 	} else
@@ -1155,12 +1163,12 @@ void tunnel_add(plist_t *list, char *spec, int gateway) {
 		port = atoi(field[pos]);
 		if (port == 0) {
 			syslog(LOG_ERR, "Invalid tunnel local port: %s\n", field[pos]);
-			exit(1);
+			myexit(1);
 		}
 
 		if (!strlen(field[pos+1]) || !strlen(field[pos+2])) {
 			syslog(LOG_ERR, "Invalid tunnel target: %s:%s\n", field[pos+1], field[pos+2]);
-			exit(1);
+			myexit(1);
 		}
 
 		tmp = new(strlen(field[pos+1]) + strlen(field[pos+2]) + 2 + 1);
@@ -1176,7 +1184,7 @@ void tunnel_add(plist_t *list, char *spec, int gateway) {
 			free(tmp);
 	} else {
 		printf("Tunnel specification incorrect ([laddress:]lport:rserver:rport).\n");
-		exit(1);
+		myexit(1);
 	}
 
 	free(spec);
@@ -1192,7 +1200,6 @@ int main(int argc, char **argv) {
 	int help = 0;
 	int nuid = 0;
 	int ngid = 0;
-	int daemon = 1;
 	int gateway = 0;
 	int tc = 0;
 	int tj = 0;
@@ -1220,7 +1227,7 @@ int main(int argc, char **argv) {
 			case 'c':
 				if (!(cf = config_open(optarg))) {
 					syslog(LOG_ERR, "Cannot access specified config file: %s\n", optarg);
-					exit(1);
+					myexit(1);
 				}
 				break;
 			case 'd':
@@ -1266,7 +1273,7 @@ int main(int argc, char **argv) {
 			case 'A':
 			case 'D':
 				if (!acl_add(&rules, optarg, (i == 'A' ? ACL_ALLOW : ACL_DENY)))
-					exit(1);
+					myexit(1);
 				break;
 			case 'L':
 				/*
@@ -1372,7 +1379,7 @@ int main(int argc, char **argv) {
 			while (list) {
 				if (!(i=strcasecmp("Allow", list->key)) || !strcasecmp("Deny", list->key))
 					if (!acl_add(&rules, list->value, i ? ACL_DENY : ACL_ALLOW))
-						exit(1);
+						myexit(1);
 				list = list->next;
 			}
 
@@ -1432,6 +1439,8 @@ int main(int argc, char **argv) {
 					"\t    New ACL deny rule. Syntax same as -A.\n");
 			fprintf(stderr, "\t-d  <domain>\n"
 					"\t    Domain/workgroup can be set separately.\n");
+			fprintf(stderr, "\t-F  <profile>\n"
+					"\t    Select an alternative profile.\n");
 			fprintf(stderr, "\t-f  Run in foreground, do not fork into daemon mode.\n");
 			fprintf(stderr, "\t-g  Gateway mode - listen on all interfaces, not only loopback.\n");
 			fprintf(stderr, "\t-h  \"HeaderName: value\"\n"
@@ -1469,7 +1478,7 @@ int main(int argc, char **argv) {
 			syslog(LOG_ERR, "No proxy service ports were successfully opened.\n");
 		}
 
-		exit(1);
+		myexit(1);
 	}
 
 	/*
@@ -1486,7 +1495,7 @@ int main(int argc, char **argv) {
 			hashlm = 1;
 		} else {
 			syslog(LOG_ERR, "Unknown NTLM auth combination.\n");
-			exit(1);
+			myexit(1);
 		}
 	}
 
@@ -1509,9 +1518,9 @@ int main(int argc, char **argv) {
 		i = fork();
 		if (i == -1) {
 			perror("Fork into background failed");		/* fork failed */
-			exit(1);
+			myexit(1);
 		} else if (i)
-			exit(0);					/* parent */
+			myexit(0);					/* parent */
 
 		setsid();
 		umask(0);
@@ -1543,20 +1552,20 @@ int main(int argc, char **argv) {
 	 */
 	if (strlen(uid)) {
 		if (getuid() && geteuid()) {
-			syslog(LOG_ERR, "Not running with root privileges; cannot change uid\n");
+			syslog(LOG_WARNING, "No root privileges; keeping identity %d:%d\n", getuid(), getgid());
 		} else {
 			if (isdigit(uid[0])) {
 				nuid = atoi(uid);
 				ngid = nuid;
 				if (nuid <= 0) {
 					syslog(LOG_ERR, "Numerical uid parameter invalid\n");
-					exit(1);
+					myexit(1);
 				}
 			} else {
 				pw = getpwnam(uid);
 				if (!pw || !pw->pw_uid) {
 					syslog(LOG_ERR, "Username uid parameter invalid\n");
-					exit(1);
+					myexit(1);
 				}
 				nuid = pw->pw_uid;
 				ngid = pw->pw_gid;
@@ -1566,7 +1575,7 @@ int main(int argc, char **argv) {
 			syslog(LOG_INFO, "Changing uid:gid to %d:%d - %s\n", nuid, ngid, strerror(errno));
 			if (i) {
 				syslog(LOG_ERR, "Terminating\n");
-				exit(1);
+				myexit(1);
 			}
 		}
 	}
@@ -1580,7 +1589,7 @@ int main(int argc, char **argv) {
 		cd = open(pidfile, O_WRONLY | O_CREAT | O_TRUNC, 0644);
 		if (cd < 0) {
 			syslog(LOG_ERR, "Error creating a new PID file\n");
-			exit(1);
+			myexit(1);
 		}
 
 		tmp = new(50);

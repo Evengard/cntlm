@@ -41,7 +41,7 @@ DAEMON_OPTS="$DAEMON_OPTS -U $RUNAS -P $PIDFILE"
 
 function start {
 	echo -n "Starting $DESC: "
-	start-stop-daemon --oknodo --quiet --start --pidfile $PIDFILE --name $NAME --startas $DAEMON -- $DAEMON_OPTS
+	start-stop-daemon --oknodo --quiet --start --pidfile $PIDFILE --name $NAME --startas $DAEMON -- $DAEMON_OPTS 2>/dev/null
 	if [ $? -eq 0 ]; then
 		echo "$NAME."
 	else
@@ -51,7 +51,7 @@ function start {
 
 function stop {
 	echo -n "Stopping $DESC: "
-	start-stop-daemon --oknodo --quiet --stop --retry -HUP/$TIMEOUT/-HUP/2/-KILL/forever --pidfile $PIDFILE --name $NAME
+	start-stop-daemon --oknodo --quiet --stop --retry -HUP/$TIMEOUT/-HUP/2/-KILL/forever --pidfile $PIDFILE --name $NAME 2>/dev/null
 	if [ $? -eq 0 ]; then
 		echo "$NAME."
 	else
