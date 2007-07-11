@@ -40,7 +40,7 @@ test -f $DAEMON  || exit 0
 start() {
 		# Start daemons.
 		echo -n "Starting $DESC: "
-		daemon cntlm $OPTARGS
+		daemon cntlm $OPTARGS 2>/dev/null
 		RETVAL=$?
 		echo
 		[ $RETVAL -eq 0 ] && touch $LOCKFILE

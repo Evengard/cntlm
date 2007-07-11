@@ -107,6 +107,24 @@ a good support in client applications, but if there's solid ground to support
 new authentication scheme implementation (like really \fBmany\fP ppl begging
 and stuff:)), I don't see why not.
 
+.TP
+.B \-B
+This option enables the "NTLM-to-basic" feature, which allows you to keep your
+credentials super-secret or to use one \fBcntlm\fP for multiple users. The
+basic idea is that you don't store the user/password info in the configuration
+file (without this option, \fBcntlm\fP wouldn't startup), but pass it in using
+the widely supported "Basic" authentication scheme in HTTP protocol (e.g.
+password popup in the browser). This allows many people to use one \fBcntlm\fP,
+BUT on the downside, it removes the convenient "authentication behind the
+scenes" feature, which normally gives you Internet access without being
+bothered by any password dialogs.
+
+IMPORTANT: HTTP protocol obviously has means to negotiate authorization before
+letting you through, but TCP/IP doesn't (tunneling/port forwarding). If you use
+NTLM-to-basic and DON'T specify any username/password in the configuration
+file, you are bound to loose tunneling features, because \fBcntlm\fP alone
+won't know your credentials.
+
 .TP 
 .B \-c <filename>
 Configuration file. Command\-line arguments can be used in combination with
@@ -284,6 +302,10 @@ proxies. Should one proxy fail, \fBcntlm\fP automatically moves on to the
 next one. The connect request fails only if the whole list of proxies is
 scanned and (for each request) and found to be invalid. Command\-line takes
 precedence over the configuration file.
+
+.TP
+.B NTLMToBasic yes|no
+Enable/disable NTLM-to-basic authenticatoin. See \fB-B\fP for more.
 
 .TP
 .B Tunnel [<saddr>:]<lport>:<rhost>:<rport>
