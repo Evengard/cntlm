@@ -64,6 +64,9 @@ uninstall:
 clean:
 	rm -f *.o tags cntlm pid massif* callgrind* 2>/dev/null
 
+cleanp:
+	rm -f *.deb *.tgz *.tar.gz *.rpm *.o tags cntlm pid massif* callgrind* 2>/dev/null
+
 distclean: clean
 	if [ `id -u` = 0 ]; then \
 		debian/rules clean; \

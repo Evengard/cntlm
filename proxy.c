@@ -78,7 +78,7 @@ static int hashlm = 1;
 static int quit = 0;			/* sighandler() */
 static int debug = 0;			/* all info printf's */
 static int daemon = 1;			/* myexit() */
-static int basic = 1;			/* process() */
+static int basic = 0;			/* process() */
 
 /*
  * List of finished threads. Each thread process() adds itself to it when
@@ -748,8 +748,8 @@ void *process(void *client) {
 	int i, loop, nobody, keep, chunked;
 	rr_data_t data[2];
 	hlist_t tl;
-	char *tmp, *buf, *pos;
-	char *puser, *ppass;
+	char *tmp, *buf, *pos, *dom;
+	char *puser, *ppass, *pdomain;				/* Per-thread credentials; for NTLM-to-basic */
 
 	int cd = (int)client;
 	int authok = 0;
@@ -775,6 +775,13 @@ void *process(void *client) {
 
 	puser = new(AUTHSIZE);
 	ppass = new(AUTHSIZE);
+	pdomain = new(AUTHSIZE);
+
+	strlcpy(pdomain, domain, AUTHSIZE);
+	if (!basic) {
+		strlcpy(puser, user, AUTHSIZE);
+		strlcpy(ppass, password, AUTHSIZE);
+	}
 
 	if (sd <= 0)
 		goto bailout;
@@ -800,7 +807,7 @@ void *process(void *client) {
 
 		for (loop = 0; loop < 2; loop++) {
 			if (debug) {
-				printf("\n******* Round %d C: %d, S: %d*******!\n", loop+1, cd, sd);
+				printf("\n******* Round %d C: %d, S: %d *******!\n", loop+1, cd, sd);
 				printf("Reading headers...\n");
 			}
 			if (!headers_recv(*rsocket[loop], data[loop])) {
@@ -830,7 +837,7 @@ void *process(void *client) {
 					from_base64(buf, tmp+i);
 					if (debug)
 						printf("NTLM-to-basic: Received client credentials.\n");
-					pos = strrchr(buf, ':');
+					pos = strchr(buf, ':');
 				}
 
 				if (pos == NULL) {
@@ -851,10 +858,16 @@ void *process(void *client) {
 					free_rr_data(data[1]);
 					goto bailout;
 				} else {
-					strlcpy(puser, buf, MIN(AUTHSIZE, pos-buf+1));
+					dom = strchr(buf, '\\');
+					if (dom == NULL) {
+						strlcpy(puser, buf, MIN(AUTHSIZE, pos-buf+1));
+					} else {
+						strlcpy(pdomain, buf, MIN(AUTHSIZE, dom-buf+1));
+						strlcpy(puser, dom+1, MIN(AUTHSIZE, pos-dom));
+					}
 					strlcpy(ppass, pos+1, AUTHSIZE);
 					if (debug)
-						printf("NTLM-to-basic: Credentials parsed: %s/%s\n", puser, ppass);
+						printf("NTLM-to-basic: Credentials parsed: %s\\%s:%s at %s\n", pdomain, puser, ppass, workstation);
 					free(buf);
 				}
 			} else if (loop && basic && data[loop]->code == 407) {
@@ -905,7 +918,7 @@ void *process(void *client) {
 			 * Got request from client and connection is not yet authenticated?
 			 */
 			if (!loop && data[0]->req && !authok) {
-				if (!(i = authenticate(*wsocket[0], data[0], puser, ppass, domain)))
+				if (!(i = authenticate(*wsocket[0], data[0], puser, ppass, pdomain)))
 					syslog(LOG_ERR, "Authentication requests failed. Will try without.\n");
 
 				if (!i || so_closed(sd)) {
@@ -1056,6 +1069,7 @@ void *process(void *client) {
 bailout:
 	free(puser);
 	free(ppass);
+	free(pdomain);
 
 	if (debug)
 		printf("\nThread finished.\n");
@@ -1299,7 +1313,7 @@ int main(int argc, char **argv) {
 	openlog("cntlm", LOG_CONS, LOG_DAEMON);
 	syslog(LOG_INFO, "Starting cntlm version " VERSION);
 
-	while ((i = getopt(argc, argv, ":-:a:c:d:fgl:p:u:vw:A:B:D:L:P:U:")) != -1) {
+	while ((i = getopt(argc, argv, ":-:a:c:d:fgl:p:u:vw:A:BD:L:P:U:")) != -1) {
 		switch (i) {
 			case 'a':
 				strlcpy(auth, optarg, AUTHSIZE);
@@ -1594,7 +1608,7 @@ int main(int argc, char **argv) {
 	 * Set default values.
 	 */
 	if (!strlen(workstation))
-		strlcpy(workstation, user, AUTHSIZE);
+		strlcpy(workstation, "cntlm", AUTHSIZE);
 
 	/*
 	 * Ok, we are ready to rock. If daemon mode was requested,

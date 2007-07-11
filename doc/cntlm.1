@@ -111,19 +111,30 @@ and stuff:)), I don't see why not.
 .B \-B
 This option enables the "NTLM-to-basic" feature, which allows you to keep your
 credentials super-secret or to use one \fBcntlm\fP for multiple users. The
-basic idea is that you don't store the user/password info in the configuration
-file (without this option, \fBcntlm\fP wouldn't startup), but pass it in using
-the widely supported "Basic" authentication scheme in HTTP protocol (e.g.
-password popup in the browser). This allows many people to use one \fBcntlm\fP,
-BUT on the downside, it removes the convenient "authentication behind the
-scenes" feature, which normally gives you Internet access without being
-bothered by any password dialogs.
+basic idea is that you don't have to store the username and the password in the
+config file (normally, \fBcntlm\fP won't run without them if you don't enable
+NTLM-to-basic), but rather pass it using the widely supported "Basic" proxy
+authentication scheme (e.g. via the browser's window). This allows more people
+to use one \fBcntlm\fP, BUT there is a downside to this: it removes the
+convenient "authentication behind the scenes" feature, which normally gives you
+Internet access without being bothered by any password dialogs.
 
 IMPORTANT: HTTP protocol obviously has means to negotiate authorization before
-letting you through, but TCP/IP doesn't (tunneling/port forwarding). If you use
-NTLM-to-basic and DON'T specify any username/password in the configuration
+letting you through, but TCP/IP doesn't (i.e. open port is open port). If you
+use NTLM-to-basic and DON'T specify some username/password in the configuration
 file, you are bound to loose tunneling features, because \fBcntlm\fP alone
-won't know your credentials.
+won't know your credentials. If you enable NTLM-to-basic and setup credentials
+in the configuration for you to be able to use local tunneling, the proxying
+feature will work as if it didn't know the password. All users will be prompted
+for their personal credentials the first time they try to use the proxy.
+
+Because NTLM identification has at least three parts (username, password,
+domain) and the basic authentication provides fields for only two (username,
+password), you have to smuggle the domain part somewhere. You can set the
+\fBDomain\fP config/cmd-line parameter, which will then be used for all users,
+who don't specify their domain as a part of the username. To do that and
+override the global domain setting, use this instead of plain username in the
+password dialog: "domain\\username".
 
 .TP 
 .B \-c <filename>
