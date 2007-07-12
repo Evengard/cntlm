@@ -1,3 +1,14 @@
+cntlm (0.32-1) unstable; urgency=low
+
+  * New upstream relase
+  * Error message on stderr if start is not successful (was only error return code)
+  * Updated init scripts not to display possible error message (uses only RC)
+  * Feature req #1751349 implemented: NTLM-to-basic with multiuser support
+        - can detect wrong password, allowing multiple tries without browser restart
+        - builtin "access denied" page
+
+ -- David Kubicek <dave@awk.cz>  Thu, 12 Jul 2007 16:23:20 +0200
+
 cntlm (0.31.1-1) unstable; urgency=low
 
   * New upstream release

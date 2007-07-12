@@ -1,6 +1,6 @@
 Summary:        Fast NTLM authentication proxy with tunneling
 Name:           cntlm
-Version:        0.31.1
+Version:        0.32
 Release:        1%{?dist}
 License:        GNU GPL V2
 Group:          System Environment/Daemons
@@ -70,6 +70,8 @@ rm -rf %{_sysconfdir}/cntlm.conf
 /usr/sbin/userdel -r cntlm 2>/dev/null || :
 
 %changelog
+* Mon May 30 2007 Since 0.28 maintained by <dave@awk.cz>
+
 * Mon May 28 2007 Radislav Vrnata <vrnata at gedas.cz>
 - Version 0.27
 - First release
