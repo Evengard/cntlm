@@ -46,7 +46,7 @@ NOT package installation. To install you packages, you have to be real root.
 1) For the impatient:
 
 	$ make rpm			# you'll need root privs. or fakeroot utility
-	# rpm -i cntlm*.rpm
+	# rpm -i cntlm-X.XX-{arch}.rpm
 
 2) Detailed howto (or if make rpm doesn't work for you)
 
@@ -73,6 +73,9 @@ NOT package installation. To install you packages, you have to be real root.
 	Shortly after, you'll have source and binary RPMs ready in your ../SRPMS, resp.
 	../RPMS directories.
 
+	If your build cannot find the default config file in /etc, you probably have
+	broken RPM build environment. You should add this to your ~/.rpmmacros:
+	%_sysconfdir	/etc
 
 *** RPM FROM *.SRC.RPM ***
 
@@ -81,6 +84,10 @@ NOT package installation. To install you packages, you have to be real root.
 	# rpmbuild --rebuild pkgname.src.rpm
 
 	Resulting binary RPM will be at /usr/src/..../RPMS
+
+	If your build cannot find the default config file in /etc, you probably have
+	broken RPM build environment. You should add this to your ~/.rpmmacros:
+	%_sysconfdir	/etc
 
 
 Traditional installation
