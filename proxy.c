@@ -1229,11 +1229,6 @@ void tunnel_add(plist_t *list, char *spec, int gateway) {
 	char *field[4];
 	char *tmp;
 
-	if (!strlen(user) || !strlen(password)) {
-		syslog(LOG_ERR, "Cannot build tunnel when no global username/password defined\n");
-		myexit(1);
-	}
-
 	spec = strdupl(spec);
 	len = strlen(spec);
 	field[0] = spec;
