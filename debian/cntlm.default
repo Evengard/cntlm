@@ -1,3 +1,0 @@
-# Additional options that are passed to the Daemon.
-TIMEOUT=5
-RUNAS=cntlm
