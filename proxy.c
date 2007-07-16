@@ -1326,7 +1326,7 @@ int main(int argc, char **argv) {
 				strlcpy(domain, optarg, AUTHSIZE);
 				break;
 			case 'v':
-				debug++;
+				debug = 1;
 			case 'f':
 				daemon = 0;
 				openlog("cntlm", LOG_CONS | LOG_PERROR, LOG_DAEMON);
@@ -1801,7 +1801,9 @@ int main(int argc, char **argv) {
 
 					pthread_attr_init(&attr);
 					pthread_attr_setstacksize(&attr, STACK_SIZE);
+#ifndef __CYGWIN__
 					pthread_attr_setguardsize(&attr, 0);
+#endif
 
 					if (!plist_in(lproxy, i)) {
 						data = (struct thread_arg_s *)new(sizeof(struct thread_arg_s));
