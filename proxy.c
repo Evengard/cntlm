@@ -77,8 +77,9 @@ static int hashlm = 1;
 
 static int quit = 0;			/* sighandler() */
 static int debug = 0;			/* all info printf's */
-static int daemon = 1;			/* myexit() */
+static int asdaemon = 1;		/* myexit() */
 static int basic = 0;			/* process() */
+static int forced_basic = 0;
 
 /*
  * List of finished threads. Each thread process() adds itself to it when
@@ -824,8 +825,10 @@ void *process(void *client) {
 
 			/*
 			 * NTLM-to-Basic implementation
+			 * Switch to this mode automatically if the config-file
+			 * supplied credentials don't work.
 			 */
-			if (!loop && basic) {
+			if (!loop && (basic || forced_basic)) {
 				tmp = hlist_get(data[loop]->headers, "Proxy-Authorization");
 				pos = NULL;
 				buf = NULL;
@@ -870,9 +873,12 @@ void *process(void *client) {
 						printf("NTLM-to-basic: Credentials parsed: %s\\%s:%s at %s\n", pdomain, puser, ppass, workstation);
 					free(buf);
 				}
-			} else if (loop && basic && data[loop]->code == 407) {
+			} else if (loop && data[loop]->code == 407) {
 				if (debug)
 					printf("NTLM-to-basic: Given credentials failed for proxy access.\n");
+
+				if (!basic)
+					forced_basic = 1;
 
 				tmp = gen_denied_page(data[loop]->http);
 				write(cd, tmp, strlen(tmp));
@@ -997,7 +1003,6 @@ void *process(void *client) {
 				 *
 				 * No C-L, no T-E, no C-T == no body.
 				 */
-
 				tmp = hlist_get(data[loop]->headers, "Content-Length");
 				if (!nobody && tmp == NULL && (hlist_in(data[loop]->headers, "Content-Type")
 						|| hlist_in(data[loop]->headers, "Transfer-Encoding")
@@ -1056,6 +1061,24 @@ void *process(void *client) {
 						} else if (debug) {
 							printf("Body sent.\n");
 						}
+					}
+
+					/*
+					 * Windows cannot detect remotely closed connection
+					 * as accurately as UNIX. We look if the proxy explicitly
+					 * tells us that it's closing the connection and if so, use
+					 * it as fact that the connection is closed.
+					 */
+					tmp = hlist_get(data[loop]->headers, "Proxy-Connection");
+					if (tmp) {
+						tmp = strdupl(tmp);
+						lowercase(tmp);
+						if (strstr(tmp, "close")) {
+							if (debug)
+								printf("PROXY CLOSED CONNECTION\n");
+							close(sd);
+						}
+						free(tmp);
 					}
 				} else if (debug)
 					printf("No body.\n");
@@ -1328,7 +1351,7 @@ int main(int argc, char **argv) {
 			case 'v':
 				debug = 1;
 			case 'f':
-				daemon = 0;
+				asdaemon = 0;
 				openlog("cntlm", LOG_CONS | LOG_PERROR, LOG_DAEMON);
 				break;
 			case 'g':
@@ -1400,7 +1423,19 @@ int main(int argc, char **argv) {
 	 */
 #ifdef SYSCONFDIR
 	if (!cf) {
+#ifdef __CYGWIN__
+		tmp = getenv("PROGRAMFILES");
+		if (tmp == NULL) {
+			tmp = "C:\\Program Files";
+		}
+
+		head = new(AUTHSIZE);
+		strlcpy(head, tmp, AUTHSIZE);
+		strlcat(head, "\\cntlm\\cntlm.ini", AUTHSIZE);
+		cf = config_open(head);
+#else
 		cf = config_open(SYSCONFDIR "/cntlm.conf");
+#endif
 		if (debug) {
 			if (cf)
 				printf("Default config file opened successfully\n");
@@ -1611,7 +1646,7 @@ int main(int argc, char **argv) {
 	 * and can thus create a new session for itself and detach
 	 * from the controlling terminal.
 	 */
-	if (daemon) {
+	if (asdaemon) {
 		if (debug)
 			printf("Forking into background as requested.\n");
 
@@ -1639,7 +1674,7 @@ int main(int argc, char **argv) {
 	 * Reinit syslog logging to include our PID, after forking
 	 * it is going to be OK
 	 */
-	if (daemon) {
+	if (asdaemon) {
 		openlog("cntlm", LOG_CONS | LOG_PID, LOG_DAEMON);
 		syslog(LOG_INFO, "Daemon ready");
 	} else {

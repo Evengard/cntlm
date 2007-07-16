@@ -64,7 +64,9 @@ int acl_add(plist_t *rules, char *spec, enum acl_t acl) {
 		source.s_addr = 0;
 		mask = 0;
 	} else {
-		if (!so_resolv(&source, spec)) {
+		if (!strcmp("0", spec)) {
+			source.s_addr = 0;
+		} else if (!so_resolv(&source, spec)) {
 			syslog(LOG_ERR, "ACL source address %s is invalid\n", spec);
 			free(aux);
 			free(spec);
