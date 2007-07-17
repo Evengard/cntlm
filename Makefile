@@ -42,13 +42,10 @@ rpm:
 	fi
 
 deb:
-	if [ `id -u` = 0 ]; then \
-		debian/rules binary; \
-		debian/rules clean; \
-	else \
-		fakeroot debian/rules binary; \
-		fakeroot debian/rules clean; \
-	fi
+	@echo
+	@echo "This option is no longer available. Get the source"
+	@echo "from ftp://awk.cz/cntlm/debian/ and follow the README." 
+	@echo
 
 tgz:
 	mkdir -p tmp
