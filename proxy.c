@@ -62,21 +62,25 @@
  */
 #define CONNECT(data)	(data && data->req && !strcasecmp("CONNECT", data->method))
 #define HEAD(data)	(data && data->req && !strcasecmp("HEAD", data->method))
+#define GET(data)	(data && data->req && !strcasecmp("GET", data->method))
 
 /*
  * Global read-only data initialized in main(). Comments list funcs. which use
  * them. Having these global avoids the need to pass them to each thread and
  * from there again a few times to inner calls.
  */
+int debug = 0;				/* all debug printf's and possibly external modules */
+
 static char *user;			/* authenticate() */
 static char *domain;
 static char *workstation;
 static char *password;
 static int hashnt = 1;
 static int hashlm = 1;
+static uint32_t flags = 0;
 
 static int quit = 0;			/* sighandler() */
-static int debug = 0;			/* all info printf's */
+static int serial = 0;			/* main() and process() */
 static int asdaemon = 1;		/* myexit() */
 static int basic = 0;			/* process() */
 static int forced_basic = 0;
@@ -262,7 +266,7 @@ int headers_recv(int fd, rr_data_t data) {
 		goto bailout;
 
 	if (debug)
-		printf("HEAD: %s\n", buf);
+		printf("HEAD: %s", buf);
 
 	/*
 	 * Are we reading HTTP request (from client) or response (from server)?
@@ -464,10 +468,12 @@ int data_send(int dst, int src, int size) {
 	do {
 		block = (size == -1 || size-c > BLOCK ? BLOCK : size-c);
 		i = read(src, buf, block);
-		c += i;
+		
+		if (i > 0)
+			c += i;
 
 		if (debug)
-			printf("data_send: read %d of %d / %d of %d\n", i, block, c, size);
+			printf("data_send: read %d of %d / %d of %d (errno = %s)\n", i, block, c, size, i < 0 ? strerror(errno) : "ok");
 
 		if (so_closed(dst)) {
 			i = -999;
@@ -520,7 +526,7 @@ int chunked_data_send(int dst, int src) {
 		}
 
 		if (debug)
-			printf("Line: %s\n", buf);
+			printf("Line: %s", buf);
 
 		/*
 		printf("*buf = ");
@@ -542,17 +548,18 @@ int chunked_data_send(int dst, int src) {
 			break;
 		}
 
-		if (debug) {
-			if (csize) {
-				printf("chunk: %d\n", csize);
-			} else {
-				printf("last chunk: %d\n", csize);
-			}
-		}
+		if (debug && !csize)
+			printf("last chunk: %d\n", csize);
 
 		write(dst, buf, strlen(buf));
 		if (csize)
-			data_send(dst, src, csize+2);
+			if (!data_send(dst, src, csize+2)) {
+				if (debug)
+					printf("chunked_data_send: aborting, data_send failed\n");
+
+				free(buf);
+				return 0;
+			}
 
 	} while (csize != 0);
 
@@ -645,7 +652,7 @@ int authenticate(int sd, rr_data_t data, char *user, char *password, char *domai
 	buf = new(BUFSIZE);
 
 	strcpy(buf, "NTLM ");
-	len = ntlm_request(&tmp, workstation, domain, hashnt, hashlm);
+	len = ntlm_request(&tmp, workstation, domain, hashnt, hashlm, flags);
 	to_base64(MEM(buf, unsigned char, 5), MEM(tmp, unsigned char, 0), len, BUFSIZE-5);
 	free(tmp);
 	
@@ -980,17 +987,21 @@ void *process(void *client) {
 				 * Remember not to authenticate this connection any more, should
 				 * it be reused for future client requests.
 				 */
-				if (!authok && data[1]->code != 407)
+				if (loop && !authok && data[1]->code != 407)
 					authok = 1;
 
 				/*
 				 * HTTP body lenght decisions. There MUST NOT be any body if the
 				 * request was HEAD or reply is 1xx, 204 or 304.
 				 */
-				nobody = (!data[loop]->req && (HEAD(data[0]) ||
-					(data[1]->code >= 100 && data[1]->code < 200) ||
-					data[1]->code == 204 ||
-					data[1]->code == 304));
+				if (!data[loop]->req) {
+					nobody = (HEAD(data[0]) ||
+						(data[1]->code >= 100 && data[1]->code < 200) ||
+						data[1]->code == 204 ||
+						data[1]->code == 304);
+				} else {
+					nobody = GET(data[loop]);
+				}
 
 				/*
 				 * Otherwise consult Content-Length. If present, we forward exaclty
@@ -1006,7 +1017,7 @@ void *process(void *client) {
 				tmp = hlist_get(data[loop]->headers, "Content-Length");
 				if (!nobody && tmp == NULL && (hlist_in(data[loop]->headers, "Content-Type")
 						|| hlist_in(data[loop]->headers, "Transfer-Encoding")
-						|| data[1]->code == 200)) {
+						|| (loop && data[1]->code == 200))) {
 					i = -1;
 					if (debug) {
 						printf("*************************\n");
@@ -1062,26 +1073,27 @@ void *process(void *client) {
 							printf("Body sent.\n");
 						}
 					}
-
-					/*
-					 * Windows cannot detect remotely closed connection
-					 * as accurately as UNIX. We look if the proxy explicitly
-					 * tells us that it's closing the connection and if so, use
-					 * it as fact that the connection is closed.
-					 */
-					tmp = hlist_get(data[loop]->headers, "Proxy-Connection");
-					if (tmp) {
-						tmp = strdupl(tmp);
-						lowercase(tmp);
-						if (strstr(tmp, "close")) {
-							if (debug)
-								printf("PROXY CLOSED CONNECTION\n");
-							close(sd);
-						}
-						free(tmp);
-					}
 				} else if (debug)
 					printf("No body.\n");
+
+				/*
+				 * Windows cannot detect remotely closed connection
+				 * as accurately as UNIX. We look if the proxy explicitly
+				 * tells us that it's closing the connection and if so, use
+				 * it as fact that the connection is closed.
+				 */
+				tmp = hlist_get(data[loop]->headers, "Proxy-Connection");
+				if (tmp) {
+					tmp = strdupl(tmp);
+					lowercase(tmp);
+					if (strstr(tmp, "close")) {
+						if (debug)
+							printf("PROXY CLOSED CONNECTION\n");
+						close(sd);
+					}
+					free(tmp);
+				}
+
 			}
 		}
 
@@ -1100,7 +1112,7 @@ bailout:
 	close(cd);
 	if (!so_closed(sd) && authok) {
 		if (debug)
-			printf("Storing the connection for reuse.\n");
+			printf("Storing the connection for reuse (%d:%d).\n", cd, sd);
 		pthread_mutex_lock(&clist_mtx);
 		clist = plist_add(clist, sd, NULL);
 		pthread_mutex_unlock(&clist_mtx);
@@ -1110,9 +1122,11 @@ bailout:
 	/*
 	 * Add ourself to the "threads to join" list.
 	 */
-	pthread_mutex_lock(&tlist_mtx);
-	tlist = plist_add(tlist, pthread_self(), NULL);
-	pthread_mutex_unlock(&tlist_mtx);
+	if (!serial) {
+		pthread_mutex_lock(&tlist_mtx);
+		tlist = plist_add(tlist, pthread_self(), NULL);
+		pthread_mutex_unlock(&tlist_mtx);
+	}
 
 	return NULL;
 }
@@ -1331,7 +1345,7 @@ int main(int argc, char **argv) {
 	openlog("cntlm", LOG_CONS, LOG_DAEMON);
 	syslog(LOG_INFO, "Starting cntlm version " VERSION);
 
-	while ((i = getopt(argc, argv, ":-:a:c:d:fgl:p:u:vw:A:BD:L:P:U:")) != -1) {
+	while ((i = getopt(argc, argv, ":-:a:c:d:fgh:l:p:su:vw:A:BD:F:L:P:U:")) != -1) {
 		switch (i) {
 			case 'a':
 				strlcpy(auth, optarg, AUTHSIZE);
@@ -1373,6 +1387,12 @@ int main(int argc, char **argv) {
 				for (i = strlen(optarg)-1; i >= 0; --i)
 					optarg[i] = '*';
 				break;
+			case 's':
+				/*
+				 * Do not use threads - for debugging purposes only
+				 */
+				serial = 1;
+				break;
 			case 'u':
 				i = strcspn(optarg, "@");
 				if (i != strlen(optarg)) {
@@ -1389,6 +1409,9 @@ int main(int argc, char **argv) {
 			case 'D':
 				if (!acl_add(&rules, optarg, (i == 'A' ? ACL_ALLOW : ACL_DENY)))
 					myexit(1);
+				break;
+			case 'F':
+				flags = swap32(strtoul(optarg, &tmp, 0));
 				break;
 			case 'L':
 				/*
@@ -1534,6 +1557,12 @@ int main(int argc, char **argv) {
 		CFG_DEFAULT(cf, "Username", user, AUTHSIZE);
 		CFG_DEFAULT(cf, "Workstation", workstation, AUTHSIZE);
 
+		tmp = new(AUTHSIZE);
+		CFG_DEFAULT(cf, "Flags", tmp, AUTHSIZE);
+		if (!flags)
+			flags = swap32(strtoul(tmp, NULL, 0));
+		free(tmp);
+
 		/*
 		 * Print out unused/unknown options.
 		 */
@@ -1554,15 +1583,15 @@ int main(int argc, char **argv) {
 	/*
 	 * Any of the vital options missing?
 	 */
-	if (help || !strlen(user) || !strlen(password) || !lparents || !lproxy) {
+	if (help || (!basic && (!strlen(user) || !strlen(password))) || !lparents || !lproxy) {
 		if (help) {
 			printf("CNTLM - Accelerating NTLM Authentication Proxy version " VERSION "\nCopyright (c) 2oo7 David Kubicek\n\n"
 				"This program comes with NO WARRANTY, to the extent permitted by law. You\n"
-				"may redistribute copies of it under the terms of the GNU GPL Version 2.1\n"
-				"or newer. For more information about these matters, see the file LICENSE.\n"
+				"may redistribute copies of it under the terms of the GNU GPL Version 2 or\n"
+				"newer. For more information about these matters, see the file LICENSE.\n"
 				"For copyright holders of included encryption routines see headers.\n\n");
 
-			fprintf(stderr, "Usage: %s [-acdfghlvwLPU] -u <user>[@<domain>] -p <pass> <proxy_host>[:]<proxy_port>\n", argv[0]);
+			fprintf(stderr, "Usage: %s [-AaBcDdFfghLlPpsUuvw] -u <user>[@<domain>] -p <pass> <proxy_host>[:]<proxy_port>\n", argv[0]);
 			fprintf(stderr, "\t-A  <address>[/<net>]\n"
 					"\t    New ACL allow rule. Address can be an IP or a hostname, net must be a number (CIDR notation)\n");
 			fprintf(stderr, "\t-a  ntlm | nt | lm\n"
@@ -1577,6 +1606,8 @@ int main(int argc, char **argv) {
 			fprintf(stderr, "\t-d  <domain>\n"
 					"\t    Domain/workgroup can be set separately.\n");
 			fprintf(stderr, "\t-f  Run in foreground, do not fork into daemon mode.\n");
+			fprintf(stderr, "\t-F  <flags>\n"
+					"\t    NTLM authentication flags.\n");
 			fprintf(stderr, "\t-g  Gateway mode - listen on all interfaces, not only loopback.\n");
 			fprintf(stderr, "\t-h  \"HeaderName: value\"\n"
 					"\t    Add a header substitution. All such headers will be added/replaced\n"
@@ -1591,6 +1622,7 @@ int main(int argc, char **argv) {
 					"\t    Create a PID file upon successful start.\n");
 			fprintf(stderr, "\t-p  <password>\n"
 					"\t    Account password. Will not be visible in \"ps\", /proc, etc.\n");
+			fprintf(stderr, "\t-s  Do not use threads, serialize all requests - for debugging only.\n");
 			fprintf(stderr, "\t-U  <uid>\n"
 					"\t    Run as uid. It is an important security measure not to run as root.\n");
 			fprintf(stderr, "\t-u  <user>[@<domain]\n"
@@ -1633,6 +1665,11 @@ int main(int argc, char **argv) {
 			myexit(1);
 		}
 	}
+
+	syslog(LOG_INFO, "Using following NTLM hashes: NT(%d) LM(%d)\n", hashnt, hashlm);
+
+	if (flags)
+		syslog(LOG_INFO, "Using manual NTLM flags: 0x%X\n", flags);
 
 	/*
 	 * Set default values.
@@ -1775,7 +1812,7 @@ int main(int argc, char **argv) {
 		pthread_t thr;
 		fd_set set;
 		plist_t t;
-		int tid;
+		int tid = 0;
 
 		FD_ZERO(&set);
 
@@ -1846,7 +1883,10 @@ int main(int argc, char **argv) {
 						data->target = plist_get(ltunnel, i);
 						tid = pthread_create(&thr, &attr, autotunnel, (void *)data);
 					} else {
-						tid = pthread_create(&thr, &attr, process, (void *)cd);
+						if (!serial)
+							tid = pthread_create(&thr, &attr, process, (void *)cd);
+						else
+							process((void *)cd);
 					}
 
 					pthread_attr_destroy(&attr);

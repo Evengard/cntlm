@@ -58,8 +58,8 @@ values are in KiB):
 .nf
 
        VSZ   RSS CMD
-      3204  1436 ./cntlm -f -c ./cntlm.conf -P pid
-    411604  6264 /usr/share/ntlmaps/main.py -c /etc/ntlmaps/server.cfg
+      3204  1436 ./cntlm \-f \-c ./cntlm.conf \-P pid
+    411604  6264 /usr/share/ntlmaps/main.py \-c /etc/ntlmaps/server.cfg
 .fi
 
 .PP
@@ -153,6 +153,18 @@ Deny ACL rule. See option \fB-A\fP above.
 .B \-d <domain>
 The domain or workgroup of the proxy account. This value can also be specified
 as a part of the username with \fB\-u\fP.
+
+.TP
+.B \-F <flags>
+NTLM authentication flags. This option is rater delicate and I do not recommend
+to change the default built-in values unless you had no success with parent proxy
+auth and tried all possible values for the "Auth" option (\fB\-a\fP). Remember
+that each NT/LM hash combination requires different flags. This option is sort
+of a complete "manual override" and you'll have to deal with every aspect of it
+yourself. If the parent proxy refuses to authenticate you, try the following
+combinations: Auth = ntlm, flags = 0x07820000; Auth = lm, flags = 0x06820000;
+Auth = nt, flags = 0x05820000. Note that you have to use "0x" prefix to use hex
+numbers.
 
 .TP
 .B \-f
@@ -287,6 +299,10 @@ ACL deny rule, see \fB-A\fP.
 .TP
 .B Domain <domain_name>
 Proxy account domain/workgroup name.
+
+.TP
+.B Flags <flags>
+NTLM authentication flags. See \fB\-F\fP for details.
 
 .TP
 .B Gateway yes|no

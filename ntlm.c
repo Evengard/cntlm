@@ -28,6 +28,8 @@
 #include "xcrypt.h"
 #include "utils.h"
 
+extern int debug;
+
 static void ntlm_set_key(unsigned char *src, gl_des_ctx *context) {
 	char key[8];
 
@@ -93,17 +95,24 @@ static void ntlm_nt_password(char *dst, char *password, char *challenge) {
 	free(keys);
 }
 
-int ntlm_request(char **dst, char *hostname, char *domain, int nt, int lm) {
+int ntlm_request(char **dst, char *hostname, char *domain, int nt, int lm, uint32_t flags) {
 	char *buf, *tmp;
 	int dlen, hlen;
 
 	dlen = strlen(domain);
 	hlen = strlen(hostname);
 
+	if (debug) {
+		printf("NTLM Request:\n");
+		printf("\t   Domain: %s\n", domain);
+		printf("\t Hostname: %s\n", hostname);
+		printf("\t    Flags: 0x%X\n", U32LE(flags ? flags : (nt ? 0xB207 : 0xB206)));
+	}
+
 	buf = new(NTLM_BUFSIZE);
 	memcpy(buf, "NTLMSSP\0", 8);
 	VAL(buf, uint32_t, 8) = U32LE(1);
-	VAL(buf, uint32_t, 12) = U32LE(nt ? 0xB207 : 0xB206);
+	VAL(buf, uint32_t, 12) = U32LE(flags ? flags : (nt ? 0xB207 : 0xB206));
 	VAL(buf, uint16_t, 16) = U16LE(dlen);
 	VAL(buf, uint16_t, 18) = U16LE(dlen);
 	VAL(buf, uint32_t, 20) = U32LE(32 + hlen);
@@ -128,10 +137,53 @@ int ntlm_request(char **dst, char *hostname, char *domain, int nt, int lm) {
 	return 32+dlen+hlen;
 }
 
+char *printmem(char *src, size_t len) {
+	char hextab[16] = {'0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'A', 'B', 'C', 'D', 'E', 'F'};
+	char *tmp;
+	int i;
+
+	tmp = new(2*len+1);
+	for (i = 0; i < len; ++i) {
+		tmp[i*2] = hextab[(uint8_t)src[i] >> 4];
+		tmp[i*2+1] = hextab[src[i] & 0x0F];
+	}
+
+	return tmp;
+}
+
+char *printuc(char *src, size_t len) {
+	char *tmp;
+	int i;
+
+	tmp = new((len+1)/2 + 1);
+	for (i = 0; i < len/2; ++i) {
+		tmp[i] = src[i*2];
+	}
+
+	return tmp;
+}
+
+/*
+void dump(char *src, size_t len) {
+	int i, j;
+	char *tmp;
+
+	tmp = new(len*3+4);
+	for (i = 0; i < len; ++i) {
+		snprintf(tmp+i*3, 4, "%0hhX   ", src[i]);
+		printf("%c ", src[i]);
+	}
+	printf("\n%s\n", tmp);
+	free(tmp);
+}
+*/
+
 int ntlm_response(char **dst, char *challenge, char *username, char *password, char *hostname, char *domain, int nt, int lm) {
 	char pwlm[24], pwnt[24];
-	char *buf, *udomain, *uuser, *uhost;
+	char *buf, *udomain, *uuser, *uhost, *tmp;
 	int dlen, ulen, hlen, lmlen = 0, ntlen = 0;
+	uint32_t flags;
+	uint16_t tpos, ttype, tlen;
 
 	if (lm) {
 		lmlen = 24;
@@ -155,6 +207,55 @@ int ntlm_response(char **dst, char *challenge, char *username, char *password, c
 		dlen = strlen(domain);
 		ulen = strlen(username);
 		hlen = strlen(hostname);
+	}
+
+	if (debug) {
+		printf("NTLM Challenge:\n");
+		tmp = printmem(MEM(challenge, char, lmlen), 8);
+		printf("\tChallenge: %s\n", tmp);
+		free(tmp);
+		flags = U32LE(VAL(challenge, uint32_t, 20));
+		printf("\t    Flags: 0x%X\n", flags);
+
+		tpos = U16LE(VAL(challenge, uint16_t, 44));
+		while ((ttype = U16LE(VAL(challenge, uint16_t, tpos)))) {
+			tlen = U16LE(VAL(challenge, uint16_t, tpos+2));
+
+			if (ttype == 0x1)
+				printf("\t   Server: ");
+			else if (ttype == 0x2)
+				printf("\tNT domain: ");
+			else if (ttype == 0x3)
+				printf("\t     FQDN: ");
+			else if (ttype == 0x4)
+				printf("\t   Domain: ");
+			else if (ttype == 0x5)
+				printf("\t      TLD: ");
+			else
+				printf("\t  Unknown: ");
+
+			tmp = printuc(MEM(challenge, char, tpos+4), tlen);
+			printf("%s\n", tmp);
+			free(tmp);
+
+			tpos += 4+tlen;
+		}
+
+		printf("NTLM Response:\n");
+		printf("\t Hostname: '%s'\n", hostname);
+		printf("\t   Domain: '%s'\n", domain);
+		printf("\t Username: '%s'\n", username);
+		printf("\t Password: '%s'\n", password);
+		if (nt) {
+			tmp = printmem(pwnt, 24);
+			printf("\t  NT hash: %s\n", tmp);
+			free(tmp);
+		}
+		if (lm) {
+			tmp = printmem(pwlm, 24);
+			printf("\t  LM hash: %s\n", tmp);
+			free(tmp);
+		}
 	}
 
 	buf = new(NTLM_BUFSIZE);

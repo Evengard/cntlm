@@ -39,9 +39,13 @@
 #ifdef NTLM_BIG_ENDIAN
 # define U16LE(x)		swap16(x)
 # define U32LE(x)		swap32(x)
+# define U16BE(x)		(x)
+# define U32BE(x)		(x)
 #else
 # define U16LE(x)		(x)
 # define U32LE(x)		(x)
+# define U16BE(x)		swap16(x)
+# define U32BE(x)		swap32(x)
 #endif
 
 #endif /* _SWAP_H */

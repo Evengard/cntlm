@@ -33,6 +33,8 @@
 
 #include "utils.h"
 
+extern int debug;
+
 /*
  * gethostbyname() wrapper. Return 1 if OK, otherwise 0.
  */
@@ -169,6 +171,9 @@ int so_recvln(int fd, char **buf, int *size) {
 	char c = 0;
 	char *tmp;
 
+	if (debug)
+		printf("so_recvln(%d): begin\n", fd);
+
 	while (len < *size-1 && c != '\n') {
 		r = read(fd, &c, 1);
 		if (r <= 0)
@@ -180,6 +185,8 @@ int so_recvln(int fd, char **buf, int *size) {
 		 * end of buffer, still no EOL?
 		 */
 		if (len == *size-1 && c != '\n') {
+			if (debug)
+				printf("so_recvln(%d): realloc %d\n", fd, *size*2);
 			*size *= 2;
 			tmp = realloc(*buf, *size);
 			if (tmp == NULL)
@@ -189,6 +196,9 @@ int so_recvln(int fd, char **buf, int *size) {
 		}
 	}
 	VAL(*buf, char, len) = 0;
+
+	if (debug)
+		printf("so_recvln(%d): end len %d\n", fd, len);
 
 	return r;
 }
