@@ -52,10 +52,15 @@ rm -rf $RPM_BUILD_ROOT
 %config(noreplace) %{_initrddir}/cntlmd
 
 %pre
-/usr/sbin/useradd -s /sbin/nologin -m -r -d /var/run/cntlm cntlm 2>/dev/null || :
+if [ "$1" -eq 1 ]; then
+    /usr/sbin/useradd -s /sbin/nologin -m -r -d /var/run/cntlm cntlm 2>/dev/null
+fi    
+:
 
 %post
-/sbin/chkconfig --add cntlmd
+if [ "$1" -eq 1 ]; then
+    /sbin/chkconfig --add cntlmd
+fi
 :
 
 %preun
@@ -66,10 +71,16 @@ fi
 :
 
 %postun
-rm -rf %{_sysconfdir}/cntlm.conf
-/usr/sbin/userdel -r cntlm 2>/dev/null || :
+if [ "$1" -eq 0 ]; then
+    /usr/sbin/userdel -r cntlm 2>/dev/null
+fi    
+:
 
 %changelog
+* Wed Jul 26 2007 Radislav Vrnata <vrnata at gedas.cz>
+- Version 0.33-1
+- fixed %pre, %post, %preun, %postun macros bugs affecting upgrade process
+
 * Mon May 30 2007 Since 0.28 maintained by <dave@awk.cz>
 
 * Mon May 28 2007 Radislav Vrnata <vrnata at gedas.cz>
