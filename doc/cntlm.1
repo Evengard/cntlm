@@ -194,6 +194,12 @@ defined using \fB-h\fP or in the configuration file will be added to it. In case
 the header is already present, its value will be replaced.
 
 .TP
+.B \-i
+Interactive password prompt. Any password settings from the command line or 
+config file is ignored with this option and a password prompt is issued.
+Use this option only from shell.
+
+.TP
 .B \-L [<saddr>:]<lport>:<rhost>:<rport>
 Tunnel specification. The syntax is the same as in OpenSSH's local forwarding
 (\fB\-L\fP), with a new optional prefix, \fIsaddr\fP - the source IP address to

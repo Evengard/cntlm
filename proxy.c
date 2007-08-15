@@ -39,6 +39,7 @@
 #include <pwd.h>
 #include <fcntl.h>
 #include <syslog.h>
+#include <termios.h>
 
 /*
  * Some helping routines like linked list manipulation substr(), memory
@@ -1319,6 +1320,7 @@ void tunnel_add(plist_t *list, char *spec, int gateway) {
 int main(int argc, char **argv) {
 	char *tmp, *head, *uid, *pidfile, *auth;
 	struct passwd *pw;
+	struct termios termold, termnew;
 	hlist_t list;
 	int i;
 
@@ -1329,6 +1331,7 @@ int main(int argc, char **argv) {
 	int gateway = 0;
 	int tc = 0;
 	int tj = 0;
+	int interactivepwd = 0;
 	plist_t ltunnel = NULL;
 	plist_t lproxy = NULL;
 	plist_t rules = NULL;
@@ -1350,7 +1353,7 @@ int main(int argc, char **argv) {
 	syslog(LOG_INFO, "Starting cntlm version " VERSION " for LITTLE endian\n");
 #endif
 
-	while ((i = getopt(argc, argv, ":-:a:c:d:fgh:l:p:su:vw:A:BD:F:L:P:U:")) != -1) {
+	while ((i = getopt(argc, argv, ":-:a:c:d:fgh:il:p:su:vw:A:BD:F:L:P:U:")) != -1) {
 		switch (i) {
 			case 'a':
 				strlcpy(auth, optarg, AUTHSIZE);
@@ -1379,6 +1382,9 @@ int main(int argc, char **argv) {
 			case 'h':
 				if (head_ok(optarg))
 					lheaders = hlist_add(lheaders, head_name(optarg), head_value(optarg), 0, 0);
+				break;
+			case 'i':
+				interactivepwd = 1;
 				break;
 			case 'l':
 				proxy_add(&lproxy, optarg, gateway);
@@ -1588,7 +1594,7 @@ int main(int argc, char **argv) {
 	/*
 	 * Any of the vital options missing?
 	 */
-	if (help || (!basic && (!strlen(user) || !strlen(password))) || !lparents || !lproxy) {
+	if (help || (!basic && (!strlen(user) || (!interactivepwd && !strlen(password)))) || !lparents || !lproxy) {
 		if (help) {
 			printf("CNTLM - Accelerating NTLM Authentication Proxy version " VERSION "\nCopyright (c) 2oo7 David Kubicek\n\n"
 				"This program comes with NO WARRANTY, to the extent permitted by law. You\n"
@@ -1596,7 +1602,7 @@ int main(int argc, char **argv) {
 				"newer. For more information about these matters, see the file LICENSE.\n"
 				"For copyright holders of included encryption routines see headers.\n\n");
 
-			fprintf(stderr, "Usage: %s [-AaBcDdFfghLlPpsUuvw] -u <user>[@<domain>] -p <pass> <proxy_host>[:]<proxy_port>\n", argv[0]);
+			fprintf(stderr, "Usage: %s [-AaBcDdFfghiLlPpsUuvw] -u <user>[@<domain>] -p <pass> <proxy_host>[:]<proxy_port>\n", argv[0]);
 			fprintf(stderr, "\t-A  <address>[/<net>]\n"
 					"\t    New ACL allow rule. Address can be an IP or a hostname, net must be a number (CIDR notation)\n");
 			fprintf(stderr, "\t-a  ntlm | nt | lm\n"
@@ -1617,6 +1623,7 @@ int main(int argc, char **argv) {
 			fprintf(stderr, "\t-h  \"HeaderName: value\"\n"
 					"\t    Add a header substitution. All such headers will be added/replaced\n"
 					"\t    in the client's requests.\n");
+			fprintf(stderr, "\t-i  Prompt for the password interactively.\n");
 			fprintf(stderr, "\t-L  [<saddr>:]<lport>:<rhost>:<rport>\n"
 					"\t    Forwarding/tunneling a la OpenSSH. Same syntax - listen on lport\n"
 					"\t    and forward all connections through the proxy to rhost:rport.\n"
@@ -1640,7 +1647,7 @@ int main(int argc, char **argv) {
 		if (!basic && !strlen(user)) {
 			syslog(LOG_ERR, "Parent proxy account username missing.\n");
 		}
-		if (!basic && !strlen(password)) {
+		if (!basic && !interactivepwd && !strlen(password)) {
 			syslog(LOG_ERR, "Parent proxy account password missing.\n");
 		}
 		if (!lparents) {
@@ -1651,6 +1658,19 @@ int main(int argc, char **argv) {
 		}
 
 		myexit(1);
+	}
+
+	if (interactivepwd && !basic) {
+		printf("Password: ");
+		tcgetattr(0, &termold);
+		termnew = termold;
+		termnew.c_lflag &= ~(ISIG | ECHO);
+		tcsetattr(0, TCSADRAIN, &termnew);
+		fgets(password, AUTHSIZE, stdin);
+		tcsetattr(0, TCSADRAIN, &termold);
+		i = strlen(password)-1;
+		while (i >= 0 && (password[i] == '\r' || password[i] == '\n'))
+			password[i--] = 0;
 	}
 
 	/*
