@@ -10,10 +10,6 @@ Source1:        cntlm.init
 Source2:        cntlm.sysconfig
 BuildRoot:      %{_tmppath}/%{name}-%{version}-%{release}-root-%(%{__id_u} -n)
 
-Requires(pre): shadow-utils
-Requires(post): /sbin/chkconfig
-Requires(preun): /sbin/chkconfig /sbin/service
-
 %description
 Cntlm is a fast and efficient NTLM proxy, with support for TCP/IP tunneling,
 authenticated connection caching, ACLs, proper daemon logging and behaviour
@@ -54,31 +50,50 @@ rm -rf $RPM_BUILD_ROOT
 %pre
 if [ "$1" -eq 1 ]; then
     /usr/sbin/useradd -s /sbin/nologin -m -r -d /var/run/cntlm cntlm 2>/dev/null
-fi    
+fi
 :
 
 %post
 if [ "$1" -eq 1 ]; then
-    /sbin/chkconfig --add cntlmd
-fi
+  if [ -x /usr/lib/lsb/install_initd ]; then
+      /usr/lib/lsb/install_initd /etc/init.d/cntlmd
+  elif [ -x /sbin/chkconfig ]; then
+      /sbin/chkconfig --add cntlmd
+  else
+      for i in 2 3 4 5; do
+          ln -sf /etc/init.d/cntlmd /etc/rc.d/rc${i}.d/S26cntlmd
+      done
+      for i in 1 6; do
+          ln -sf /etc/init.d/cntlmd /etc/rc.d/rc${i}.d/K89cntlmd
+      done
+  fi
+fi 
 :
 
 %preun
 if [ "$1" -eq 0 ]; then
-        /sbin/service cntlmd stop &> /dev/null
-        /sbin/chkconfig --del cntlmd
+  /etc/init.d/cntlmd stop  > /dev/null 2>&1
+  if [ -x /usr/lib/lsb/remove_initd ]; then
+    /usr/lib/lsb/install_initd /etc/init.d/cntlmd
+  elif [ -x /sbin/chkconfig ]; then
+    /sbin/chkconfig --del cntlmd
+  else
+    rm -f /etc/rc.d/rc?.d/???cntlmd
+  fi
 fi
 :
 
 %postun
 if [ "$1" -eq 0 ]; then
-    /usr/sbin/userdel -r cntlm 2>/dev/null
-fi    
+   /usr/sbin/userdel -r cntlm 2>/dev/null
+fi
 :
 
 %changelog
+* Fri Jul 27 2007 Radislav Vrnata <vrnata at gedas.cz>
+- added support for SuSE Linux
+
 * Wed Jul 26 2007 Radislav Vrnata <vrnata at gedas.cz>
-- Version 0.33-1
 - fixed %pre, %post, %preun, %postun macros bugs affecting upgrade process
 
 * Mon May 30 2007 Since 0.28 maintained by <dave@awk.cz>

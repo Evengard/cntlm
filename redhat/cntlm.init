@@ -8,10 +8,10 @@
 #                    You point all your proxy-aware programs to it and don't ever
 #                    have to deal with proxy authentication again.
 #
-## BEGIN INIT INFO
+### BEGIN INIT INFO
 # Provides:          cntlm
-# Required-Start:    $syslog $time
-# Required-Stop:     $syslog $time
+# Required-Start:    $syslog $network $time
+# Required-Stop:     $syslog $network $time
 # Default-Start:     2 3 4 5
 # Default-Stop:      0 1 6
 # Short-Description: Authenticating HTTP accelerator for NTLM secured proxies
@@ -20,39 +20,114 @@
 #                    You point all your proxy-aware programs to it and don't ever
 #                    have to deal with proxy authentication again.
 ### END INIT INFO
+
+# Determining Linux RedHat/SuSE 
 #
+# /etc/redhat-release
+# /etc/SuSE-release
 
-# Source function library.
-. /etc/rc.d/init.d/functions
+SuSE=false
+RedHat=false
 
-# Source networking configuration.
-[ -r /etc/sysconfig/network ] && . /etc/sysconfig/network
+if [ -f /etc/SuSE-release ]; then
+	SuSE=true
+elif [ -f /etc/redhat-release ]; then
+	RedHat=true
+else
+	echo "Error: your platform is not supported by $0" > /dev/stderr
+	exit 1
+fi
 
-# Check that networking is up.
-[ ${NETWORKING} = "no" ] && exit 0
+# Source function library SuSE/RedHat.
+
+if $SuSE; then
+    if [ -f /lib/lsb/init-functions ]; then
+	. /lib/lsb/init-functions
+    else
+	echo "Error: your platform is not supported by $0" > /dev/stderr
+    exit 1
+    fi
+else
+    if [ -f /etc/init.d/functions ]; then
+	. /etc/init.d/functions
+    else
+	echo "Error: your platform is not supported by $0" > /dev/stderr
+    exit 1
+    fi
+fi    
 
 [ -r /etc/sysconfig/cntlmd ] && . /etc/sysconfig/cntlmd
 
-RETVAL=0
+# First reset status of this service SuSE/RedHat
 
-test -f $DAEMON  || exit 0
+if $SuSE; then
+  rc_reset
+else
+  RETVAL=0
+fi
+
+# Return values acc. to LSB for all commands but status:
+# 0 - success
+# 1 - generic or unspecified error
+# 2 - invalid or excess argument(s)
+# 3 - unimplemented feature (e.g. "reload")
+# 4 - insufficient privilege
+# 5 - program is not installed
+# 6 - program is not configured
+# 7 - program is not running
+#
+# Note that starting an already running service, stopping
+# or restarting a not-running service as well as the restart
+# with force-reload (in case signalling is not supported) are
+# considered a success.
+
+# Shell functions sourced from /etc/rc.status only on SuSE Linux:
+#      rc_check         check and set local and overall rc status
+#      rc_status        check and set local and overall rc status
+#      rc_status -v     ditto but be verbose in local rc status
+#      rc_status -v -r  ditto and clear the local rc status
+#      rc_failed        set local and overall rc status to failed
+#      rc_failed <num>  set local and overall rc status to <num><num>
+#      rc_reset         clear local rc status (overall remains)
+#      rc_exit          exit appropriate to overall rc status
+
+test -f $DAEMON  || exit 5
 
 start() {
 		# Start daemons.
 		echo -n "Starting $DESC: "
-		daemon cntlm $OPTARGS 2>/dev/null
-		RETVAL=$?
-		echo
-		[ $RETVAL -eq 0 ] && touch $LOCKFILE
-		return $RETVAL
+
+		if $SuSE; then
+			startproc -p $PIDFILE $DAEMON $OPTARGS 2>/dev/null
+			rc_status -v
+		else
+			daemon cntlm $OPTARGS 2>/dev/null
+			RETVAL=$?
+			echo
+			[ $RETVAL -eq 0 ] && touch $LOCKFILE
+			return $RETVAL
+		fi
 }
 
 stop() {
 		echo -n "Shutting down $DESC: "
-		killproc cntlm
-		RETVAL=$?
-		echo
-		[ $RETVAL -eq 0 ] && rm -f $LOCKFILE
+
+		if $SuSE; then
+		## Stop daemon with killproc(8) and if this fails
+		## set echo the echo return value.
+
+		killproc -p $PIDFILE -TERM $DAEMON
+
+		# Remember status and be verbose
+		rc_status -v
+
+		else 
+			killproc cntlm
+			RETVAL=$?
+			echo
+			[ $RETVAL -eq 0 ] && rm -f $LOCKFILE
+			return $RETVAL
+		fi
 }
 
 
@@ -65,18 +140,36 @@ case "$1" in
         stop
         ;;
   status)
-        status cntlm
-        RETVAL=$?
+	echo -n "Checking for $DESC: "
+
+	if $SuSE; then
+	## Check status with checkproc(8), if process is running
+	## checkproc will return with exit status 0.
+
+	# Status has a slightly different for the status command:
+	# 0 - service running
+	# 1 - service dead, but /var/run/  pid  file exists
+	# 2 - service dead, but /var/lock/ lock file exists
+	# 3 - service not running
+
+	# NOTE: checkproc returns LSB compliant status values.
+	checkproc -p $PIDFILE $DAEMON
+	rc_status -v
+	else
+        	status cntlm
+	fi
         ;;
   restart|reload)
         stop
         start
-        RETVAL=$?
         ;;
   *)
         echo $"Usage: $0 {start|stop|restart|status}"
         exit 1
 esac
 
-exit $RETVAL
-
+if $SuSE; then
+	rc_exit
+else
+	exit $RETVAL
+fi
