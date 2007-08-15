@@ -8,6 +8,7 @@
 ./acl.h
 ./config.c
 ./config.h
+./endian.c
 ./ntlm.c
 ./ntlm.h
 ./proxy.c

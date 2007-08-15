@@ -17,8 +17,26 @@ NAME=cntlm
 VER=`cat VERSION`
 DIR=`pwd`
 
-$(NAME): $(OBJS)
-	$(CC) $(CFLAGS) -o $@ $(OBJS) $(LDFLAGS)
+$(NAME): endian $(OBJS)
+	@echo "Linking $@"
+	@$(CC) $(CFLAGS) -o $@ $(OBJS) $(LDFLAGS)
+
+endian: endian.c
+	@printf "Checking arch: "
+	@$(CC) $(CFLAGS) -o $@ endian.c
+	@if [ x`./endian NTLM_BIG_ENDIAN` != x ]; then echo "big endian"; else echo "little endian"; fi
+
+proxy.o: proxy.c
+	@echo "Compiling $<"
+	@if [ -z "$(SYSCONFDIR)" ]; then \
+		$(CC) $(CFLAGS) `./endian NTLM_BIG_ENDIAN` -c proxy.c -o $@; \
+	else \
+		$(CC) $(CFLAGS) `./endian NTLM_BIG_ENDIAN` -DSYSCONFDIR=\"$(SYSCONFDIR)\" -c proxy.c -o $@; \
+	fi
+
+.c.o:
+	@echo "Compiling $<"
+	@$(CC) $(CFLAGS) `./endian NTLM_BIG_ENDIAN` -c -o $@ $<
 
 install: $(NAME)
 	if [ -f /usr/bin/oslevel ]; then \
@@ -59,10 +77,10 @@ uninstall:
 	rm -f $(BINDIR)/$(NAME) $(MANDIR)/man1/$(NAME).1 2>/dev/null || true
 
 clean:
-	rm -f *.o tags cntlm pid massif* callgrind* 2>/dev/null
+	@rm -f *.o tags cntlm endian pid massif* callgrind* 2>/dev/null
 
 cleanp:
-	rm -f *.deb *.tgz *.tar.gz *.rpm *.o tags cntlm pid massif* callgrind* 2>/dev/null
+	@rm -f *.deb *.tgz *.tar.gz *.rpm *.o tags cntlm pid massif* callgrind* 2>/dev/null
 
 distclean: clean
 	if [ `id -u` = 0 ]; then \
@@ -73,9 +91,3 @@ distclean: clean
 		fakeroot redhat/rules clean; \
 	fi
 
-proxy.o: proxy.c
-	if [ -z "$(SYSCONFDIR)" ]; then \
-		$(CC) $(CFLAGS) -c proxy.c -o $@; \
-	else \
-		$(CC) $(CFLAGS) -DSYSCONFDIR=\"$(SYSCONFDIR)\" -c proxy.c -o $@; \
-	fi

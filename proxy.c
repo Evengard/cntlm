@@ -1343,7 +1343,12 @@ int main(int argc, char **argv) {
 	auth = new(AUTHSIZE);
 
 	openlog("cntlm", LOG_CONS, LOG_DAEMON);
-	syslog(LOG_INFO, "Starting cntlm version " VERSION);
+
+#ifdef NTLM_BIG_ENDIAN
+	syslog(LOG_INFO, "Starting cntlm version " VERSION " for BIG endian\n");
+#else
+	syslog(LOG_INFO, "Starting cntlm version " VERSION " for LITTLE endian\n");
+#endif
 
 	while ((i = getopt(argc, argv, ":-:a:c:d:fgh:l:p:su:vw:A:BD:F:L:P:U:")) != -1) {
 		switch (i) {

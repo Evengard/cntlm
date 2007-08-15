@@ -133,18 +133,9 @@ among other things a file called "cntlmd". It can be used as an init.d script.
 
 Architectures
 ~~~~~~~~~~~~~
-If you are building cntlm on a non-Linux/i386 platform, you have to deal with
-the endianness of the host machine. Default is to build for little endian
-(i386, ia64, amd64, alpha, s390, mipsel, vax). Alternatively, you can choose
-to build for big endian (powerpc, m68k, sparc, mips) - this includes AIX on
-pSeries. Specification of the proper endianness has to be done for all modules.
-Make sure all of them are compiled with this option:
-
-$ make clean
-$ FLAGS=-DNTLM_BIG_ENDIAN make
-
-With incorrect endianness cntlm compiles seemingly OK, but any network
-communication will malfunction (most notably NTLM authentication).
+The build system now has an independent autodetection of the build arch
+endianness. The result is printed during the compilation and is also part of
+cntlm's startup banner.
 
 
 Compilers
