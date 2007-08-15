@@ -459,7 +459,7 @@ int data_send(int dst, int src, int size) {
 	char *buf;
 	int i, block;
 	int c = 0;
-	int j = 0;
+	int j = 1;
 
 	if (!size)
 		return 1;
@@ -731,6 +731,71 @@ bailout:
 	return rc;
 }
 
+#define SAMPLE	4096
+
+int scanner_hook(rr_data_t response, int *cd, int *sd, int bodysize) {
+	char *buf, *pos, *tmp;
+	int bsize, size, len, i, c;
+	int ok = 1;
+	int done = 0;
+
+	if (response->req || bodysize != -1)
+		return 1;
+
+	bsize = SAMPLE;
+	buf = new(bsize);
+
+	len = 0;
+	do {
+		size = read(*sd, buf + len, SAMPLE - len);
+		if (debug)
+			printf("scanner_hook: read %d of %d\n", size, SAMPLE - len);
+		if (size > 0)
+			len += size;
+	} while (size > 0 && len < SAMPLE);
+
+	if (debug && !size)
+		printf("scanner_hook: buffered whole body!\n");
+
+	if (strstr(buf, "<title>Downloading status</title>") && (pos=strstr(buf, "ISAServerUniqueID=")) && (pos = strchr(pos, '"'))) {
+		pos++;
+		c = strlen(pos);
+		for (i = 0; i < c && pos[i] != '"'; ++i);
+		if (pos[i] == '"') {
+			tmp = substr(pos, 0, i-1);
+			if (debug)
+				printf("scanner_hook: ISA id = %s\n", tmp);
+
+			do {
+				c = debug; debug = 0;
+				i = so_recvln(*sd, &buf, &bsize);
+				debug = c;
+				if (i > 0) {
+					if (debug && (!strncmp(buf, " UpdatePage(", 12) || (done=!strncmp(buf, "DownloadFinished(", 17))))
+						printf("scanner_hook: %s", buf);
+				}
+			} while (i > 0 && !done);
+			free(tmp);
+
+			if ((pos = strstr(buf, "\",\"")+3) && (c = strchr(pos, '"')-pos) > 0) {
+				tmp = substr(pos, 0, c);
+				if (debug)
+					printf("scanner_hook: POST data = %s\n", tmp);
+				free(tmp);
+			}
+		} else if (debug)
+			printf("scanner_hook: ISA id not found\n");
+	}
+
+	if (len) {
+		size = write(*cd, buf, len);
+		ok = (size > 0);
+	}
+
+	free(buf);
+	return ok;
+}
+
 char *gen_denied_page(char *http) {
 	char *tmp;
 
@@ -910,14 +975,8 @@ void *process(void *client) {
 			 * The connection pool is shared among all threads, allowing maximum reuse.
 			 */
 			if (!loop && data[loop]->req) {
-				tmp = hlist_get(data[loop]->headers, "Proxy-Connection");
-				if (tmp) {
-					tmp = strdupl(tmp);
-					lowercase(tmp);
-					if (strstr(tmp, "keep-alive"))
-						keep = 1;
-					free(tmp);
-				}
+				if (hlist_subcmp(data[loop]->headers, "Proxy-Connection", "keep-alive"))
+					keep = 1;
 
 				tl = lheaders;
 				while (tl) {
@@ -949,9 +1008,9 @@ void *process(void *client) {
 			}
 
 			/*
-			 * Forward client's headers to the proxy; authenticate() might have
-			 * by now prepared 1st and 2nd auth steps and filled our headers with
-			 * the 3rd, final, NTLM message.
+			 * Forward client's headers to the proxy and vice versa; authenticate()
+			 * might have by now prepared 1st and 2nd auth steps and filled our
+			 * headers with the 3rd, final, NTLM message.
 			 */
 			if (debug) {
 				printf("Sending headers...\n");
@@ -969,7 +1028,7 @@ void *process(void *client) {
 				free_rr_data(data[1]);
 				goto bailout;
 			}
-			
+
 			/*
 			 * Was the request CONNECT and proxy agreed?
 			 */
@@ -992,8 +1051,9 @@ void *process(void *client) {
 					authok = 1;
 
 				/*
-				 * HTTP body lenght decisions. There MUST NOT be any body if the
-				 * request was HEAD or reply is 1xx, 204 or 304.
+				 * HTTP body length decisions. There MUST NOT be any body from 
+				 * server if the request was HEAD or reply is 1xx, 204 or 304.
+				 * No body can be in GET request if direction is from client.
 				 */
 				if (!data[loop]->req) {
 					nobody = (HEAD(data[0]) ||
@@ -1008,10 +1068,9 @@ void *process(void *client) {
 				 * Otherwise consult Content-Length. If present, we forward exaclty
 				 * that many bytes.
 				 *
-				 * If not present, but there was Transfer-Encoding or Content-Type
+				 * If not present, but there is Transfer-Encoding or Content-Type
 				 * (or a request to close connection, that is, end of data is signaled
-				 * by remote close), we will forward until EOF. I need to add support
-				 * for chunked encoding, but it can wait (used rarely).
+				 * by remote close), we will forward until EOF.
 				 *
 				 * No C-L, no T-E, no C-T == no body.
 				 */
@@ -1031,19 +1090,15 @@ void *process(void *client) {
 				} else
 					i = (tmp == NULL || nobody ? 0 : atol(tmp));
 
+				/*
+				 * Ok, so do we expect any body?
+				 */
 				if (i) {
 					/*
-					 * Not all data transfered to the client. Close proxy connection as it
-					 * might contain unspecified amount of unread data.
+					 * Check for supported T-E.
 					 */
-					tmp = hlist_get(data[loop]->headers, "Transfer-Encoding");
-					if (tmp) {
-						tmp = strdupl(tmp);
-						lowercase(tmp);
-						if (strstr(tmp, "chunked"))
-							chunked = 1;
-						free(tmp);
-					}
+					if (hlist_subcmp(data[loop]->headers, "Transfer-Encoding", "chunked"))
+						chunked = 1;
 
 					if (chunked) {
 						if (debug)
@@ -1063,7 +1118,17 @@ void *process(void *client) {
 						if (debug)
 							printf("Body included. Lenght: %d\n", i);
 
-						if (!data_send(*wsocket[loop], *rsocket[loop], i)) {
+						/*
+						 * This is to make the ISA AV scanner bullshit transparent.
+						 * If the page returned is scan-progress-html-fuck instead
+						 * of requested file/data, parse it, wait for completion,
+						 * make a new request to ISA for the real data and substitute
+						 * the result for the original response html-fuck response.
+						if (loop && !scanner_hook(data[loop], wsocket[loop], rsocket[loop], i))
+							i = 0;
+						 */
+
+						if (!i || !data_send(*wsocket[loop], *rsocket[loop], i)) {
 							if (debug)
 								printf("Could not send whole body\n");
 							close(sd);
@@ -1083,16 +1148,10 @@ void *process(void *client) {
 				 * tells us that it's closing the connection and if so, use
 				 * it as fact that the connection is closed.
 				 */
-				tmp = hlist_get(data[loop]->headers, "Proxy-Connection");
-				if (tmp) {
-					tmp = strdupl(tmp);
-					lowercase(tmp);
-					if (strstr(tmp, "close")) {
-						if (debug)
-							printf("PROXY CLOSED CONNECTION\n");
-						close(sd);
-					}
-					free(tmp);
+				if (hlist_subcmp(data[loop]->headers, "Proxy-Connection", "close")) {
+					if (debug)
+						printf("PROXY CLOSED CONNECTION\n");
+					close(sd);
 				}
 
 			}

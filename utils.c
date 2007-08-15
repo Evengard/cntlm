@@ -352,6 +352,28 @@ char *hlist_get(hlist_t list, const char *key) {
 }
 
 /*
+ * Test if substr is part of the header's value.
+ * Both case-insensitive.
+ */
+int hlist_subcmp(hlist_t list, const char *key, const char *substr) {
+	int found = 0;
+	char *tmp, *low;
+
+	tmp = hlist_get(list, key);
+	if (tmp) {
+		lowercase(tmp = strdupl(tmp));
+		lowercase(low = strdupl(substr));
+		if (strstr(tmp, substr))
+			found = 1;
+
+		free(low);
+		free(tmp);
+	}
+
+	return found;
+}
+
+/*
  * Free the list. For more about list memory management,
  * se hlist_add.
  */

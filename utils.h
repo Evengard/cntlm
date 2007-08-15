@@ -87,6 +87,7 @@ extern hlist_t hlist_mod(hlist_t list, char *key, char *value, int add);
 extern int hlist_in(hlist_t list, const char *key);
 extern int hlist_count(hlist_t list);
 extern char *hlist_get(hlist_t list, const char *key);
+extern int hlist_subcmp(hlist_t list, const char *key, const char *substr);
 extern hlist_t hlist_free(hlist_t list);
 extern void hlist_dump(hlist_t list);
 
