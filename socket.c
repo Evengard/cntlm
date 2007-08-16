@@ -171,9 +171,6 @@ int so_recvln(int fd, char **buf, int *size) {
 	char c = 0;
 	char *tmp;
 
-	if (debug)
-		printf("so_recvln(%d): begin\n", fd);
-
 	while (len < *size-1 && c != '\n') {
 		r = read(fd, &c, 1);
 		if (r <= 0)
@@ -196,9 +193,6 @@ int so_recvln(int fd, char **buf, int *size) {
 		}
 	}
 	VAL(*buf, char, len) = 0;
-
-	if (debug)
-		printf("so_recvln(%d): end len %d\n", fd, len);
 
 	return r;
 }

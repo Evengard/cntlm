@@ -56,7 +56,13 @@
 
 #define BLOCK		2048
 #define AUTHSIZE	100
+#define SAMPLE		4096
 #define STACK_SIZE	sizeof(int)*8*1024
+
+#define PLUG_SENDHEAD	0x0001
+#define PLUG_SENDDATA	0x0002
+#define PLUG_ERROR	0x8000
+#define PLUG_ALL	0x7FFF
 
 /*
  * A couple of shortcuts for if statements
@@ -522,8 +528,10 @@ int chunked_data_send(int dst, int src) {
 	do {
 		i = so_recvln(src, &buf, &bsize);
 		if (i <= 0) {
-			err = NULL;
-			break;
+			if (debug)
+				printf("chunked_data_send: aborting, read error\n");
+			free(buf);
+			return 0;
 		}
 
 		if (debug)
@@ -545,8 +553,10 @@ int chunked_data_send(int dst, int src) {
 			printf("strtol: %d (%x) - err: %s\n", csize, csize, err);
 
 		if (*err != '\r' && *err != '\n' && *err != ';' && *err != ' ' && *err != '\t') {
-			err = NULL;
-			break;
+			if (debug)
+				printf("chunked_data_send: aborting, chunk size format error\n");
+			free(buf);
+			return 0;
 		}
 
 		if (debug && !csize)
@@ -568,18 +578,11 @@ int chunked_data_send(int dst, int src) {
 	do {
 		i = so_recvln(src, &buf, &bsize);
 		if (debug)
-			printf("Trailer header: %s", buf);
+			printf("Trailer header(i=%d): %s\n", i, buf);
 		write(dst, buf, strlen(buf));
-	} while (buf[0] != '\r' && buf[0] != '\n');
+	} while (i > 0 && buf[0] != '\r' && buf[0] != '\n');
 
 	free(buf);
-
-	if (err == NULL) {
-		if (debug)
-			syslog(LOG_WARNING, "chunked_data_send: fds %d:%d warning %d (connection closed)\n", dst, src, i);
-		return 0;
-	}
-
 	return 1;
 }
 
@@ -694,6 +697,7 @@ int authenticate(int sd, rr_data_t data, char *user, char *password, char *domai
 		rc = 0;
 		goto bailout;
 	}
+
 	/*
 	tmp = hlist_get(auth->headers, "Content-Length");
 	if (tmp && (len = atoi(tmp))) {
@@ -736,17 +740,67 @@ bailout:
 	return rc;
 }
 
-#define SAMPLE	4096
+/*
+ * Return 0 if no body, -1 if until EOF, number if size known
+ */
+int has_body(rr_data_t request, rr_data_t response) {
+	rr_data_t current;
+	int length, nobody;
+	char *tmp;
 
-int scanner_hook(rr_data_t request, int *cd, int *sd, int bodysize) {
-	char *buf, *pos, *tmp, *isaid, *uurl;
-	int bsize, size, len, i, c, nc;
+	/*
+	 * Checking complete req+res conversation or just the
+	 * first part when there's no response yet?
+	 */
+	current = (response->http != NULL ? response : request);
+
+	/*
+	 * HTTP body length decisions. There MUST NOT be any body from 
+	 * server if the request was HEAD or reply is 1xx, 204 or 304.
+	 * No body can be in GET request if direction is from client.
+	 */
+	if (current == response) {
+		nobody = (HEAD(request) ||
+			(response->code >= 100 && response->code < 200) ||
+			response->code == 204 ||
+			response->code == 304);
+	} else {
+		nobody = GET(request) || HEAD(request);
+	}
+
+	/*
+	 * Otherwise consult Content-Length. If present, we forward exaclty
+	 * that many bytes.
+	 *
+	 * If not present, but there is Transfer-Encoding or Content-Type
+	 * (or a request to close connection, that is, end of data is signaled
+	 * by remote close), we will forward until EOF.
+	 *
+	 * No C-L, no T-E, no C-T == no body.
+	 */
+	tmp = hlist_get(current->headers, "Content-Length");
+	if (!nobody && tmp == NULL && (hlist_in(current->headers, "Content-Type")
+			|| hlist_in(current->headers, "Transfer-Encoding")
+			|| (response->code == 200))) {
+		length = -1;
+	} else
+		length = (tmp == NULL || nobody ? 0 : atol(tmp));
+
+	return length;
+}
+
+int scanner_hook(rr_data_t *request, rr_data_t *response, int *cd, int *sd) {
+	char *buf, *line, *pos, *tmp, *post, *isaid, *uurl;
+	int bsize, lsize, size, len, i, c, nc;
 	rr_data_t newreq, newres;
 	int ok = 1;
 	int done = 0;
 
-	if (!request->req || bodysize != -1)
-		return 1;
+	if (!(*request)->method || !(*response)->http
+		|| has_body(*request, *response) != -1
+		|| hlist_subcmp((*response)->headers, "Transfer-Encoding", "chunked")
+		|| !hlist_subcmp((*response)->headers, "Proxy-Connection", "close"))
+		return PLUG_SENDHEAD | PLUG_SENDDATA;
 
 	bsize = SAMPLE;
 	buf = new(bsize);
@@ -767,67 +821,78 @@ int scanner_hook(rr_data_t request, int *cd, int *sd, int bodysize) {
 		pos++;
 		c = strlen(pos);
 		for (i = 0; i < c && pos[i] != '"'; ++i);
+
 		if (pos[i] == '"') {
 			isaid = substr(pos, 0, i);
 			if (debug)
 				printf("scanner_hook: ISA id = %s\n", isaid);
 
+			lsize = BUFSIZE;
+			line = new(lsize);
 			do {
-				c = debug; debug = 0;
-				i = so_recvln(*sd, &buf, &bsize);
-				debug = c;
+				i = so_recvln(*sd, &line, &lsize);
+
+				c = strlen(line);
+				if (len + c >= bsize) {
+					bsize *= 2;
+					tmp = realloc(buf, bsize);
+					if (tmp == NULL)
+						break;
+					else
+						buf = tmp;
+				}
+
+				strcat(buf, line);
+				len += c;
+
 				if (i > 0) {
-					if (debug && (!strncmp(buf, " UpdatePage(", 12) || (done=!strncmp(buf, "DownloadFinished(", 17))))
-						printf("scanner_hook: %s", buf);
+					if (debug && (!strncmp(line, " UpdatePage(", 12) || (done=!strncmp(line, "DownloadFinished(", 17))))
+						printf("scanner_hook: %s", line);
 				}
 			} while (i > 0 && !done);
 
-			if (i > 0 && (pos = strstr(buf, "\",\"")+3) && (c = strchr(pos, '"')-pos) > 0) {
+			if (i > 0 && (pos = strstr(line, "\",\"")+3) && (c = strchr(pos, '"')-pos) > 0) {
 				tmp = substr(pos, 0, c);
 				pos = urlencode(tmp);
 				free(tmp);
 
-				uurl = urlencode(request->url);
+				uurl = urlencode((*request)->url);
 
-				memset(buf, 0, bsize);
-				snprintf(buf, bsize, "%surl=%s&%sSaveToDisk=YES&%sOrig=%s", isaid, pos, isaid, isaid, uurl);
+				post = new(BUFSIZE);
+				snprintf(post, bsize, "%surl=%s&%sSaveToDisk=YES&%sOrig=%s", isaid, pos, isaid, isaid, uurl);
 
 				if (debug)
-					printf("scanner_hook: URL data = %s\n", request->url);
+					printf("scanner_hook: URL data = %s\n", (*request)->url);
 
 				tmp = new(AUTHSIZE);
-				snprintf(tmp, AUTHSIZE, "%d", strlen(buf));
+				snprintf(tmp, AUTHSIZE, "%d", strlen(post));
 
 				newres = new_rr_data();
-				newreq = dup_rr_data(request);
+				newreq = dup_rr_data(*request);
 
 				free(newreq->method);
 				newreq->method = strdupl("POST");
-				hlist_mod(newreq->headers, "Referer", request->url, 1);
+				hlist_mod(newreq->headers, "Referer", (*request)->url, 1);
 				hlist_mod(newreq->headers, "Content-Type", "application/x-www-form-urlencoded", 1);
 				hlist_mod(newreq->headers, "Content-Length", tmp, 1);
 				free(tmp);
 
 				nc = proxy_connect();
 				c = authenticate(nc, newreq, user, password, domain);
-				if (i && i != 500) {
-					printf("scanner_hook: Authentication OK, getting response...\n");
+				if (c > 0 && c != 500) {
+					printf("scanner_hook: Authentication OK, getting the file...\n");
 					if (headers_send(nc, newreq)) {
-						write(nc, buf, strlen(buf));
+						write(nc, post, strlen(post));
 						if (headers_recv(nc, newres)) {
 							if (debug)
 								hlist_dump(newres->headers);
-							headers_send(*cd, newres);
-							tmp = hlist_get(newres->headers, "Content-Length");
-							if (tmp) {
-								ok = atol(tmp);
-							} else
-								ok = -1;
 
-							close(*sd);
+							free_rr_data(*response);
+							*response = dup_rr_data(newres);
 							*sd = nc;
 
 							len = 0;
+							ok = PLUG_SENDHEAD | PLUG_SENDDATA;
 						} else
 							printf("scanner_hook: New request failed - headers recv\n");
 					} else
@@ -835,17 +900,36 @@ int scanner_hook(rr_data_t request, int *cd, int *sd, int bodysize) {
 				} else
 					printf("scanner_hook: Authentication failed\n");
 
+				free(newreq);
+				free(newres);
+				free(post);
 				free(uurl);
 			}
 
+			free(line);
 			free(isaid);
 		} else if (debug)
 			printf("scanner_hook: ISA id not found\n");
 	}
 
 	if (len) {
+		if (debug) {
+			printf("scanner_hook: flushing %d original bytes\n", len);
+			hlist_dump((*response)->headers);
+		}
+
+		if (!headers_send(*cd, *response)) {
+			if (debug)
+				printf("scanner_hook: failed to send headers\n");
+			free(buf);
+			return PLUG_ERROR;
+		}
+
 		size = write(*cd, buf, len);
-		ok = (size > 0);
+		if (size > 0)
+			ok = PLUG_SENDDATA;
+		else
+			ok = PLUG_ERROR;
 	}
 
 	if (debug)
@@ -878,7 +962,7 @@ char *gen_denied_page(char *http) {
  */
 void *process(void *client) {
 	int *rsocket[2], *wsocket[2];
-	int i, j, loop, nobody, keep, chunked;
+	int i, loop, bodylen, keep, chunked, plugin;
 	rr_data_t data[2], errdata;
 	hlist_t tl;
 	char *tmp, *buf, *pos, *dom;
@@ -1067,22 +1151,54 @@ void *process(void *client) {
 				}
 			}
 
-			if (debug) {
-				printf("Sending headers...\n");
-				if (!loop)
-					hlist_dump(data[loop]->headers);
-			}
+			/*
+			 * Was the request first and did we authenticated with proxy?
+			 * Remember not to authenticate this connection any more, should
+			 * it be reused for future client requests.
+			 */
+			if (loop && !authok && data[1]->code != 407)
+				authok = 1;
 
 			/*
-			 * Forward client's headers to the proxy and vice versa; authenticate()
-			 * might have by now prepared 1st and 2nd auth steps and filled our
-			 * headers with the 3rd, final, NTLM message.
+			 * This is to make the ISA AV scanner bullshit transparent.
+			 * If the page returned is scan-progress-html-fuck instead
+			 * of requested file/data, parse it, wait for completion,
+			 * make a new request to ISA for the real data and substitute
+			 * the result for the original response html-fuck response.
 			 */
-			if (!headers_send(*wsocket[loop], data[loop])) {
-				close(sd);
-				free_rr_data(data[0]);
-				free_rr_data(data[1]);
-				goto bailout;
+			plugin = PLUG_ALL;
+			if (loop) {
+				plugin = scanner_hook(&data[0], &data[1], wsocket[loop], rsocket[loop]);
+			}
+
+			bodylen = has_body(data[0], data[1]);
+			if (debug && bodylen == -1) {
+				printf("*************************\n");
+				printf("CL: %s, C: %s, CT: %s, TE: %s\n", 
+					hlist_get(data[loop]->headers, "Content-Length"),
+					hlist_get(data[loop]->headers, "Connection"),
+					hlist_get(data[loop]->headers, "Content-Type"),
+					hlist_get(data[loop]->headers, "Transfer-Encoding"));
+			}
+
+			if (plugin & PLUG_SENDHEAD) {
+				if (debug) {
+					printf("Sending headers...\n");
+					if (!loop)
+						hlist_dump(data[loop]->headers);
+				}
+
+				/*
+				 * Forward client's headers to the proxy and vice versa; authenticate()
+				 * might have by now prepared 1st and 2nd auth steps and filled our
+				 * headers with the 3rd, final, NTLM message.
+				 */
+				if (!headers_send(*wsocket[loop], data[loop])) {
+					close(sd);
+					free_rr_data(data[0]);
+					free_rr_data(data[1]);
+					goto bailout;
+				}
 			}
 
 			/*
@@ -1097,59 +1213,11 @@ void *process(void *client) {
 				free_rr_data(data[0]);
 				free_rr_data(data[1]);
 				goto bailout;
-			} else {
-				/*
-				 * Was the request first and did we authenticated with proxy?
-				 * Remember not to authenticate this connection any more, should
-				 * it be reused for future client requests.
-				 */
-				if (loop && !authok && data[1]->code != 407)
-					authok = 1;
-
-				/*
-				 * HTTP body length decisions. There MUST NOT be any body from 
-				 * server if the request was HEAD or reply is 1xx, 204 or 304.
-				 * No body can be in GET request if direction is from client.
-				 */
-				if (!data[loop]->req) {
-					nobody = (HEAD(data[0]) ||
-						(data[1]->code >= 100 && data[1]->code < 200) ||
-						data[1]->code == 204 ||
-						data[1]->code == 304);
-				} else {
-					nobody = GET(data[loop]) || HEAD(data[loop]);
-				}
-
-				/*
-				 * Otherwise consult Content-Length. If present, we forward exaclty
-				 * that many bytes.
-				 *
-				 * If not present, but there is Transfer-Encoding or Content-Type
-				 * (or a request to close connection, that is, end of data is signaled
-				 * by remote close), we will forward until EOF.
-				 *
-				 * No C-L, no T-E, no C-T == no body.
-				 */
-				tmp = hlist_get(data[loop]->headers, "Content-Length");
-				if (!nobody && tmp == NULL && (hlist_in(data[loop]->headers, "Content-Type")
-						|| hlist_in(data[loop]->headers, "Transfer-Encoding")
-						|| (loop && data[1]->code == 200))) {
-					i = -1;
-					if (debug) {
-						printf("*************************\n");
-						printf("CL: %s, C: %s, CT: %s, TE: %s\n", 
-							hlist_get(data[loop]->headers, "Content-Length"),
-							hlist_get(data[loop]->headers, "Connection"),
-							hlist_get(data[loop]->headers, "Content-Type"),
-							hlist_get(data[loop]->headers, "Transfer-Encoding"));
-					}
-				} else
-					i = (tmp == NULL || nobody ? 0 : atol(tmp));
-
+			} else if (plugin & PLUG_SENDDATA) {
 				/*
 				 * Ok, so do we expect any body?
 				 */
-				if (i) {
+				if (bodylen) {
 					/*
 					 * Check for supported T-E.
 					 */
@@ -1172,24 +1240,9 @@ void *process(void *client) {
 						}
 					} else {
 						if (debug)
-							printf("Body included. Lenght: %d\n", i);
+							printf("Body included. Lenght: %d\n", bodylen);
 
-						/*
-						 * This is to make the ISA AV scanner bullshit transparent.
-						 * If the page returned is scan-progress-html-fuck instead
-						 * of requested file/data, parse it, wait for completion,
-						 * make a new request to ISA for the real data and substitute
-						 * the result for the original response html-fuck response.
-						 */
-						if (loop) {
-							j = scanner_hook(data[0], wsocket[loop], rsocket[loop], i);
-							if (j > 1) {
-								i = j;
-							} else if (i == 0)
-								i = 0;
-						}
-
-						if (!i || !data_send(*wsocket[loop], *rsocket[loop], i)) {
+						if (!bodylen || !data_send(*wsocket[loop], *rsocket[loop], bodylen)) {
 							if (debug)
 								printf("Could not send whole body\n");
 							close(sd);
