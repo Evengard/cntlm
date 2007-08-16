@@ -666,6 +666,23 @@ inline int unicode(char **dst, char *src) {
 	return 2*l;
 }
 
+char *urlencode(const char *str) {
+	char *tmp;
+	int i, pos;
+
+	tmp = new(strlen(str)*3 + 1);
+	for (pos = 0, i = 0; i < strlen(str); ++i) {
+		if (isdigit(str[i]) || (tolower(str[i]) >= 'a' && tolower(str[i]) <= 'z') || str[i] == '.' || str[i] == '-' || str[i] == '_' || str[i] == '~') {
+			tmp[pos++] = str[i];
+		} else {
+			sprintf(tmp+pos, "%%%X", (unsigned char)str[i]);
+			pos += 3;
+		}
+	}
+
+	return tmp;
+}
+
 /* 
  * BASE64 CODE FROM MUTT BEGIN - ORIGINAL COPYRIGHT APPLIES:
  *

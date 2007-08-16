@@ -103,6 +103,7 @@ extern char *head_name(const char *src);
 extern char *head_value(const char *src);
 extern inline int unicode(char **dst, char *src);
 extern inline char *new(size_t size);
+extern char *urlencode(const char *str);
 
 extern rr_data_t new_rr_data(void);
 extern rr_data_t dup_rr_data(rr_data_t data);

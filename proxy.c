@@ -644,6 +644,10 @@ int tunnel(int cd, int sd) {
  * Read in the reply, if it contains NTLM challenge, generate final
  * NTLM auth message and insert it into the original client header,
  * which is then normally proessed back in process().
+ *
+ * If the immediate reply is an error message, it get stored into
+ * error if not NULL, so it can be forwarded to the client. Caller
+ * must then free it!
  */
 int authenticate(int sd, rr_data_t data, char *user, char *password, char *domain) {
 	char *tmp, *buf, *challenge;
@@ -715,10 +719,11 @@ int authenticate(int sd, rr_data_t data, char *user, char *password, char *domai
 			syslog(LOG_WARNING, "No Proxy-Authenticate received! NTLM not supported?\n");
 		}
 	} else if (auth->code >= 500 && auth->code <= 599) {
-		if (debug)
-			printf("REQUEST DENIED\n\n");
+		syslog(LOG_WARNING, "The request was denied!\n");
 
+		close(sd);
 		rc = 500;
+
 		goto bailout;
 	}
 
@@ -733,13 +738,14 @@ bailout:
 
 #define SAMPLE	4096
 
-int scanner_hook(rr_data_t response, int *cd, int *sd, int bodysize) {
-	char *buf, *pos, *tmp;
-	int bsize, size, len, i, c;
+int scanner_hook(rr_data_t request, int *cd, int *sd, int bodysize) {
+	char *buf, *pos, *tmp, *isaid, *uurl;
+	int bsize, size, len, i, c, nc;
+	rr_data_t newreq, newres;
 	int ok = 1;
 	int done = 0;
 
-	if (response->req || bodysize != -1)
+	if (!request->req || bodysize != -1)
 		return 1;
 
 	bsize = SAMPLE;
@@ -762,9 +768,9 @@ int scanner_hook(rr_data_t response, int *cd, int *sd, int bodysize) {
 		c = strlen(pos);
 		for (i = 0; i < c && pos[i] != '"'; ++i);
 		if (pos[i] == '"') {
-			tmp = substr(pos, 0, i-1);
+			isaid = substr(pos, 0, i);
 			if (debug)
-				printf("scanner_hook: ISA id = %s\n", tmp);
+				printf("scanner_hook: ISA id = %s\n", isaid);
 
 			do {
 				c = debug; debug = 0;
@@ -775,14 +781,64 @@ int scanner_hook(rr_data_t response, int *cd, int *sd, int bodysize) {
 						printf("scanner_hook: %s", buf);
 				}
 			} while (i > 0 && !done);
-			free(tmp);
 
-			if ((pos = strstr(buf, "\",\"")+3) && (c = strchr(pos, '"')-pos) > 0) {
+			if (i > 0 && (pos = strstr(buf, "\",\"")+3) && (c = strchr(pos, '"')-pos) > 0) {
 				tmp = substr(pos, 0, c);
-				if (debug)
-					printf("scanner_hook: POST data = %s\n", tmp);
+				pos = urlencode(tmp);
 				free(tmp);
+
+				uurl = urlencode(request->url);
+
+				memset(buf, 0, bsize);
+				snprintf(buf, bsize, "%surl=%s&%sSaveToDisk=YES&%sOrig=%s", isaid, pos, isaid, isaid, uurl);
+
+				if (debug)
+					printf("scanner_hook: URL data = %s\n", request->url);
+
+				tmp = new(AUTHSIZE);
+				snprintf(tmp, AUTHSIZE, "%d", strlen(buf));
+
+				newres = new_rr_data();
+				newreq = dup_rr_data(request);
+
+				free(newreq->method);
+				newreq->method = strdupl("POST");
+				hlist_mod(newreq->headers, "Referer", request->url, 1);
+				hlist_mod(newreq->headers, "Content-Type", "application/x-www-form-urlencoded", 1);
+				hlist_mod(newreq->headers, "Content-Length", tmp, 1);
+				free(tmp);
+
+				nc = proxy_connect();
+				c = authenticate(nc, newreq, user, password, domain);
+				if (i && i != 500) {
+					printf("scanner_hook: Authentication OK, getting response...\n");
+					if (headers_send(nc, newreq)) {
+						write(nc, buf, strlen(buf));
+						if (headers_recv(nc, newres)) {
+							if (debug)
+								hlist_dump(newres->headers);
+							headers_send(*cd, newres);
+							tmp = hlist_get(newres->headers, "Content-Length");
+							if (tmp) {
+								ok = atol(tmp);
+							} else
+								ok = -1;
+
+							close(*sd);
+							*sd = nc;
+
+							len = 0;
+						} else
+							printf("scanner_hook: New request failed - headers recv\n");
+					} else
+						printf("scanner_hook: New request failed - headers send\n");
+				} else
+					printf("scanner_hook: Authentication failed\n");
+
+				free(uurl);
 			}
+
+			free(isaid);
 		} else if (debug)
 			printf("scanner_hook: ISA id not found\n");
 	}
@@ -791,6 +847,9 @@ int scanner_hook(rr_data_t response, int *cd, int *sd, int bodysize) {
 		size = write(*cd, buf, len);
 		ok = (size > 0);
 	}
+
+	if (debug)
+		printf("scanner_hook: ending with %d\n", ok);
 
 	free(buf);
 	return ok;
@@ -819,8 +878,8 @@ char *gen_denied_page(char *http) {
  */
 void *process(void *client) {
 	int *rsocket[2], *wsocket[2];
-	int i, loop, nobody, keep, chunked;
-	rr_data_t data[2];
+	int i, j, loop, nobody, keep, chunked;
+	rr_data_t data[2], errdata;
 	hlist_t tl;
 	char *tmp, *buf, *pos, *dom;
 	char *puser, *ppass, *pdomain;				/* Per-thread credentials; for NTLM-to-basic */
@@ -991,6 +1050,7 @@ void *process(void *client) {
 			 * Got request from client and connection is not yet authenticated?
 			 */
 			if (!loop && data[0]->req && !authok) {
+				errdata = NULL;
 				if (!(i = authenticate(*wsocket[0], data[0], puser, ppass, pdomain)))
 					syslog(LOG_ERR, "Authentication requests failed. Will try without.\n");
 
@@ -1007,11 +1067,6 @@ void *process(void *client) {
 				}
 			}
 
-			/*
-			 * Forward client's headers to the proxy and vice versa; authenticate()
-			 * might have by now prepared 1st and 2nd auth steps and filled our
-			 * headers with the 3rd, final, NTLM message.
-			 */
 			if (debug) {
 				printf("Sending headers...\n");
 				if (!loop)
@@ -1019,8 +1074,9 @@ void *process(void *client) {
 			}
 
 			/*
-			 * Client might have closed connection, discarding requested data.
-			 * Close proxy connection, which might have some data left unread.
+			 * Forward client's headers to the proxy and vice versa; authenticate()
+			 * might have by now prepared 1st and 2nd auth steps and filled our
+			 * headers with the 3rd, final, NTLM message.
 			 */
 			if (!headers_send(*wsocket[loop], data[loop])) {
 				close(sd);
@@ -1061,7 +1117,7 @@ void *process(void *client) {
 						data[1]->code == 204 ||
 						data[1]->code == 304);
 				} else {
-					nobody = GET(data[loop]);
+					nobody = GET(data[loop]) || HEAD(data[loop]);
 				}
 
 				/*
@@ -1124,9 +1180,14 @@ void *process(void *client) {
 						 * of requested file/data, parse it, wait for completion,
 						 * make a new request to ISA for the real data and substitute
 						 * the result for the original response html-fuck response.
-						if (loop && !scanner_hook(data[loop], wsocket[loop], rsocket[loop], i))
-							i = 0;
 						 */
+						if (loop) {
+							j = scanner_hook(data[0], wsocket[loop], rsocket[loop], i);
+							if (j > 1) {
+								i = j;
+							} else if (i == 0)
+								i = 0;
+						}
 
 						if (!i || !data_send(*wsocket[loop], *rsocket[loop], i)) {
 							if (debug)
