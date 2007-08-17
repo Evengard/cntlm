@@ -1126,8 +1126,10 @@ void *process(void *client) {
 					data[loop]->headers = hlist_mod(data[loop]->headers, tl->key, tl->value, 1);
 					tl = tl->next;
 				}
+
 				data[loop]->headers = hlist_mod(data[loop]->headers, "Proxy-Connection", "Keep-Alive", 1);
 				data[loop]->headers = hlist_mod(data[loop]->headers, "Connection", "Keep-Alive", 1);
+				data[loop]->headers = hlist_del(data[loop]->headers, "Proxy-Authorization");
 			}
 
 			/*
