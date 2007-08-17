@@ -256,6 +256,42 @@ private. \fBCntlm\fP deletes the password from the memory, so it cannot be
 seen in /proc or with process inspection tools like \fBps(1)\fP, etc.
 
 .TP
+.B \-S <max_size_in_kb>
+Enables the plugin for transparent handling of the dreaded ISA AV scanner, which
+returns an interactive HTTP page (displaying the scanning progress) instead of
+the file/data you've requested, every time it feels like scanning the contents.
+This presumptuous behavior breaks every automated downloader, updater and
+basically ANY application relying on downloads (e.g. apt-get).
+
+The parameter \fImax_size_in_kb\fP allows you to choose which downloads are
+too big to handle. If the file size is bigger than this, \fBcntlm\fP forwards
+you the interactive page, effectively disabling the plugin for that download.
+
+Imagine this: the client asks for a file, \fBcntlm\fP detects ISA's bullshit
+response and waits for the secret link to ISA's cache, which comes no sooner
+than the file is scanned and downloaded by ISA. Only then can \fBcntlm\fP make
+the second request for the real file and forward it along with correct headers
+to the client. The client doesn't timeout, b/c \fBcntlm\fP is periodically
+sending a dummy "keepalive" header, but the user might get nervous not seeing
+the progress bar move. (it's of course purely psychological matter, there's no
+difference if \fBcntlm\fP or your browser requests the scanned file; what's
+more, if the plugin cannot parse the page for some reason, it quits and you get
+it - it's never "lost").
+
+I might also add decisions based on User-Agent. Like: browsers get the original
+scanner page if file too big, b/c there's a human operating it; wget, apt-get
+and yum engage the plugin for any size, b/c there's no way they could
+understand the scanner page and they don't mind waiting without seeing the
+progress bar moving.
+
+.TP
+.B \-s
+Serializes all requests by not using concurrent threads for proxy (tunneling
+still works in parallel). This has a horrible impact on performance and is
+available only for debugging purposes. When used with \fB\-v\fP, it yields
+nice sequential debug log, where requests take turns.
+
+.TP
 .B \-U <uid>
 When executed as root, do the stuff that needs such permissions (read config,
 bind ports, etc.) and then immediately drop privileges and change to \fIuid\fP.

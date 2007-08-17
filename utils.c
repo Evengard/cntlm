@@ -474,6 +474,7 @@ rr_data_t new_rr_data(void) {
 	data = malloc(sizeof(struct rr_data_s));
 	data->req = 0;
 	data->code = 0;
+	data->skip_http = 0;
 	data->headers = NULL;
 	data->method = NULL;
 	data->url = NULL;

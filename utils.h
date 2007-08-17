@@ -57,6 +57,7 @@ struct rr_data_s {
 	int req;
 	hlist_t headers;
 	int code;
+	int skip_http;
 	char *method;
 	char *url;
 	char *http;

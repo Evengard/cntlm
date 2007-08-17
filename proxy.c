@@ -91,6 +91,8 @@ static int serial = 0;			/* main() and process() */
 static int asdaemon = 1;		/* myexit() */
 static int basic = 0;			/* process() */
 static int forced_basic = 0;
+static int scanner_plugin = 0;
+static long scanner_plugin_maxsize = 0;
 
 /*
  * List of finished threads. Each thread process() adds itself to it when
@@ -392,9 +394,10 @@ int headers_send(int fd, rr_data_t data) {
 	/*
 	 * Prepare the first request/response line
 	 */
+	len = 0;
 	if (data->req)
 		len = sprintf(buf, "%s %s HTTP/1.%s\r\n", data->method, data->url, data->http);
-	else
+	else if (!data->skip_http)
 		len = sprintf(buf, "HTTP/1.%s %03d %s\r\n", data->http, data->code, data->msg);
 
 	/*
@@ -789,12 +792,14 @@ int has_body(rr_data_t request, rr_data_t response) {
 	return length;
 }
 
-int scanner_hook(rr_data_t *request, rr_data_t *response, int *cd, int *sd) {
+int scanner_hook(rr_data_t *request, rr_data_t *response, int *cd, int *sd, long maxKBs) {
 	char *buf, *line, *pos, *tmp, *post, *isaid, *uurl;
-	int bsize, lsize, size, len, i, c, nc;
+	int bsize, lsize, size, len, i, nc;
 	rr_data_t newreq, newres;
 	int ok = 1;
 	int done = 0;
+	int headers_initiated = 0;
+	long c, filesize = 0;
 
 	if (!(*request)->method || !(*response)->http
 		|| has_body(*request, *response) != -1
@@ -846,12 +851,45 @@ int scanner_hook(rr_data_t *request, rr_data_t *response, int *cd, int *sd) {
 				len += c;
 
 				if (i > 0) {
-					if (debug && (!strncmp(line, " UpdatePage(", 12) || (done=!strncmp(line, "DownloadFinished(", 17))))
+					if (debug && (!strncmp(line, " UpdatePage(", 12) || (done=!strncmp(line, "DownloadFinished(", 17)))) {
 						printf("scanner_hook: %s", line);
+
+						if ((pos=strstr(line, "To be downloaded"))) {
+							filesize = atol(pos+16);
+							if (debug)
+								printf("scanner_hook: file size detected: %ld KiBs (max: %ld)\n", filesize/1024, maxKBs);
+
+							if (filesize/1024 > maxKBs)
+								break;
+
+							/*
+							 * We have to send HTTP protocol ID so we can send the notification
+							 * headers during downloading. Once we've done that, it cannot appear
+							 * again, which it would if we returned PLUG_SENDHEAD, so we must
+							 * remember to not include it.
+							 */
+							headers_initiated = 1;
+							tmp = new(AUTHSIZE);
+							snprintf(tmp, AUTHSIZE, "HTTP/1.%s 200 OK\r\n", (*request)->http);
+							write(*cd, tmp, strlen(tmp));
+							free(tmp);
+						}
+
+						/*
+						 * Send a notification header to the client, just so it doesn't timeout
+						 */
+						if (!done) {
+							tmp = new(AUTHSIZE);
+							c = atol(line+12);
+							snprintf(tmp, AUTHSIZE, "ISA-Scanner: %ld of %ld\r\n", c, filesize);
+							write(*cd, tmp, strlen(tmp));
+							free(tmp);
+						}
+					}
 				}
 			} while (i > 0 && !done);
 
-			if (i > 0 && (pos = strstr(line, "\",\"")+3) && (c = strchr(pos, '"')-pos) > 0) {
+			if (i > 0 && done && (pos = strstr(line, "\",\"")+3) && (c = strchr(pos, '"')-pos) > 0) {
 				tmp = substr(pos, 0, c);
 				pos = urlencode(tmp);
 				free(tmp);
@@ -862,7 +900,7 @@ int scanner_hook(rr_data_t *request, rr_data_t *response, int *cd, int *sd) {
 				snprintf(post, bsize, "%surl=%s&%sSaveToDisk=YES&%sOrig=%s", isaid, pos, isaid, isaid, uurl);
 
 				if (debug)
-					printf("scanner_hook: URL data = %s\n", (*request)->url);
+					printf("scanner_hook: Getting file with URL data = %s\n", (*request)->url);
 
 				tmp = new(AUTHSIZE);
 				snprintf(tmp, AUTHSIZE, "%d", strlen(post));
@@ -877,28 +915,47 @@ int scanner_hook(rr_data_t *request, rr_data_t *response, int *cd, int *sd) {
 				hlist_mod(newreq->headers, "Content-Length", tmp, 1);
 				free(tmp);
 
-				nc = proxy_connect();
-				c = authenticate(nc, newreq, user, password, domain);
-				if (c > 0 && c != 500) {
-					printf("scanner_hook: Authentication OK, getting the file...\n");
-					if (headers_send(nc, newreq)) {
-						write(nc, post, strlen(post));
-						if (headers_recv(nc, newres)) {
-							if (debug)
-								hlist_dump(newres->headers);
+				/*
+				 * Try to use a cached connection or authenticate new.
+				 */
+				pthread_mutex_lock(&clist_mtx);
+				i = plist_pop(&clist);
+				pthread_mutex_unlock(&clist_mtx);
+				if (i) {
+					if (debug)
+						printf("scanner_hook: Found autenticated connection %d!\n", i);
+					nc = i;
+				} else {
+					nc = proxy_connect();
+					c = authenticate(nc, newreq, user, password, domain);
+					if (c > 0 && c != 500)
+						printf("scanner_hook: Authentication OK, getting the file...\n");
+					else {
+						printf("scanner_hook: Authentication failed\n");
+						nc = 0;
+					}
+				}
 
-							free_rr_data(*response);
-							*response = dup_rr_data(newres);
-							*sd = nc;
+				/*
+				 * The POST request for the real file
+				 */
+				if (nc && headers_send(nc, newreq) && write(nc, post, strlen(post)) && headers_recv(nc, newres)) {
+					if (debug)
+						hlist_dump(newres->headers);
 
-							len = 0;
-							ok = PLUG_SENDHEAD | PLUG_SENDDATA;
-						} else
-							printf("scanner_hook: New request failed - headers recv\n");
-					} else
-						printf("scanner_hook: New request failed - headers send\n");
+					free_rr_data(*response);
+					/*
+					 * Here we remember if previous code already sent some headers
+					 * to the client. In such case, do not include the HTTP/1.x ID.
+					 */
+					newres->skip_http = headers_initiated;
+					*response = dup_rr_data(newres);
+					*sd = nc;
+
+					len = 0;
+					ok = PLUG_SENDHEAD | PLUG_SENDDATA;
 				} else
-					printf("scanner_hook: Authentication failed\n");
+					printf("scanner_hook: New request failed\n");
 
 				free(newreq);
 				free(newres);
@@ -1121,12 +1178,19 @@ void *process(void *client) {
 				if (hlist_subcmp(data[loop]->headers, "Proxy-Connection", "keep-alive"))
 					keep = 1;
 
+				/*
+				 * Header replacement implementation
+				 */
 				tl = lheaders;
 				while (tl) {
 					data[loop]->headers = hlist_mod(data[loop]->headers, tl->key, tl->value, 1);
 					tl = tl->next;
 				}
 
+				/*
+				 * Also remove runaway P-A from the client (e.g. Basic from N-t-B), which might 
+				 * cause some ISAs to deny us, even if the connection is already auth'd.
+				 */
 				data[loop]->headers = hlist_mod(data[loop]->headers, "Proxy-Connection", "Keep-Alive", 1);
 				data[loop]->headers = hlist_mod(data[loop]->headers, "Connection", "Keep-Alive", 1);
 				data[loop]->headers = hlist_del(data[loop]->headers, "Proxy-Authorization");
@@ -1169,8 +1233,8 @@ void *process(void *client) {
 			 * the result for the original response html-fuck response.
 			 */
 			plugin = PLUG_ALL;
-			if (0 && loop) {
-				plugin = scanner_hook(&data[0], &data[1], wsocket[loop], rsocket[loop]);
+			if (scanner_plugin && loop) {
+				plugin = scanner_hook(&data[0], &data[1], wsocket[loop], rsocket[loop], scanner_plugin_maxsize);
 			}
 
 			bodylen = has_body(data[0], data[1]);
@@ -1215,7 +1279,9 @@ void *process(void *client) {
 				free_rr_data(data[0]);
 				free_rr_data(data[1]);
 				goto bailout;
-			} else if (plugin & PLUG_SENDDATA) {
+			}
+			
+			if (plugin & PLUG_SENDDATA) {
 				/*
 				 * Ok, so do we expect any body?
 				 */
@@ -1528,8 +1594,13 @@ int main(int argc, char **argv) {
 	syslog(LOG_INFO, "Starting cntlm version " VERSION " for LITTLE endian\n");
 #endif
 
-	while ((i = getopt(argc, argv, ":-:a:c:d:fgh:il:p:su:vw:A:BD:F:L:P:U:")) != -1) {
+	while ((i = getopt(argc, argv, ":-:a:c:d:fgh:il:p:su:vw:A:BD:F:L:P:S:U:")) != -1) {
 		switch (i) {
+			case 'A':
+			case 'D':
+				if (!acl_add(&rules, optarg, (i == 'A' ? ACL_ALLOW : ACL_DENY)))
+					myexit(1);
+				break;
 			case 'a':
 				strlcpy(auth, optarg, AUTHSIZE);
 				break;
@@ -1545,11 +1616,11 @@ int main(int argc, char **argv) {
 			case 'd':
 				strlcpy(domain, optarg, AUTHSIZE);
 				break;
-			case 'v':
-				debug = 1;
+			case 'F':
+				flags = swap32(strtoul(optarg, &tmp, 0));
+				break;
 			case 'f':
 				asdaemon = 0;
-				openlog("cntlm", LOG_CONS | LOG_PERROR, LOG_DAEMON);
 				break;
 			case 'g':
 				gateway = 1;
@@ -1561,8 +1632,18 @@ int main(int argc, char **argv) {
 			case 'i':
 				interactivepwd = 1;
 				break;
+			case 'L':
+				/*
+				 * Parse and validate the argument using regex.
+				 * Create a listening socket and store the target to a linked list
+				 */
+				tunnel_add(&ltunnel, optarg, gateway);
+				break;
 			case 'l':
 				proxy_add(&lproxy, optarg, gateway);
+				break;
+			case 'P':
+				strlcpy(pidfile, optarg, AUTHSIZE);
 				break;
 			case 'p':
 				/*
@@ -1573,11 +1654,18 @@ int main(int argc, char **argv) {
 				for (i = strlen(optarg)-1; i >= 0; --i)
 					optarg[i] = '*';
 				break;
+			case 'S':
+				scanner_plugin = 1;
+				scanner_plugin_maxsize = atol(optarg);
+				break;
 			case 's':
 				/*
 				 * Do not use threads - for debugging purposes only
 				 */
 				serial = 1;
+				break;
+			case 'U':
+				strlcpy(uid, optarg, AUTHSIZE);
 				break;
 			case 'u':
 				i = strcspn(optarg, "@");
@@ -1588,29 +1676,13 @@ int main(int argc, char **argv) {
 					strlcpy(user, optarg, AUTHSIZE);
 				}
 				break;
+			case 'v':
+				debug = 1;
+				asdaemon = 0;
+				openlog("cntlm", LOG_CONS | LOG_PERROR, LOG_DAEMON);
+				break;
 			case 'w':
 				strlcpy(workstation, optarg, AUTHSIZE);
-				break;
-			case 'A':
-			case 'D':
-				if (!acl_add(&rules, optarg, (i == 'A' ? ACL_ALLOW : ACL_DENY)))
-					myexit(1);
-				break;
-			case 'F':
-				flags = swap32(strtoul(optarg, &tmp, 0));
-				break;
-			case 'L':
-				/*
-				 * Parse and validate the argument using regex.
-				 * Create a listening socket and store the target to a linked list
-				 */
-				tunnel_add(&ltunnel, optarg, gateway);
-				break;
-			case 'P':
-				strlcpy(pidfile, optarg, AUTHSIZE);
-				break;
-			case 'U':
-				strlcpy(uid, optarg, AUTHSIZE);
 				break;
 			default:
 				help = 1;
@@ -1749,6 +1821,14 @@ int main(int argc, char **argv) {
 			flags = swap32(strtoul(tmp, NULL, 0));
 		free(tmp);
 
+		tmp = new(AUTHSIZE);
+		CFG_DEFAULT(cf, "ISAScannerPlugin", tmp, AUTHSIZE);
+		if (strlen(tmp)) {
+			scanner_plugin = 1;
+			scanner_plugin_maxsize = atoi(tmp);
+		}
+		free(tmp);
+
 		/*
 		 * Print out unused/unknown options.
 		 */
@@ -1809,6 +1889,8 @@ int main(int argc, char **argv) {
 					"\t    Create a PID file upon successful start.\n");
 			fprintf(stderr, "\t-p  <password>\n"
 					"\t    Account password. Will not be visible in \"ps\", /proc, etc.\n");
+			fprintf(stderr, "\t-S  <size_in_kb>\n"
+					"\t    Enable transparent handler of ISA AV scanner plugin for files up to size_in_kb KiB.\n");
 			fprintf(stderr, "\t-s  Do not use threads, serialize all requests - for debugging only.\n");
 			fprintf(stderr, "\t-U  <uid>\n"
 					"\t    Run as uid. It is an important security measure not to run as root.\n");
