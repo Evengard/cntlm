@@ -267,16 +267,25 @@ The parameter \fImax_size_in_kb\fP allows you to choose which downloads are
 too big to handle. If the file size is bigger than this, \fBcntlm\fP forwards
 you the interactive page, effectively disabling the plugin for that download.
 
-Imagine this: the client asks for a file, \fBcntlm\fP detects ISA's bullshit
+Reason: the client asks for a file, \fBcntlm\fP detects ISA's bullshit
 response and waits for the secret link to ISA's cache, which comes no sooner
 than the file is scanned and downloaded by ISA. Only then can \fBcntlm\fP make
 the second request for the real file and forward it along with correct headers
-to the client. The client doesn't timeout, b/c \fBcntlm\fP is periodically
-sending a dummy "keepalive" header, but the user might get nervous not seeing
-the progress bar move. (it's of course purely psychological matter, there's no
-difference if \fBcntlm\fP or your browser requests the scanned file; what's
-more, if the plugin cannot parse the page for some reason, it quits and you get
-it - it's never "lost").
+to the client. The client doesn't timeout while waiting for it, b/c \fBcntlm\fP
+is periodically sending an extra "keepalive" header, but the user might get
+nervous not seeing the progress bar move. It's of course purely psychological
+matter, there's no difference if \fBcntlm\fP or your browser requests the
+scanned file - you must wait for ISA to do it's job and download only then. You
+just expect to see progress indicator move immediately. If the plugin cannot
+parse the page for some reason (different formatting, etc.), it quits and you
+get the interactive page - it's never "lost").
+
+The keepalive header is called "ISA-Scanner" and also shows the ISA's progres, e.g.:
+.nf
+    ISA-Scanner: 60000 of 1000000
+    ISA-Scanner: 70000 of 1000000
+    ...
+.fi
 
 I might also add decisions based on User-Agent. Like: browsers get the original
 scanner page if file too big, b/c there's a human operating it; wget, apt-get
@@ -318,7 +327,7 @@ the whole output to the bug report.
 Proxy account workstation NetBIOS name. Do not use full domain name (FQDN)
 here. Just the first part. Some proxies require this information.
 
-.SH FILES
+.SH CONFIGURATION
 Configuration file has the same syntax as OpenSSH ssh_config. It comprises of
 whitespace delimited keywords and values. Comment begins with a hash '#' and
 can begin anywhere in the file. Everything after the hash up until the EOL is a
@@ -356,6 +365,10 @@ applies the same to all tunnels.
 Header substitution. See \fB-h\fP for details and remember, no quoting.
 
 .TP
+.B ISAScannerPlugin <max_size_in_kb>
+Enable trans-isa-scan plugin. See \fB\-S\fP for more.
+
+.TP
 .B Listen [<saddr>:]<port_number>
 Local port number for the \fBcntlm\fP's proxy service. See \fB-l\fP for more.
 
@@ -385,13 +398,23 @@ Tunnel specification. See \fB-L\fP for more.
 Proxy account name, without the possibility to include domain name ('at' sign
 is interpreted literally).
 
+.SH FILES
+The optional location of the configuration file is defined in the Makefile,
+with the default for 1) deb/rpm package and 2) traditional "make; make install"
+being:
+
+.nf
+1) /etc/cntlm.conf
+2) /usr/local/etc/cntlm.conf
+.fi
+
 .SH PORTING
 \fBCntlm\fP has been successfully compiled and tested on both little and big
 endian machines (Linux/i386 and AIX/PowerPC). For compilation details, see
 README in the source distribution. Porting to any POSIX conforming OS shouldn't
 be more than a matter of the Makefile rearrangement. \fBCntlm\fP uses strictly
-POSIX.1c interfaces with ISO C99 libc (\fBsnprintf(3)\fP), it is also fully
-compliant with SUSv2.
+POSIX.1c interfaces with ISO C99 libc (\fBsnprintf(3)\fP), it is also compliant
+with SUSv2.
 
 .SH TODO
 In the much needed NTLM-proxy departement, \fBcntlm\fP aims to be a drop\-in

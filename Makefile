@@ -39,6 +39,7 @@ proxy.o: proxy.c
 	@$(CC) $(CFLAGS) `./endian NTLM_BIG_ENDIAN` -c -o $@ $<
 
 install: $(NAME)
+	# AIX?
 	if [ -f /usr/bin/oslevel ]; then \
 		install -O root -G system -M 755 -S -f $(BINDIR) $(NAME); \
 		install -O root -G system -M 644 -f $(MANDIR)/man1 doc/$(NAME).1; \
@@ -49,6 +50,7 @@ install: $(NAME)
 		[ -f $(SYSCONFDIR)/$(NAME).conf -o -z "$(SYSCONFDIR)" ] \
 			|| install -D -o root -g root -m 600 doc/$(NAME).conf $(SYSCONFDIR)/$(NAME).conf; \
 	fi
+	@echo; echo "Cntlm will look for configuration in $(SYSCONFDIR)/$(NAME).conf"
 
 rpm:
 	if [ `id -u` = 0 ]; then \
