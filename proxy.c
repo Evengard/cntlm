@@ -1169,7 +1169,7 @@ void *process(void *client) {
 			 * the result for the original response html-fuck response.
 			 */
 			plugin = PLUG_ALL;
-			if (loop) {
+			if (0 && loop) {
 				plugin = scanner_hook(&data[0], &data[1], wsocket[loop], rsocket[loop]);
 			}
 
