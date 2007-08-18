@@ -266,6 +266,7 @@ basically ANY application relying on downloads (e.g. apt-get).
 The parameter \fImax_size_in_kb\fP allows you to choose which downloads are
 too big to handle. If the file size is bigger than this, \fBcntlm\fP forwards
 you the interactive page, effectively disabling the plugin for that download.
+Zero means no limit.
 
 Reason: the client asks for a file, \fBcntlm\fP detects ISA's bullshit
 response and waits for the secret link to ISA's cache, which comes no sooner

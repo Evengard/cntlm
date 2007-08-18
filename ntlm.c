@@ -106,7 +106,7 @@ int ntlm_request(char **dst, char *hostname, char *domain, int nt, int lm, uint3
 		printf("NTLM Request:\n");
 		printf("\t   Domain: %s\n", domain);
 		printf("\t Hostname: %s\n", hostname);
-		printf("\t    Flags: 0x%X\n", U32LE(flags ? flags : (nt ? 0xB207 : 0xB206)));
+		printf("\t    Flags: 0x%X\n", (unsigned int)U32LE(flags ? flags : (nt ? 0xB207 : 0xB206)));
 	}
 
 	buf = new(NTLM_BUFSIZE);
@@ -215,7 +215,7 @@ int ntlm_response(char **dst, char *challenge, char *username, char *password, c
 		printf("\tChallenge: %s\n", tmp);
 		free(tmp);
 		flags = U32LE(VAL(challenge, uint32_t, 20));
-		printf("\t    Flags: 0x%X\n", flags);
+		printf("\t    Flags: 0x%X\n", (unsigned int)flags);
 
 		tpos = U16LE(VAL(challenge, uint16_t, 44));
 		while ((ttype = U16LE(VAL(challenge, uint16_t, tpos)))) {

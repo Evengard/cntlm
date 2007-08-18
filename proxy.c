@@ -59,6 +59,7 @@
 #define SAMPLE		4096
 #define STACK_SIZE	sizeof(int)*8*1024
 
+#define PLUG_NONE	0x0000
 #define PLUG_SENDHEAD	0x0001
 #define PLUG_SENDDATA	0x0002
 #define PLUG_ERROR	0x8000
@@ -76,9 +77,9 @@
  * them. Having these global avoids the need to pass them to each thread and
  * from there again a few times to inner calls.
  */
-int debug = 0;				/* all debug printf's and possibly external modules */
+int debug = 0;						/* all debug printf's and possibly external modules */
 
-static char *user;			/* authenticate() */
+static char *user;					/* authenticate() */
 static char *domain;
 static char *workstation;
 static char *password;
@@ -86,11 +87,10 @@ static int hashnt = 1;
 static int hashlm = 1;
 static uint32_t flags = 0;
 
-static int quit = 0;			/* sighandler() */
-static int serial = 0;			/* main() and process() */
-static int asdaemon = 1;		/* myexit() */
-static int basic = 0;			/* process() */
-static int forced_basic = 0;
+static int quit = 0;					/* sighandler() */
+static int asdaemon = 1;				/* myexit() */
+static int ntlmbasic = 0;				/* process() */
+static int serialize = 0;
 static int scanner_plugin = 0;
 static long scanner_plugin_maxsize = 0;
 
@@ -98,32 +98,34 @@ static long scanner_plugin_maxsize = 0;
  * List of finished threads. Each thread process() adds itself to it when
  * finished. Main regularly joins and removes all tid's in there.
  */
-static plist_t tlist = NULL;
-static pthread_mutex_t tlist_mtx = PTHREAD_MUTEX_INITIALIZER;
+static plist_t threads_list = NULL;
+static pthread_mutex_t threads_mtx = PTHREAD_MUTEX_INITIALIZER;
 
 /*
  * List of cached connections. Accessed by each thread process().
  */
-static plist_t clist = NULL;
-static pthread_mutex_t clist_mtx = PTHREAD_MUTEX_INITIALIZER;
+static plist_t connection_list = NULL;
+static pthread_mutex_t connection_mtx = PTHREAD_MUTEX_INITIALIZER;
 
 /*
  * List of available proxies and current proxy id for proxy_connect().
  */
-static int pcount = 0;
-static int pcurr = 0;
-static pthread_mutex_t pcurr_mtx = PTHREAD_MUTEX_INITIALIZER;
+static int parent_count = 0;
+static int parent_curr = 0;
+static pthread_mutex_t parent_mtx = PTHREAD_MUTEX_INITIALIZER;
 
-static plist_t lparents = NULL;
+static plist_t parent_list = NULL;
 typedef struct {
 	struct in_addr host;
 	int port;
 } proxy_t;
 
+/* static hlist_t scanner_force_agents = NULL;		scanner_hook() */
+
 /*
  * List of custom header substitutions.
  */
-static hlist_t lheaders = NULL;		/* process() */
+static hlist_t header_list = NULL;			/* process() */
 
 /*
  * General signal handler. Fast exit, no waiting for threads and shit.
@@ -134,7 +136,8 @@ void sighandler(int p) {
 	else
 		syslog(LOG_INFO, "Signal %d received, forcing shutdown\n", p);
 
-	quit++;
+	if (quit++)
+		exit(0);
 }
 
 void myexit(int rc) {
@@ -156,43 +159,43 @@ int proxy_connect(void) {
 	plist_t list, tmp;
 	int loop = 0;
 
-	prev = pcurr;
-	pthread_mutex_lock(&pcurr_mtx);
-	if (pcurr == 0) {
-		aux = (proxy_t *)plist_get(lparents, ++pcurr);
+	prev = parent_curr;
+	pthread_mutex_lock(&parent_mtx);
+	if (parent_curr == 0) {
+		aux = (proxy_t *)plist_get(parent_list, ++parent_curr);
 		syslog(LOG_INFO, "Using proxy %s:%d\n", inet_ntoa(aux->host), aux->port);
 	}
-	pthread_mutex_unlock(&pcurr_mtx);
+	pthread_mutex_unlock(&parent_mtx);
 
 	do {
-		aux = (proxy_t *)plist_get(lparents, pcurr);
+		aux = (proxy_t *)plist_get(parent_list, parent_curr);
 		i = so_connect(aux->host, aux->port);
 		if (i <= 0) {
-			pthread_mutex_lock(&pcurr_mtx);
-			if (pcurr >= pcount)
-				pcurr = 0;
-			aux = (proxy_t *)plist_get(lparents, ++pcurr);
-			pthread_mutex_unlock(&pcurr_mtx);
+			pthread_mutex_lock(&parent_mtx);
+			if (parent_curr >= parent_count)
+				parent_curr = 0;
+			aux = (proxy_t *)plist_get(parent_list, ++parent_curr);
+			pthread_mutex_unlock(&parent_mtx);
 			syslog(LOG_ERR, "Proxy connect failed, will try %s:%d\n", inet_ntoa(aux->host), aux->port);
 		}
-	} while (i <= 0 && ++loop < pcount);
+	} while (i <= 0 && ++loop < parent_count);
 
-	if (i <= 0 && loop >= pcount)
+	if (i <= 0 && loop >= parent_count)
 		syslog(LOG_ERR, "No proxy on the list works. You lose.\n");
 
 	/*
 	 * We have to invalidate the cached connections if we moved to a different proxy
 	 */
-	if (prev != pcurr) {
-		pthread_mutex_lock(&clist_mtx);
-		list = clist;
+	if (prev != parent_curr) {
+		pthread_mutex_lock(&connection_mtx);
+		list = connection_list;
 		while (list) {
 			tmp = list->next;
 			close(list->key);
 			list = tmp;
 		}
-		plist_free(clist);
-		pthread_mutex_unlock(&clist_mtx);
+		plist_free(connection_list);
+		pthread_mutex_unlock(&connection_mtx);
 	}
 		
 
@@ -248,7 +251,7 @@ int parent_proxy(char *proxy, int port) {
 	aux = (proxy_t *)new(sizeof(proxy_t));
 	aux->host = host;
 	aux->port = port;
-	lparents = plist_add(lparents, ++pcount, (char *)aux);
+	parent_list = plist_add(parent_list, ++parent_count, (char *)aux);
 
 	free(proxy);
 	return 1;
@@ -582,7 +585,8 @@ int chunked_data_send(int dst, int src) {
 		i = so_recvln(src, &buf, &bsize);
 		if (debug)
 			printf("Trailer header(i=%d): %s\n", i, buf);
-		write(dst, buf, strlen(buf));
+		if (i > 0)
+			write(dst, buf, strlen(buf));
 	} while (i > 0 && buf[0] != '\r' && buf[0] != '\n');
 
 	free(buf);
@@ -859,7 +863,7 @@ int scanner_hook(rr_data_t *request, rr_data_t *response, int *cd, int *sd, long
 							if (debug)
 								printf("scanner_hook: file size detected: %ld KiBs (max: %ld)\n", filesize/1024, maxKBs);
 
-							if (filesize/1024 > maxKBs)
+							if (maxKBs && filesize/1024 > maxKBs)
 								break;
 
 							/*
@@ -918,9 +922,9 @@ int scanner_hook(rr_data_t *request, rr_data_t *response, int *cd, int *sd, long
 				/*
 				 * Try to use a cached connection or authenticate new.
 				 */
-				pthread_mutex_lock(&clist_mtx);
-				i = plist_pop(&clist);
-				pthread_mutex_unlock(&clist_mtx);
+				pthread_mutex_lock(&connection_mtx);
+				i = plist_pop(&connection_list);
+				pthread_mutex_unlock(&connection_mtx);
 				if (i) {
 					if (debug)
 						printf("scanner_hook: Found autenticated connection %d!\n", i);
@@ -1032,11 +1036,11 @@ void *process(void *client) {
 	if (debug)
 		printf("Thread processing...\n");
 
-	pthread_mutex_lock(&clist_mtx);
+	pthread_mutex_lock(&connection_mtx);
 	if (debug)
-		plist_dump(clist);
-	i = plist_pop(&clist);
-	pthread_mutex_unlock(&clist_mtx);
+		plist_dump(connection_list);
+	i = plist_pop(&connection_list);
+	pthread_mutex_unlock(&connection_mtx);
 	if (i) {
 		if (debug)
 			printf("Found autenticated connection %d!\n", i);
@@ -1052,7 +1056,7 @@ void *process(void *client) {
 	pdomain = new(AUTHSIZE);
 
 	strlcpy(pdomain, domain, AUTHSIZE);
-	if (!basic) {
+	if (!ntlmbasic) {
 		strlcpy(puser, user, AUTHSIZE);
 		strlcpy(ppass, password, AUTHSIZE);
 	}
@@ -1101,7 +1105,7 @@ void *process(void *client) {
 			 * Switch to this mode automatically if the config-file
 			 * supplied credentials don't work.
 			 */
-			if (!loop && (basic || forced_basic)) {
+			if (!loop && ntlmbasic) {
 				tmp = hlist_get(data[loop]->headers, "Proxy-Authorization");
 				pos = NULL;
 				buf = NULL;
@@ -1146,11 +1150,14 @@ void *process(void *client) {
 						printf("NTLM-to-basic: Credentials parsed: %s\\%s:%s at %s\n", pdomain, puser, ppass, workstation);
 					free(buf);
 				}
+			}
+
+			/*
 			} else if (loop && data[loop]->code == 407) {
 				if (debug)
 					printf("NTLM-to-basic: Given credentials failed for proxy access.\n");
 
-				if (!basic)
+				if (!ntlmbasic)
 					forced_basic = 1;
 
 				tmp = gen_denied_page(data[loop]->http);
@@ -1162,6 +1169,7 @@ void *process(void *client) {
 				free_rr_data(data[1]);
 				goto bailout;
 			}
+			*/
 
 			/*
 			 * Try to request keep-alive for every connection, but first remember if client
@@ -1181,7 +1189,7 @@ void *process(void *client) {
 				/*
 				 * Header replacement implementation
 				 */
-				tl = lheaders;
+				tl = header_list;
 				while (tl) {
 					data[loop]->headers = hlist_mod(data[loop]->headers, tl->key, tl->value, 1);
 					tl = tl->next;
@@ -1355,19 +1363,19 @@ bailout:
 	if (!so_closed(sd) && authok) {
 		if (debug)
 			printf("Storing the connection for reuse (%d:%d).\n", cd, sd);
-		pthread_mutex_lock(&clist_mtx);
-		clist = plist_add(clist, sd, NULL);
-		pthread_mutex_unlock(&clist_mtx);
+		pthread_mutex_lock(&connection_mtx);
+		connection_list = plist_add(connection_list, sd, NULL);
+		pthread_mutex_unlock(&connection_mtx);
 	} else
 		close(sd);
 
 	/*
 	 * Add ourself to the "threads to join" list.
 	 */
-	if (!serial) {
-		pthread_mutex_lock(&tlist_mtx);
-		tlist = plist_add(tlist, pthread_self(), NULL);
-		pthread_mutex_unlock(&tlist_mtx);
+	if (!serialize) {
+		pthread_mutex_lock(&threads_mtx);
+		threads_list = plist_add(threads_list, (unsigned long)pthread_self(), NULL);
+		pthread_mutex_unlock(&threads_mtx);
 	}
 
 	return NULL;
@@ -1461,9 +1469,9 @@ bailout:
 	/*
 	 * Add ourself to the "threads to join" list.
 	 */
-	pthread_mutex_lock(&tlist_mtx);
-	tlist = plist_add(tlist, pthread_self(), NULL);
-	pthread_mutex_unlock(&tlist_mtx);
+	pthread_mutex_lock(&threads_mtx);
+	threads_list = plist_add(threads_list, (unsigned long)pthread_self(), NULL);
+	pthread_mutex_unlock(&threads_mtx);
 
 	return NULL;
 }
@@ -1573,8 +1581,8 @@ int main(int argc, char **argv) {
 	int tc = 0;
 	int tj = 0;
 	int interactivepwd = 0;
-	plist_t ltunnel = NULL;
-	plist_t lproxy = NULL;
+	plist_t tunneld_list = NULL;
+	plist_t proxyd_list = NULL;
 	plist_t rules = NULL;
 	config_t cf = NULL;
 
@@ -1605,7 +1613,7 @@ int main(int argc, char **argv) {
 				strlcpy(auth, optarg, AUTHSIZE);
 				break;
 			case 'B':
-				basic = 1;
+				ntlmbasic = 1;
 				break;
 			case 'c':
 				if (!(cf = config_open(optarg))) {
@@ -1627,7 +1635,7 @@ int main(int argc, char **argv) {
 				break;
 			case 'h':
 				if (head_ok(optarg))
-					lheaders = hlist_add(lheaders, head_name(optarg), head_value(optarg), 0, 0);
+					header_list = hlist_add(header_list, head_name(optarg), head_value(optarg), 0, 0);
 				break;
 			case 'i':
 				interactivepwd = 1;
@@ -1637,10 +1645,10 @@ int main(int argc, char **argv) {
 				 * Parse and validate the argument using regex.
 				 * Create a listening socket and store the target to a linked list
 				 */
-				tunnel_add(&ltunnel, optarg, gateway);
+				tunnel_add(&tunneld_list, optarg, gateway);
 				break;
 			case 'l':
-				proxy_add(&lproxy, optarg, gateway);
+				proxy_add(&proxyd_list, optarg, gateway);
 				break;
 			case 'P':
 				strlcpy(pidfile, optarg, AUTHSIZE);
@@ -1662,7 +1670,7 @@ int main(int argc, char **argv) {
 				/*
 				 * Do not use threads - for debugging purposes only
 				 */
-				serial = 1;
+				serialize = 1;
 				break;
 			case 'U':
 				strlcpy(uid, optarg, AUTHSIZE);
@@ -1745,14 +1753,14 @@ int main(int argc, char **argv) {
 		tmp = new(AUTHSIZE);
 		CFG_DEFAULT(cf, "NTLMToBasic", tmp, AUTHSIZE);
 		if (!strcasecmp("yes", tmp))
-			basic = 1;
+			ntlmbasic = 1;
 		free(tmp);
 
 		/*
 		 * Setup the rest of tunnels.
 		 */
 		while ((tmp = config_pop(cf, "Tunnel"))) {
-			tunnel_add(&ltunnel, tmp, gateway);
+			tunnel_add(&tunneld_list, tmp, gateway);
 			free(tmp);
 		}
 
@@ -1760,7 +1768,7 @@ int main(int argc, char **argv) {
 		 * Bind the rest of proxy service ports.
 		 */
 		while ((tmp = config_pop(cf, "Listen"))) {
-			proxy_add(&lproxy, tmp, gateway);
+			proxy_add(&proxyd_list, tmp, gateway);
 			free(tmp);
 		}
 
@@ -1771,8 +1779,8 @@ int main(int argc, char **argv) {
 		while ((tmp = config_pop(cf, "Header"))) {
 			if (head_ok(tmp)) {
 				head = head_name(tmp);
-				if (!hlist_in(lheaders, head))
-					lheaders = hlist_add(lheaders, head_name(tmp), head_value(tmp), 0, 0);
+				if (!hlist_in(header_list, head))
+					header_list = hlist_add(header_list, head_name(tmp), head_value(tmp), 0, 0);
 				free(head);
 			} else
 				syslog(LOG_ERR, "Invalid header format: %s\n", tmp);
@@ -1849,7 +1857,7 @@ int main(int argc, char **argv) {
 	/*
 	 * Any of the vital options missing?
 	 */
-	if (help || (!basic && (!strlen(user) || (!interactivepwd && !strlen(password)))) || !lparents || !lproxy) {
+	if (help || (!ntlmbasic && (!strlen(user) || (!interactivepwd && !strlen(password)))) || !parent_list || !proxyd_list) {
 		if (help) {
 			printf("CNTLM - Accelerating NTLM Authentication Proxy version " VERSION "\nCopyright (c) 2oo7 David Kubicek\n\n"
 				"This program comes with NO WARRANTY, to the extent permitted by law. You\n"
@@ -1901,33 +1909,32 @@ int main(int argc, char **argv) {
 					"\t    Some proxies require correct NetBIOS hostname.\n\n");
 		}
 
-		if (!basic && !strlen(user)) {
+		if (!ntlmbasic && !strlen(user)) {
 			syslog(LOG_ERR, "Parent proxy account username missing.\n");
 		}
-		if (!basic && !interactivepwd && !strlen(password)) {
+		if (!ntlmbasic && !interactivepwd && !strlen(password)) {
 			syslog(LOG_ERR, "Parent proxy account password missing.\n");
 		}
-		if (!lparents) {
+		if (!parent_list) {
 			syslog(LOG_ERR, "Parent proxy address missing.\n");
 		}
-		if (!lproxy) {
+		if (!proxyd_list) {
 			syslog(LOG_ERR, "No proxy service ports were successfully opened.\n");
 		}
 
 		myexit(1);
 	}
 
-	if (interactivepwd && !basic) {
+	if (interactivepwd && !ntlmbasic) {
 		printf("Password: ");
 		tcgetattr(0, &termold);
 		termnew = termold;
 		termnew.c_lflag &= ~(ISIG | ECHO);
-		tcsetattr(0, TCSADRAIN, &termnew);
+		tcsetattr(0, TCSAFLUSH, &termnew);
 		fgets(password, AUTHSIZE, stdin);
 		tcsetattr(0, TCSADRAIN, &termold);
 		i = strlen(password)-1;
-		while (i >= 0 && (password[i] == '\r' || password[i] == '\n'))
-			password[i--] = 0;
+		trimr(password);
 	}
 
 	/*
@@ -2062,9 +2069,7 @@ int main(int argc, char **argv) {
 	/*
 	 * Change the handler for signals recognized as clean shutdown.
 	 * When the handler is called (termination request), it signals
-	 * this news by adding 1 to the global quit variable. This allows
-	 * us to keep track of how many times we were "killed". See the
-	 * main loop description below for details.
+	 * this news by adding 1 to the global quit variable.
 	 */
 	signal(SIGPIPE, SIG_IGN);
 	signal(SIGINT, &sighandler);
@@ -2075,7 +2080,7 @@ int main(int argc, char **argv) {
 	 * This loop iterates over every connection request on any of
 	 * the listening ports. We keep the number of created threads.
 	 *
-	 * We also check the "finished threads" list, tlist, here and
+	 * We also check the "finished threads" list, threads_list, here and
 	 * free the memory of all inactive threads. Then, we update the
 	 * number of finished threads.
 	 *
@@ -2083,9 +2088,9 @@ int main(int argc, char **argv) {
 	 * are finished, OR if we were killed more than once. This way,
 	 * we have a "clean" shutdown (wait for all connections to finish
 	 * after the first kill) and a "forced" one (user insists and
-	 * killed us twice; ignore running threads).
+	 * killed us twice).
 	 */
-	while ((quit != 1 || tc != tj) && (quit <= 1)) {
+	while (quit < 1 || tc != tj) {
 		struct thread_arg_s *data;
 		struct sockaddr_in caddr;
 		pthread_attr_t attr;
@@ -2101,7 +2106,7 @@ int main(int argc, char **argv) {
 		/*
 		 * Watch for proxy ports.
 		 */
-		t = lproxy;
+		t = proxyd_list;
 		while (t) {
 			FD_SET(t->key, &set);
 			t = t->next;
@@ -2110,7 +2115,7 @@ int main(int argc, char **argv) {
 		/*
 		 * Watch for tunneled ports.
 		 */
-		t = ltunnel;
+		t = tunneld_list;
 		while (t) {
 			FD_SET(t->key, &set);
 			t = t->next;
@@ -2159,13 +2164,13 @@ int main(int argc, char **argv) {
 					pthread_attr_setguardsize(&attr, 0);
 #endif
 
-					if (!plist_in(lproxy, i)) {
+					if (!plist_in(proxyd_list, i)) {
 						data = (struct thread_arg_s *)new(sizeof(struct thread_arg_s));
 						data->fd = cd;
-						data->target = plist_get(ltunnel, i);
+						data->target = plist_get(tunneld_list, i);
 						tid = pthread_create(&thr, &attr, autotunnel, (void *)data);
 					} else {
-						if (!serial)
+						if (!serialize)
 							tid = pthread_create(&thr, &attr, process, (void *)cd);
 						else
 							process((void *)cd);
@@ -2182,12 +2187,12 @@ int main(int argc, char **argv) {
 		} else if (cd < 0 && !quit)
 			syslog(LOG_ERR, "Serious error during select: %s\n", strerror(errno));
 
-		if (tlist) {
-			pthread_mutex_lock(&tlist_mtx);
-			t = tlist;
+		if (threads_list) {
+			pthread_mutex_lock(&threads_mtx);
+			t = threads_list;
 			while (t) {
 				plist_t tmp = t->next;
-				tid = pthread_join(t->key, (void *)&i);
+				tid = pthread_join((pthread_t)t->key, (void *)&i);
 
 				if (!tid) {
 					tj++;
@@ -2199,19 +2204,19 @@ int main(int argc, char **argv) {
 				free(t);
 				t = tmp;
 			}
-			tlist = NULL;
-			pthread_mutex_unlock(&tlist_mtx);
+			threads_list = NULL;
+			pthread_mutex_unlock(&threads_mtx);
 		}
 	}
 
 	syslog(LOG_INFO, "Terminating with %d active threads\n", tc - tj);
-	pthread_mutex_lock(&clist_mtx);
-	plist_free(clist);
-	pthread_mutex_unlock(&clist_mtx);
+	pthread_mutex_lock(&connection_mtx);
+	plist_free(connection_list);
+	pthread_mutex_unlock(&connection_mtx);
 
-	hlist_free(lheaders);
-	plist_free(ltunnel);
-	plist_free(lproxy);
+	hlist_free(header_list);
+	plist_free(tunneld_list);
+	plist_free(proxyd_list);
 	plist_free(rules);
 
 	if (strlen(pidfile))
@@ -2226,7 +2231,7 @@ int main(int argc, char **argv) {
 	/*
 	 * Might need mutex in case of forced shutdown
 	 */
-	lparents = plist_free(lparents);
+	parent_list = plist_free(parent_list);
 
 	exit(0);
 }
