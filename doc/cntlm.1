@@ -61,7 +61,7 @@ values are in KiB):
        VSZ   RSS CMD
       3204  1436 ./cntlm \-f \-c ./cntlm.conf \-P pid
     411604  6264 /usr/share/ntlmaps/main.py \-c /etc/ntlmaps/server.cfg
-.fp
+.ft P
 .fi
 
 .PP
@@ -97,7 +97,7 @@ everything, use "0/0" or an asterix. ACLs on the command\-line take precedence
 over those in the config file. In such case, you will see info about that in
 the log (among the list of unused options). There you can also see warnings
 about possibly incorrect subnet spec, that's when the \fIIP\fP part has more
-bits than you declare by \fImask\fP (e.g. 10.20.30.40/24 should rather be
+bits than you declare by \fImask\fP (e.g. 10.20.30.40/24 should be
 10.20.30.0/24).
 
 .TP 
@@ -164,9 +164,15 @@ auth and tried all possible values for the "Auth" option (\fB\-a\fP). Remember
 that each NT/LM hash combination requires different flags. This option is sort
 of a complete "manual override" and you'll have to deal with every aspect of it
 yourself. If the parent proxy refuses to authenticate you, try the following
-combinations: Auth = ntlm, flags = 0x07820000; Auth = lm, flags = 0x06820000;
-Auth = nt, flags = 0x05820000. Note that you have to use "0x" prefix to use hex
-numbers.
+combinations and note that you have to use "0x" prefix to use hex numbers:
+.nf
+.ft C
+
+    1) Auth = ntlm, Flags = 0x07820000
+    2) Auth = lm,   Flags = 0x06820000
+    3) Auth = nt,   Flags = 0x05820000
+.ft P
+.fi
 
 .TP
 .B \-f
@@ -240,10 +246,11 @@ POSIX, set the following variables to use e.g. \fBwget(1)\fP without any
 trouble (fill in the actual address of \fBcntlm\fP):
 .nf
 .ft C
-$ export ftp_proxy=http://localhost:3128
-$ export http_proxy=$ftp_proxy
-$ export https_proxy=$ftp_proxy
-.fp
+
+    $ export ftp_proxy=http://localhost:3128
+    $ export http_proxy=$ftp_proxy
+    $ export https_proxy=$ftp_proxy
+.ft P
 .fi
 
 You can choose to run the proxy service on more than one port, in such case
@@ -301,13 +308,16 @@ ISA's page does: it shows HTML countdown.
 If the plugin cannot parse the page for some reason (different formatting,
 etc.), it quits and you get the interactive page - it's never "lost".
 
-The keepalive header is called "ISA-Scanner" and shows the ISA's progres, e.g.:
+The keepalive header is called "\fCISA-Scanner\fP" and shows the ISA's
+progress, e.g.:
 .nf
 .ft C
-    ISA-Scanner: 6000 of 10000
-    ISA-Scanner: 7000 of 10000
+
+    HTTP/1.1 200 OK
+    ISA-Scanner: 1000 of 10000
+    ISA-Scanner: 2000 of 10000
     ...
-.fp
+.ft P
 .fi
 
 .TP
@@ -436,10 +446,10 @@ and 3) Windows installer being:
 .nf
 .ft C
 
-1) /etc/cntlm.conf
-2) /usr/local/etc/cntlm.conf
-3) %PROGRAMFILES%\\Cntlm\\cntlm.ini
-.fp
+    1) /etc/cntlm.conf
+    2) /usr/local/etc/cntlm.conf
+    3) %PROGRAMFILES%\\Cntlm\\cntlm.ini
+.ft P
 .fi
 
 .SH PORTING
@@ -479,8 +489,8 @@ Example:
 .nf
 .ft C
 
-cntlm[.exe] \-T cntlmtrace.log \-v \-s ... the rest ...
-.fp
+    cntlm[.exe] \-T cntlmtrace.log \-v \-s ... the rest ...
+.ft P
 .fi
 
 .SH AUTHOR
