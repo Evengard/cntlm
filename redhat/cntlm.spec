@@ -21,6 +21,7 @@ contains detailed information.
 %setup -q -n %{name}-%{version}
 
 %build			
+./configure
 make SYSCONFDIR=%{_sysconfdir} \
              BINDIR=%{_sbindir} \
              MANDIR=%{_mandir}

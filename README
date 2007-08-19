@@ -94,6 +94,7 @@ Traditional installation
 ~~~~~~~~~~~~~~~~~~~~~~~~
 First, you have to compile cntlm. Using the Makefile, this should be very easy:
 
+$ ./configure
 $ make
 
 Cntlm does not require any dynamic libraries and there are no dependencies you

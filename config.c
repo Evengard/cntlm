@@ -97,7 +97,7 @@ char *config_pop(config_t cf, const char *option) {
 
 	tmp = hlist_get(cf->options, option);
 	if (tmp) {
-		tmp = strdupl(tmp);
+		tmp = strdup(tmp);
 		cf->options = hlist_del(cf->options, option);
 	}
 	

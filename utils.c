@@ -29,6 +29,7 @@
 #include <errno.h>
 #include <ctype.h>
 
+#include "config/config.h"
 #include "swap.h"
 #include "utils.h"
 #include "socket.h"
@@ -221,8 +222,8 @@ hlist_t hlist_add(hlist_t list, char *key, char *value, int allockey, int allocv
 		return list;
 
 	tmp = malloc(sizeof(struct hlist_s));
-	tmp->key = (allockey ? strdupl(key) : key);
-	tmp->value = (allocvalue ? strdupl(value) : value);
+	tmp->key = (allockey ? strdup(key) : key);
+	tmp->value = (allocvalue ? strdup(value) : value);
 	tmp->next = NULL;
 
 	if (list == NULL)
@@ -298,7 +299,7 @@ hlist_t hlist_mod(hlist_t list, char *key, char *value, int add) {
 
 	if (t) {
 		free(t->value);
-		t->value = strdupl(value);
+		t->value = strdup(value);
 	} else if (add) {
 		list = hlist_add(list, key, value, 1, 1);
 	}
@@ -361,8 +362,8 @@ int hlist_subcmp(hlist_t list, const char *key, const char *substr) {
 
 	tmp = hlist_get(list, key);
 	if (tmp) {
-		lowercase(tmp = strdupl(tmp));
-		lowercase(low = strdupl(substr));
+		lowercase(tmp = strdup(tmp));
+		lowercase(low = strdup(substr));
 		if (strstr(tmp, substr))
 			found = 1;
 
@@ -460,7 +461,7 @@ char *head_value(const char *src) {
 		while (*sub == ' ')
 			sub++;
 
-		return strdupl(sub);
+		return strdup(sub);
 	} else
 		return NULL;
 }
@@ -499,13 +500,13 @@ rr_data_t dup_rr_data(rr_data_t data) {
 	if (data->headers)
 		tmp->headers = hlist_dup(data->headers);
 	if (data->method)
-		tmp->method = strdupl(data->method);
+		tmp->method = strdup(data->method);
 	if (data->url)
-		tmp->url = strdupl(data->url);
+		tmp->url = strdup(data->url);
 	if (data->http)
-		tmp->http = strdupl(data->http);
+		tmp->http = strdup(data->http);
 	if (data->msg)
-		tmp->msg = strdupl(data->msg);
+		tmp->msg = strdup(data->msg);
 	
 	return tmp;
 }
@@ -540,10 +541,11 @@ char *trimr(char *buf) {
 	return buf;
 }
 
+#if config_strdup == 0
 /*
  * Our implementation of non-POSIX strdup()
  */
-char *strdupl(const char *src) {
+char *strdup(const char *src) {
 	size_t len;
 	char *tmp;
 
@@ -553,6 +555,7 @@ char *strdupl(const char *src) {
 	
 	return tmp;
 }
+#endif
 
 /*
  * More intuitive version of strncpy with string termination

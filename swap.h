@@ -23,6 +23,7 @@
 #define _SWAP_H
 
 #include <stdint.h>
+#include "config/config.h"
 
 #define swap16(x) \
 	((uint16_t)( \
@@ -36,7 +37,7 @@
 		(((uint32_t)(x) & (uint32_t)0x00ff0000UL) >>  8) | \
 		(((uint32_t)(x) & (uint32_t)0xff000000UL) >> 24) ))
 
-#ifdef NTLM_BIG_ENDIAN
+#if config_endian == 0
 # define U16LE(x)		swap16(x)
 # define U32LE(x)		swap32(x)
 # define U16BE(x)		(x)

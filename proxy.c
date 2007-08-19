@@ -46,6 +46,7 @@
  * Some helping routines like linked list manipulation substr(), memory
  * allocation, NTLM authentication routines, etc.
  */
+#include "config/config.h"
 #include "socket.h"
 #include "utils.h"
 #include "ntlm.h"
@@ -213,7 +214,7 @@ int parent_proxy(char *proxy, int port) {
 	/*
 	 * Check format and parse it.
 	 */
-	proxy = strdupl(proxy);
+	proxy = strdup(proxy);
 	len = strlen(proxy);
 	i = strcspn(proxy, ": ");
 	if (i != len) {
@@ -295,12 +296,12 @@ int headers_recv(int fd, rr_data_t data) {
 
 		tok = strtok_r(NULL, " ", &s3);
 		if (tok)
-			ccode = strdupl(tok);
+			ccode = strdup(tok);
 
 		while (s3 < buf+len && *s3 == ' ')
 			s3++;
 		if (strlen(s3))
-			data->msg = strdupl(s3);
+			data->msg = strdup(s3);
 
 		if (!ccode || strlen(ccode) != 3 || (data->code = atoi(ccode)) == 0 || !data->http || !data->msg) {
 			i = -1;
@@ -312,11 +313,11 @@ int headers_recv(int fd, rr_data_t data) {
 		data->url = NULL;
 		data->http = NULL;
 
-		data->method = strdupl(tok);
+		data->method = strdup(tok);
 
 		tok = strtok_r(NULL, " ", &s3);
 		if (tok)
-			data->url = strdupl(tok);
+			data->url = strdup(tok);
 
 		tok = strtok_r(NULL, " ", &s3);
 		if (tok)
@@ -679,7 +680,7 @@ int authenticate(int sd, rr_data_t data, char *user, char *password, char *domai
 	 */
 	if (!CONNECT(data)) {
 		free(auth->method);
-		auth->method = strdupl("HEAD");
+		auth->method = strdup("HEAD");
 	}
 	auth->headers = hlist_mod(auth->headers, "Proxy-Authorization", buf, 1);
 	auth->headers = hlist_del(auth->headers, "Content-Length");
@@ -814,10 +815,10 @@ int scanner_hook(rr_data_t *request, rr_data_t *response, int *cd, int *sd, long
 
 	tmp = hlist_get((*request)->headers, "User-Agent");
 	if (tmp) {
-		tmp = lowercase(strdupl(tmp));
+		tmp = lowercase(strdup(tmp));
 		list = scanner_agent_list;
 		while (list) {
-			pat = lowercase(strdupl(list->aux));
+			pat = lowercase(strdup(list->aux));
 			if (debug)
 				printf("scanner_hook: matching U-A header (%s) to %s\n", tmp, pat);
 			if (!fnmatch(pat, tmp, 0)) {
@@ -936,7 +937,7 @@ int scanner_hook(rr_data_t *request, rr_data_t *response, int *cd, int *sd, long
 				newreq = dup_rr_data(*request);
 
 				free(newreq->method);
-				newreq->method = strdupl("POST");
+				newreq->method = strdup("POST");
 				hlist_mod(newreq->headers, "Referer", (*request)->url, 1);
 				hlist_mod(newreq->headers, "Content-Type", "application/x-www-form-urlencoded", 1);
 				hlist_mod(newreq->headers, "Content-Length", tmp, 1);
@@ -1459,9 +1460,9 @@ void *autotunnel(void *client) {
 	data2 = new_rr_data();
 
 	data1->req = 1;
-	data1->method = strdupl("CONNECT");
-	data1->url = strdupl(thost);
-	data1->http = strdupl("0");
+	data1->method = strdup("CONNECT");
+	data1->url = strdup(thost);
+	data1->http = strdup("0");
 
 	if (debug)
 		printf("Starting authentication...\n");
@@ -1563,7 +1564,7 @@ void tunnel_add(plist_t *list, char *spec, int gateway) {
 	char *field[4];
 	char *tmp;
 
-	spec = strdupl(spec);
+	spec = strdup(spec);
 	len = strlen(spec);
 	field[0] = spec;
 	for (count = 1, i = 0; i < len; ++i)
@@ -1644,7 +1645,7 @@ int main(int argc, char **argv) {
 
 	openlog("cntlm", LOG_CONS, LOG_DAEMON);
 
-#ifdef NTLM_BIG_ENDIAN
+#if config_endian == 0
 	syslog(LOG_INFO, "Starting cntlm version " VERSION " for BIG endian\n");
 #else
 	syslog(LOG_INFO, "Starting cntlm version " VERSION " for LITTLE endian\n");
@@ -2063,8 +2064,15 @@ int main(int argc, char **argv) {
 	/*
 	 * Set default values.
 	 */
-	if (!strlen(workstation))
-		strlcpy(workstation, "cntlm", AUTHSIZE);
+	if (!strlen(workstation)) {
+#if config_gethostname == 1
+		gethostname(workstation, AUTHSIZE);
+#endif
+		if (!strlen(workstation))
+			strlcpy(workstation, "cntlm", AUTHSIZE);
+
+		syslog(LOG_INFO, "Workstation name used: %s\n", workstation);
+	}
 
 	/*
 	 * Ok, we are ready to rock. If daemon mode was requested,

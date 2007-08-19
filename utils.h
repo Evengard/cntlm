@@ -23,6 +23,7 @@
 #define _UTILS_H
 
 #include <pthread.h>
+#include "config/config.h"
 
 #define BUFSIZE			1024
 #define VAL(var, type, offset)	*((type *)(var+offset))
@@ -93,7 +94,6 @@ extern hlist_t hlist_free(hlist_t list);
 extern void hlist_dump(hlist_t list);
 
 extern char *substr(const char *src, int pos, int len);
-extern char *strdupl(const char *src);
 extern size_t strlcpy(char *dst, const char *src, size_t siz);
 extern size_t strlcat(char *dst, const char *src, size_t siz);
 extern char *trimr(char *buf);
@@ -112,5 +112,10 @@ extern void free_rr_data(rr_data_t data);
 
 extern void to_base64(unsigned char *out, const unsigned char *in, size_t len, size_t olen);
 extern int from_base64(char *out, const char *in);
+
+#if config_gethostname == 1
+extern int gethostname(char *name, size_t len);
+#endif
+extern char *strdup(const char *src);
 
 #endif /* _UTILS_H */

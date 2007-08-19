@@ -358,8 +358,10 @@ the whole output to the bug report.
 
 .TP
 .B \-w <workstation>
-Proxy account workstation NetBIOS name. Do not use full domain name (FQDN)
-here. Just the first part. Some proxies require this information.
+Workstation NetBIOS name. Do not use full domain name (FQDN) here. Just the
+first part. If not specified, \fBcntlm\fP tries to get the system hostname and
+if that fails, uses "cntlm" - it's because some proxies require this field
+non-empty.
 
 .SH CONFIGURATION
 Configuration file has the same syntax as OpenSSH ssh_config. It comprises of
@@ -438,6 +440,10 @@ Tunnel specification. See \fB-L\fP for more.
 .B Username 
 Proxy account name, without the possibility to include domain name ('at' sign
 is interpreted literally).
+
+.TP
+.B Workstation <hostname>
+The hostname of your workstation. 
 
 .SH FILES
 The optional location of the configuration file is defined in the Makefile,

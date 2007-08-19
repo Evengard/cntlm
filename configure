@@ -1,0 +1,29 @@
+#!/bin/sh
+
+CC=gcc
+STAMP=.config-stamp
+CONFIG=config/config.h
+TESTS="endian strdup gethostname"
+
+#[ -f $STAMP ] && exit 0
+touch $STAMP
+
+rm -f $CONFIG
+for i in $TESTS; do
+	printf "Checking $i... "
+	printf "#define config_$i " >> $CONFIG
+	OUT=`gcc -Wall -pedantic -O3 -D_POSIX_C_SOURCE=199506L -D_ISOC99_SOURCE -D_REENTRANT -o config/$i config/$i.c 2>&1`
+	rc=$?
+
+	if [ $rc -ne 0 ]; then # -o -n "$OUT" ]; then
+		rc=0
+		RET=no
+	else
+		RET=`./config/$i`
+		rc=$?
+		[ -z "$RET" ] && if [ $rc -eq 0 ]; then RET="no"; else RET=yes; fi
+	fi
+
+	echo $rc >> $CONFIG
+	echo $RET
+done

@@ -46,7 +46,7 @@ int acl_add(plist_t *rules, char *spec, enum acl_t acl) {
 	if (rules == NULL)
 		return 0;
 
-	spec = strdupl(spec);
+	spec = strdup(spec);
 	aux = (network_t *)new(sizeof(network_t));
 	i = strcspn(spec, "/");
 	if (i < strlen(spec)) {

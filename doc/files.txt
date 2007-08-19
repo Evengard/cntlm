@@ -8,7 +8,10 @@
 ./acl.h
 ./config.c
 ./config.h
-./endian.c
+./config/endian.c
+./config/gethostname.c
+./config/strdup.c
+./configure
 ./ntlm.c
 ./ntlm.h
 ./proxy.c
