@@ -1,11 +1,11 @@
-.TH CNTLM 1 "May 2007" "cntlm 0.25" "Accelerating NTLM Authentication Proxy"
+.TH CNTLM 1 "May 2007" "cntlm 0.34" "Accelerating NTLM Authentication Proxy"
 .SH NAME
 \fBcntlm\fP \- authenticating HTTP(S) proxy with TCP/IP tunneling and acceleration
 
 .SH SYNOPSIS
 .B cntlm
 [
-.B \-AaBcDdfghLlPpUuvw
+.B \-AaBcDdFfghiLlPpSsTUuvw
 ] [ \fIhost1\fP \fIport1\fP | \fIhost1\fP:\fIport1\fP ] ... \fIhostN\fP \fIportN\fP
 
 .SH DESCRIPTION
@@ -176,6 +176,16 @@ without detaching from the controlling terminal; see \fB-v\fP. In any case, all
 error and diagnostic messages are always sent to the system logger.
 
 .TP
+.B \-G <pattern>
+User-Agent matching (case sensitive) for trans-isa-scan plugin (see \fB\-S\fP
+for explanation). Positive match identifies requests (applications) for which
+the plugin should be enabled without considering the size of the download (see
+\fB\-S\fP). You can use shell wildcard characters, namely "*", "?" and "[]". If
+used without \fB\-S\fP or \fBISAScannerSize\fP, the \fImax_size_in_kb\fP is
+internally set to infinity, so the plugin will be active ONLY for selected
+User-Agents, regardless of download size.
+
+.TP
 .B \-g
 Gateway mode, \fBcntlm\fP listens on all network interfaces. Default is to bind
 just loopback. That way, only local processes can connect to
@@ -183,7 +193,7 @@ just loopback. That way, only local processes can connect to
 and is accessible to other machines on the network. Please note that with this
 option the command\-line order matters when specifying proxy or tunnel local (listening)
 ports. Those positioned before it will bind only loopback; those after will be
-public. IMPORTANT: All of the above applies only to local ports, for which you
+public. IMPORTANT: All of the above applies only to local ports for which you
 didn't specify any source address. If you did, \fBcntlm\fP tries to bind the
 given port only on the specified interface (or rather IP address).
 
@@ -227,13 +237,13 @@ as proxy settings in your browser and/or the environment. Most applications
 POSIX, set the following variables to use e.g. \fBwget(1)\fP without any
 trouble (fill in the actual address of \fBcntlm\fP):
 .nf
-    $ export ftp_proxy=http://localhost:3128
-    $ export http_proxy=$ftp_proxy
-    $ export https_proxy=$ftp_proxy
+$ export ftp_proxy=http://localhost:3128
+$ export http_proxy=$ftp_proxy
+$ export https_proxy=$ftp_proxy
 .fi
 
 You can choose to run the proxy service on more than one port, in such case
-just use this option as many times as neccessary. But unlike tunnel specification,
+just use this option as many times as necessary. But unlike tunnel specification,
 \fBcntlm\fP fails to start if it cannot bind all of the proxy service ports.
 Proxy service port can also be bound selectively. Use \fIsaddr\fP to pick
 source IP address to bind the \fIlport\fP to. This allows you, for example, to
@@ -261,38 +271,38 @@ Enables the plugin for transparent handling of the dreaded ISA AV scanner, which
 returns an interactive HTTP page (displaying the scanning progress) instead of
 the file/data you've requested, every time it feels like scanning the contents.
 This presumptuous behavior breaks every automated downloader, updater and
-basically ANY application relying on downloads (e.g. apt-get).
+basically EVERY application relying on downloads (e.g. wget, apt-get).
 
-The parameter \fImax_size_in_kb\fP allows you to choose which downloads are
-too big to handle. If the file size is bigger than this, \fBcntlm\fP forwards
-you the interactive page, effectively disabling the plugin for that download.
-Zero means no limit.
+The parameter \fImax_size_in_kb\fP allows you to choose maximum download size
+you wish to handle by the plugin (see below why you might want that). If the
+file size is bigger than this, \fBcntlm\fP forwards you the interactive page,
+effectively disabling the plugin for that download. Zero means no limit. Use
+\fB\-G\fP/\fBISAScannerAgent\fP to identify applications for which
+\fImax_size_in_kb\fP should be ignored (forcing the plugin). It works by
+matching User-Agent header and is necessary for e.g. wget, apt-get and yum,
+which would fail if the response is some HTTP page instead of requested data.
 
-Reason: the client asks for a file, \fBcntlm\fP detects ISA's bullshit
+How it works: the client asks for a file, \fBcntlm\fP detects ISA's bullshit
 response and waits for the secret link to ISA's cache, which comes no sooner
-than the file is scanned and downloaded by ISA. Only then can \fBcntlm\fP make
+than the file is downloaded and scanned by ISA. Only then can \fBcntlm\fP make
 the second request for the real file and forward it along with correct headers
 to the client. The client doesn't timeout while waiting for it, b/c \fBcntlm\fP
 is periodically sending an extra "keepalive" header, but the user might get
-nervous not seeing the progress bar move. It's of course purely psychological
+nervous not seeing the progress bar move. It's of course \fBpurely psychological\fP
 matter, there's no difference if \fBcntlm\fP or your browser requests the
-scanned file - you must wait for ISA to do it's job and download only then. You
-just expect to see progress indicator move immediately. If the plugin cannot
-parse the page for some reason (different formatting, etc.), it quits and you
-get the interactive page - it's never "lost").
+scanned file - you must wait for ISA to do it's job and download then. You
+just expect to see some progress indicator move, which is all what the
+ISA's page does: it shows HTML countdown.
 
-The keepalive header is called "ISA-Scanner" and also shows the ISA's progres, e.g.:
+If the plugin cannot parse the page for some reason (different formatting,
+etc.), it quits and you get the interactive page - it's never "lost".
+
+The keepalive header is called "ISA-Scanner" and shows the ISA's progres, e.g.:
 .nf
-    ISA-Scanner: 60000 of 1000000
-    ISA-Scanner: 70000 of 1000000
+    ISA-Scanner: 6000 of 10000
+    ISA-Scanner: 7000 of 10000
     ...
 .fi
-
-I might also add decisions based on User-Agent. Like: browsers get the original
-scanner page if file too big, b/c there's a human operating it; wget, apt-get
-and yum engage the plugin for any size, b/c there's no way they could
-understand the scanner page and they don't mind waiting without seeing the
-progress bar moving.
 
 .TP
 .B \-s
@@ -300,6 +310,13 @@ Serializes all requests by not using concurrent threads for proxy (tunneling
 still works in parallel). This has a horrible impact on performance and is
 available only for debugging purposes. When used with \fB\-v\fP, it yields
 nice sequential debug log, where requests take turns.
+
+.TP
+.B \-T <filename>
+Used in combination with \fB\-v\fP to save the debug output into a trace file.
+It should be placed as the first parameter on the command line. To prevent data
+loss, it never overwrites an existing file. You have to pick a unique name
+or manually delete the old file.
 
 .TP
 .B \-U <uid>
@@ -366,13 +383,20 @@ applies the same to all tunnels.
 Header substitution. See \fB-h\fP for details and remember, no quoting.
 
 .TP
-.B ISAScannerPlugin <max_size_in_kb>
+.B ISAScannerAgent <pattern>
+Wildcard-enabled (*, ?, []) case sensitive User-Agent string matching for the
+trans-isa-plugin. If you don't define \fBISAScannerSize\fP, it is internally
+set to infinity, i.e. disabling the plugin for all downloads except those
+agent-matched ones. See \fB\-G\fP.
+
+.TP
+.B ISAScannerSize <max_size_in_kb>
 Enable trans-isa-scan plugin. See \fB\-S\fP for more.
 
 .TP
 .B Listen [<saddr>:]<port_number>
 Local port number for the \fBcntlm\fP's proxy service. See \fB-l\fP for more.
-
+add
 .TP
 .B Password <password>
 Proxy account password.
@@ -401,12 +425,13 @@ is interpreted literally).
 
 .SH FILES
 The optional location of the configuration file is defined in the Makefile,
-with the default for 1) deb/rpm package and 2) traditional "make; make install"
-being:
-
+with the default for 1) deb/rpm package, 2) traditional "make; make install"
+and 3) Windows installer being:
 .nf
+
 1) /etc/cntlm.conf
 2) /usr/local/etc/cntlm.conf
+3) %PROGRAMFILES%\\Cntlm\\cntlm.ini
 .fi
 
 .SH PORTING
@@ -415,7 +440,8 @@ endian machines (Linux/i386 and AIX/PowerPC). For compilation details, see
 README in the source distribution. Porting to any POSIX conforming OS shouldn't
 be more than a matter of the Makefile rearrangement. \fBCntlm\fP uses strictly
 POSIX.1c interfaces with ISO C99 libc (\fBsnprintf(3)\fP), it is also compliant
-with SUSv2.
+with SUSv2. Since version 0.33, \fBcntlm\fP supports Windows using POSIX
+emulation layer Cygwin.
 
 .SH TODO
 In the much needed NTLM-proxy departement, \fBcntlm\fP aims to be a drop\-in
@@ -428,13 +454,29 @@ alternative. Such a narrow-spectrum tool can be written in Perl in a few
 minutes. I strive to keep the code of \fBcntlm\fP simple and efficient.
 
 .SH BUGS
-This software is in the BETA phase of development, so there are probably many
-bugs for you to uncloak even though I'm testing every new piece of code AMAP
-and use \fBcntlm\fP daily. I'll be happy to fix all of them, but if you can
-manage, patches would be better. ;)
+This software is still BETA, so there are probably many bugs for you to uncloak
+even though I'm testing every new piece of code AMAP and use \fBcntlm\fP daily.
+I'll be happy to fix all of them, but if you can manage, patches would be
+better. ;)
+
+\fBTo report a bug\fP, enable the debug output, save it to a file and submit
+on\-line along with a detailed description of the problem and how to reproduce
+it. The link can be found on the homepage.
+
+To generate the debug tracefile correctly, first run \fBcntlm\fP from the
+shell (command line) and make sure you can reproduce the bug. When you will
+have verfied that, stop \fBcntlm\fP (hit Ctrl-C) and insert the following
+parameters at the beginning of the command line, preserving their order.
+Example:
+.nf
+
+cntlm[.exe] \-T cntlmtrace.log \-v \-s ... the rest ...
+.fi
 
 .SH AUTHOR
-Written by David Kubicek <dave@awk.cz>
+Written by David Kubicek <dave (o) awk.cz>
+.br
+Homepage: http://cntlm.sourceforge.net/
 
 .SH COPYRIGHT
 Copyright \(co 2007 David Kubicek

@@ -40,6 +40,7 @@
 #include <fcntl.h>
 #include <syslog.h>
 #include <termios.h>
+#include <fnmatch.h>
 
 /*
  * Some helping routines like linked list manipulation substr(), memory
@@ -120,12 +121,11 @@ typedef struct {
 	int port;
 } proxy_t;
 
-/* static hlist_t scanner_force_agents = NULL;		scanner_hook() */
-
 /*
  * List of custom header substitutions.
  */
 static hlist_t header_list = NULL;			/* process() */
+static plist_t scanner_agent_list = NULL;		/* scanner_hook() */
 
 /*
  * General signal handler. Fast exit, no waiting for threads and shit.
@@ -136,7 +136,7 @@ void sighandler(int p) {
 	else
 		syslog(LOG_INFO, "Signal %d received, forcing shutdown\n", p);
 
-	if (quit++)
+	if (quit++ || debug)
 		exit(0);
 }
 
@@ -797,9 +797,10 @@ int has_body(rr_data_t request, rr_data_t response) {
 }
 
 int scanner_hook(rr_data_t *request, rr_data_t *response, int *cd, int *sd, long maxKBs) {
-	char *buf, *line, *pos, *tmp, *post, *isaid, *uurl;
+	char *buf, *line, *pos, *tmp, *pat, *post, *isaid, *uurl;
 	int bsize, lsize, size, len, i, nc;
 	rr_data_t newreq, newres;
+	plist_t list;
 	int ok = 1;
 	int done = 0;
 	int headers_initiated = 0;
@@ -810,6 +811,27 @@ int scanner_hook(rr_data_t *request, rr_data_t *response, int *cd, int *sd, long
 		|| hlist_subcmp((*response)->headers, "Transfer-Encoding", "chunked")
 		|| !hlist_subcmp((*response)->headers, "Proxy-Connection", "close"))
 		return PLUG_SENDHEAD | PLUG_SENDDATA;
+
+	tmp = hlist_get((*request)->headers, "User-Agent");
+	if (tmp) {
+		tmp = lowercase(strdupl(tmp));
+		list = scanner_agent_list;
+		while (list) {
+			pat = lowercase(strdupl(list->aux));
+			if (debug)
+				printf("scanner_hook: matching U-A header (%s) to %s\n", tmp, pat);
+			if (!fnmatch(pat, tmp, 0)) {
+				if (debug)
+					printf("scanner_hook: positive match!\n");
+				maxKBs = 0;
+				free(pat);
+				break;
+			}
+			free(pat);
+			list = list->next;
+		}
+		free(tmp);
+	}
 
 	bsize = SAMPLE;
 	buf = new(bsize);
@@ -856,14 +878,15 @@ int scanner_hook(rr_data_t *request, rr_data_t *response, int *cd, int *sd, long
 
 				if (i > 0) {
 					if (debug && (!strncmp(line, " UpdatePage(", 12) || (done=!strncmp(line, "DownloadFinished(", 17)))) {
-						printf("scanner_hook: %s", line);
+						if (debug)
+							printf("scanner_hook: %s", line);
 
 						if ((pos=strstr(line, "To be downloaded"))) {
 							filesize = atol(pos+16);
 							if (debug)
 								printf("scanner_hook: file size detected: %ld KiBs (max: %ld)\n", filesize/1024, maxKBs);
 
-							if (maxKBs && filesize/1024 > maxKBs)
+							if (maxKBs && (maxKBs == 1 || filesize/1024 > maxKBs))
 								break;
 
 							/*
@@ -932,10 +955,11 @@ int scanner_hook(rr_data_t *request, rr_data_t *response, int *cd, int *sd, long
 				} else {
 					nc = proxy_connect();
 					c = authenticate(nc, newreq, user, password, domain);
-					if (c > 0 && c != 500)
-						printf("scanner_hook: Authentication OK, getting the file...\n");
-					else {
-						printf("scanner_hook: Authentication failed\n");
+					if (c > 0 && c != 500) {
+						if (debug)
+							printf("scanner_hook: Authentication OK, getting the file...\n");
+					} else {
+						syslog(LOG_ERR, "scanner_hook: Authentication failed\n");
 						nc = 0;
 					}
 				}
@@ -953,13 +977,18 @@ int scanner_hook(rr_data_t *request, rr_data_t *response, int *cd, int *sd, long
 					 * to the client. In such case, do not include the HTTP/1.x ID.
 					 */
 					newres->skip_http = headers_initiated;
+					if (filesize) {
+						tmp = new(20);
+						snprintf(tmp, 20, "%ld", filesize);
+						newres->headers = hlist_mod(newres->headers, "Content-Length", tmp, 1);
+					}
 					*response = dup_rr_data(newres);
 					*sd = nc;
 
 					len = 0;
 					ok = PLUG_SENDHEAD | PLUG_SENDDATA;
 				} else
-					printf("scanner_hook: New request failed\n");
+					syslog(LOG_WARNING, "scanner_hook: New request failed\n");
 
 				free(newreq);
 				free(newres);
@@ -969,8 +998,8 @@ int scanner_hook(rr_data_t *request, rr_data_t *response, int *cd, int *sd, long
 
 			free(line);
 			free(isaid);
-		} else if (debug)
-			printf("scanner_hook: ISA id not found\n");
+		} else
+			syslog(LOG_ERR, "scanner_hook: ISA id not found\n");
 	}
 
 	if (len) {
@@ -980,8 +1009,7 @@ int scanner_hook(rr_data_t *request, rr_data_t *response, int *cd, int *sd, long
 		}
 
 		if (!headers_send(*cd, *response)) {
-			if (debug)
-				printf("scanner_hook: failed to send headers\n");
+			syslog(LOG_WARNING, "scanner_hook: failed to send headers\n");
 			free(buf);
 			return PLUG_ERROR;
 		}
@@ -1000,7 +1028,7 @@ int scanner_hook(rr_data_t *request, rr_data_t *response, int *cd, int *sd, long
 	return ok;
 }
 
-char *gen_denied_page(char *http) {
+char *gen_auth_page(char *http) {
 	char *tmp;
 
 	tmp = new(BUFSIZE);
@@ -1010,6 +1038,18 @@ char *gen_denied_page(char *http) {
 	strcat(tmp, "<html><body><h1>Authentication error</h1><p><a href='http://cntlm.sf.net/'>Cntlm</a> "
 		"proxy has NTLM-to-basic feature enabled. You have to enter correct credentials to continue "
 		"(try Ctrl-R or F5).</p></body></html>");
+
+	return tmp;
+}
+
+
+char *gen_denied_page(char *ip) {
+	char *tmp;
+
+	tmp = new(BUFSIZE);
+	snprintf(tmp, BUFSIZE, "HTTP/1.0 407 Access denied.\r\nContent-Type: text/html\r\n\r\n"
+		"<html><body><h1>Access denied</h1><p>Your request has been declined, %s "
+		"is not allowed to connect.</p></body></html>", ip);
 
 	return tmp;
 }
@@ -1126,7 +1166,7 @@ void *process(void *client) {
 					if (debug)
 						printf("NTLM-to-basic: Sending the client auth request.\n");
 
-					tmp = gen_denied_page(data[loop]->http);
+					tmp = gen_auth_page(data[loop]->http);
 					write(cd, tmp, strlen(tmp));
 					free(tmp);
 
@@ -1160,7 +1200,7 @@ void *process(void *client) {
 				if (!ntlmbasic)
 					forced_basic = 1;
 
-				tmp = gen_denied_page(data[loop]->http);
+				tmp = gen_auth_page(data[loop]->http);
 				write(cd, tmp, strlen(tmp));
 				free(tmp);
 
@@ -1263,6 +1303,13 @@ void *process(void *client) {
 				}
 
 				/*
+				if (loop && serialize) {
+					hlist_mod(data[loop]->headers, "Proxy-Connection", "close", 1);
+					hlist_mod(data[loop]->headers, "Connection", "close", 1);
+				}
+				*/
+
+				/*
 				 * Forward client's headers to the proxy and vice versa; authenticate()
 				 * might have by now prepared 1st and 2nd auth steps and filled our
 				 * headers with the 3rd, final, NTLM message.
@@ -1349,7 +1396,7 @@ void *process(void *client) {
 
 		free_rr_data(data[0]);
 		free_rr_data(data[1]);
-	} while (!so_closed(sd) && !so_closed(cd) && (keep || so_dataready(cd)));
+	} while (!so_closed(sd) && !so_closed(cd) && !serialize && (keep || so_dataready(cd)));
 
 bailout:
 	free(puser);
@@ -1581,6 +1628,7 @@ int main(int argc, char **argv) {
 	int tc = 0;
 	int tj = 0;
 	int interactivepwd = 0;
+	int tracefile = 0;
 	plist_t tunneld_list = NULL;
 	plist_t proxyd_list = NULL;
 	plist_t rules = NULL;
@@ -1602,7 +1650,7 @@ int main(int argc, char **argv) {
 	syslog(LOG_INFO, "Starting cntlm version " VERSION " for LITTLE endian\n");
 #endif
 
-	while ((i = getopt(argc, argv, ":-:a:c:d:fgh:il:p:su:vw:A:BD:F:L:P:S:U:")) != -1) {
+	while ((i = getopt(argc, argv, ":-:a:c:d:fgh:il:p:su:vw:A:BD:F:G:L:P:S:T:U:")) != -1) {
 		switch (i) {
 			case 'A':
 			case 'D':
@@ -1630,6 +1678,17 @@ int main(int argc, char **argv) {
 			case 'f':
 				asdaemon = 0;
 				break;
+			case 'G':
+				if (strlen(optarg)) {
+					scanner_plugin = 1;
+					if (!scanner_plugin_maxsize)
+						scanner_plugin_maxsize = 1;
+					i = strlen(optarg) + 3;
+					tmp = new(i);
+					snprintf(tmp, i, "*%s*", optarg);
+					scanner_agent_list = plist_add(scanner_agent_list, 0, tmp);
+				}
+				break;
 			case 'g':
 				gateway = 1;
 				break;
@@ -1642,12 +1701,15 @@ int main(int argc, char **argv) {
 				break;
 			case 'L':
 				/*
-				 * Parse and validate the argument using regex.
-				 * Create a listening socket and store the target to a linked list
+				 * Parse and validate the argument.
+				 * Create a listening socket for tunneling.
 				 */
 				tunnel_add(&tunneld_list, optarg, gateway);
 				break;
 			case 'l':
+				/*
+				 * Create a listening socket for proxy function.
+				 */
 				proxy_add(&proxyd_list, optarg, gateway);
 				break;
 			case 'P':
@@ -1672,6 +1734,24 @@ int main(int argc, char **argv) {
 				 */
 				serialize = 1;
 				break;
+			case 'T':
+				tracefile = open(optarg, O_CREAT | O_EXCL | O_WRONLY, 0600);
+				if (tracefile < 0) {
+					fprintf(stderr, "Cannot create the trace file, make sure it doesn't already exist.\n");
+					myexit(1);
+				} else {
+					printf("Redirecting all output to %s\n", optarg);
+					dup2(tracefile, 1);
+					dup2(tracefile, 2);
+					printf("Cntlm debug trace, version " VERSION);
+#ifdef __CYGWIN__
+					printf(" win32/cygwin port");
+#endif
+					printf(".\nCommand line: ");
+					for (i = 0; i < argc; ++i)
+						printf("%s ", argv[i]);
+					printf("\n");
+				}
 			case 'U':
 				strlcpy(uid, optarg, AUTHSIZE);
 				break;
@@ -1693,7 +1773,7 @@ int main(int argc, char **argv) {
 				strlcpy(workstation, optarg, AUTHSIZE);
 				break;
 			default:
-				help = 1;
+				help = 1 + (i == '-');
 		}
 	}
 
@@ -1830,12 +1910,28 @@ int main(int argc, char **argv) {
 		free(tmp);
 
 		tmp = new(AUTHSIZE);
-		CFG_DEFAULT(cf, "ISAScannerPlugin", tmp, AUTHSIZE);
+		CFG_DEFAULT(cf, "ISAScannerSize", tmp, AUTHSIZE);
 		if (strlen(tmp)) {
 			scanner_plugin = 1;
 			scanner_plugin_maxsize = atoi(tmp);
 		}
 		free(tmp);
+
+		/*
+		 * Add User-Agent matching patterns.
+		 */
+		while ((tmp = config_pop(cf, "ISAScannerAgent"))) {
+			scanner_plugin = 1;
+			if (!scanner_plugin_maxsize)
+				scanner_plugin_maxsize = 1;
+
+			if ((i = strlen(tmp))) {
+				head = new(i + 3);
+				snprintf(head, i+3, "*%s*", tmp);
+				scanner_agent_list = plist_add(scanner_agent_list, 0, head);
+			}
+			free(tmp);
+		}
 
 		/*
 		 * Print out unused/unknown options.
@@ -1865,7 +1961,7 @@ int main(int argc, char **argv) {
 				"newer. For more information about these matters, see the file LICENSE.\n"
 				"For copyright holders of included encryption routines see headers.\n\n");
 
-			fprintf(stderr, "Usage: %s [-AaBcDdFfghiLlPpsUuvw] -u <user>[@<domain>] -p <pass> <proxy_host>[:]<proxy_port>\n", argv[0]);
+			fprintf(stderr, "Usage: %s [-AaBcDdFfghiLlPsSTUvw] -u <user>[@<domain>] -p <pass> <proxy_host>[:]<proxy_port> ...\n", argv[0]);
 			fprintf(stderr, "\t-A  <address>[/<net>]\n"
 					"\t    New ACL allow rule. Address can be an IP or a hostname, net must be a number (CIDR notation)\n");
 			fprintf(stderr, "\t-a  ntlm | nt | lm\n"
@@ -1882,6 +1978,8 @@ int main(int argc, char **argv) {
 			fprintf(stderr, "\t-f  Run in foreground, do not fork into daemon mode.\n");
 			fprintf(stderr, "\t-F  <flags>\n"
 					"\t    NTLM authentication flags.\n");
+			fprintf(stderr, "\t-G  <pattern>\n"
+					"\t    User-Agent matching for the trans-isa-scan plugin.\n");
 			fprintf(stderr, "\t-g  Gateway mode - listen on all interfaces, not only loopback.\n");
 			fprintf(stderr, "\t-h  \"HeaderName: value\"\n"
 					"\t    Add a header substitution. All such headers will be added/replaced\n"
@@ -1906,7 +2004,9 @@ int main(int argc, char **argv) {
 					"\t    Domain/workgroup can be set separately.\n");
 			fprintf(stderr, "\t-v  Print debugging information.\n");
 			fprintf(stderr, "\t-w  <workstation>\n"
-					"\t    Some proxies require correct NetBIOS hostname.\n\n");
+					"\t    Some proxies require correct NetBIOS hostname.\n");
+			fprintf(stderr, "\t--help\n"
+					"\t    Print this help info along with version number.\n\n");
 		}
 
 		if (!ntlmbasic && !strlen(user)) {
@@ -1922,7 +2022,7 @@ int main(int argc, char **argv) {
 			syslog(LOG_ERR, "No proxy service ports were successfully opened.\n");
 		}
 
-		myexit(1);
+		myexit(help < 2);
 	}
 
 	if (interactivepwd && !ntlmbasic) {
@@ -1930,7 +2030,7 @@ int main(int argc, char **argv) {
 		tcgetattr(0, &termold);
 		termnew = termold;
 		termnew.c_lflag &= ~(ISIG | ECHO);
-		tcsetattr(0, TCSAFLUSH, &termnew);
+		tcsetattr(0, TCSADRAIN, &termnew);
 		fgets(password, AUTHSIZE, stdin);
 		tcsetattr(0, TCSADRAIN, &termold);
 		i = strlen(password)-1;
@@ -2148,6 +2248,9 @@ int main(int argc, char **argv) {
 					 */
 					if (acl_check(rules, caddr.sin_addr) != ACL_ALLOW) {
 						syslog(LOG_WARNING, "Connection denied for %s:%d\n", inet_ntoa(caddr.sin_addr), ntohs(caddr.sin_port));
+						tmp = gen_denied_page(inet_ntoa(caddr.sin_addr));
+						write(cd, tmp, strlen(tmp));
+						free(tmp);
 						close(cd);
 						continue;
 					}
@@ -2215,6 +2318,7 @@ int main(int argc, char **argv) {
 	pthread_mutex_unlock(&connection_mtx);
 
 	hlist_free(header_list);
+	plist_free(scanner_agent_list);
 	plist_free(tunneld_list);
 	plist_free(proxyd_list);
 	plist_free(rules);
@@ -2228,9 +2332,6 @@ int main(int argc, char **argv) {
 	free(password);
 	free(workstation);
 
-	/*
-	 * Might need mutex in case of forced shutdown
-	 */
 	parent_list = plist_free(parent_list);
 
 	exit(0);

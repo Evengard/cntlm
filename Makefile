@@ -86,10 +86,8 @@ cleanp:
 
 distclean: clean
 	if [ `id -u` = 0 ]; then \
-		debian/rules clean; \
 		redhat/rules clean; \
 	else \
-		fakeroot debian/rules clean; \
 		fakeroot redhat/rules clean; \
 	fi
 

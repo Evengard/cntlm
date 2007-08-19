@@ -209,7 +209,7 @@ plist_t plist_free(plist_t list) {
  * Caller decides this on a by-call basis. Part of the manipulation
  * routines is a "free". That method always deallocates both the
  * key and the value. So for static or temporary keys/values,
- * the caller instructs us to duplicate the neccessary amount 
+ * the caller instructs us to duplicate the necessary amount 
  * of heap. This mechanism is used to minimize memory-related
  * bugs throughout the code and tens of free's in the main
  * module.

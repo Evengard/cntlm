@@ -43,7 +43,7 @@ struct hlist_s {
 
 typedef struct plist_s *plist_t;
 struct plist_s {
-	unsigned long int key;
+	unsigned long key;
 	char *aux;
 	struct plist_s *next;
 };
