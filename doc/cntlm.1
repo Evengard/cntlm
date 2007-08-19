@@ -56,10 +56,12 @@ difference in resource usage is one of many important benefits for laptop use.
 Peak memory consumption (several complex sites, 50 paralell connections/threads;
 values are in KiB):
 .nf
+.ft C
 
        VSZ   RSS CMD
       3204  1436 ./cntlm \-f \-c ./cntlm.conf \-P pid
     411604  6264 /usr/share/ntlmaps/main.py \-c /etc/ntlmaps/server.cfg
+.fp
 .fi
 
 .PP
@@ -237,9 +239,11 @@ as proxy settings in your browser and/or the environment. Most applications
 POSIX, set the following variables to use e.g. \fBwget(1)\fP without any
 trouble (fill in the actual address of \fBcntlm\fP):
 .nf
+.ft C
 $ export ftp_proxy=http://localhost:3128
 $ export http_proxy=$ftp_proxy
 $ export https_proxy=$ftp_proxy
+.fp
 .fi
 
 You can choose to run the proxy service on more than one port, in such case
@@ -299,9 +303,11 @@ etc.), it quits and you get the interactive page - it's never "lost".
 
 The keepalive header is called "ISA-Scanner" and shows the ISA's progres, e.g.:
 .nf
+.ft C
     ISA-Scanner: 6000 of 10000
     ISA-Scanner: 7000 of 10000
     ...
+.fp
 .fi
 
 .TP
@@ -428,10 +434,12 @@ The optional location of the configuration file is defined in the Makefile,
 with the default for 1) deb/rpm package, 2) traditional "make; make install"
 and 3) Windows installer being:
 .nf
+.ft C
 
 1) /etc/cntlm.conf
 2) /usr/local/etc/cntlm.conf
 3) %PROGRAMFILES%\\Cntlm\\cntlm.ini
+.fp
 .fi
 
 .SH PORTING
@@ -469,8 +477,10 @@ have verfied that, stop \fBcntlm\fP (hit Ctrl-C) and insert the following
 parameters at the beginning of the command line, preserving their order.
 Example:
 .nf
+.ft C
 
 cntlm[.exe] \-T cntlmtrace.log \-v \-s ... the rest ...
+.fp
 .fi
 
 .SH AUTHOR

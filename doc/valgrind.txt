@@ -51,5 +51,5 @@ memory_consumption_without_reqex.pdf shows significant drop in memory usage,
 overall less than a half, actually. Both test were done by an automated test
 with 60 connections in parallel and the same sites fully loaded.
 
-Regexes have been removed for good. No point in keeping around old unneccessary
+Regexes have been removed for good. No point in keeping around old unnecessary
 code.
