@@ -805,7 +805,7 @@ int scanner_hook(rr_data_t *request, rr_data_t *response, int *cd, int *sd, long
 	int ok = 1;
 	int done = 0;
 	int headers_initiated = 0;
-	long c, filesize = 0;
+	long c, progress, filesize = 0;
 
 	if (!(*request)->method || !(*response)->http
 		|| has_body(*request, *response) != -1
@@ -903,16 +903,27 @@ int scanner_hook(rr_data_t *request, rr_data_t *response, int *cd, int *sd, long
 							free(tmp);
 						}
 
+						if (!headers_initiated) {
+							syslog(LOG_ERR, "scanner_hook: Giving up, \"To be downloaded\" line not found!\n");
+							break;
+						}
+
 						/*
 						 * Send a notification header to the client, just so it doesn't timeout
 						 */
 						if (!done) {
 							tmp = new(AUTHSIZE);
-							c = atol(line+12);
-							snprintf(tmp, AUTHSIZE, "ISA-Scanner: %ld of %ld\r\n", c, filesize);
+							progress = atol(line+12);
+							snprintf(tmp, AUTHSIZE, "ISA-Scanner: %ld of %ld\r\n", progress, filesize);
 							write(*cd, tmp, strlen(tmp));
 							free(tmp);
 						}
+
+						/*
+						 * If download size is unknown beforehand, stop when downloaded amount is over ISAScannerSize
+						 */
+						if (!filesize && maxKBs && maxKBs != 1 && progress/1024 > maxKBs)
+							break;
 					}
 				}
 			} while (i > 0 && !done);
@@ -973,16 +984,22 @@ int scanner_hook(rr_data_t *request, rr_data_t *response, int *cd, int *sd, long
 						hlist_dump(newres->headers);
 
 					free_rr_data(*response);
+
+					/*
+					 * We always know the filesize here. Send it to the client, because ISA doesn't!!!
+					 * The clients progress bar doesn't work without it and it stinks!
+					 */
+					if (filesize || progress) {
+						tmp = new(20);
+						snprintf(tmp, 20, "%ld", filesize ? filesize : progress);
+						newres->headers = hlist_mod(newres->headers, "Content-Length", tmp, 1);
+					}
+
 					/*
 					 * Here we remember if previous code already sent some headers
 					 * to the client. In such case, do not include the HTTP/1.x ID.
 					 */
 					newres->skip_http = headers_initiated;
-					if (filesize) {
-						tmp = new(20);
-						snprintf(tmp, 20, "%ld", filesize);
-						newres->headers = hlist_mod(newres->headers, "Content-Length", tmp, 1);
-					}
 					*response = dup_rr_data(newres);
 					*sd = nc;
 
@@ -1912,7 +1929,7 @@ int main(int argc, char **argv) {
 
 		tmp = new(AUTHSIZE);
 		CFG_DEFAULT(cf, "ISAScannerSize", tmp, AUTHSIZE);
-		if (strlen(tmp)) {
+		if (!scanner_plugin_maxsize && strlen(tmp)) {
 			scanner_plugin = 1;
 			scanner_plugin_maxsize = atoi(tmp);
 		}

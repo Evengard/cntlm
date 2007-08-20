@@ -74,9 +74,10 @@ uninstall:
 	rm -f $(BINDIR)/$(NAME) $(MANDIR)/man1/$(NAME).1 2>/dev/null || true
 
 clean:
-	@rm -f *.o tags cntlm endian pid configure-stamp config/config.h 2>/dev/null
+	@rm -f *.o cntlm configure-stamp build-stamp config/config.h 2>/dev/null
+	@find config/ -type f -perm -1 -exec rm -f {} \;
 
-cleanp:
+cleanp: clean
 	@rm -f *.deb *.tgz *.tar.gz *.rpm *.o tags cntlm pid massif* callgrind* 2>/dev/null
 
 distclean: clean

@@ -497,6 +497,7 @@ rr_data_t dup_rr_data(rr_data_t data) {
 	tmp = new_rr_data();
 	tmp->req = data->req;
 	tmp->code = data->code;
+	tmp->skip_http = data->skip_http;
 	if (data->headers)
 		tmp->headers = hlist_dup(data->headers);
 	if (data->method)
