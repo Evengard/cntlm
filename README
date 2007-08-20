@@ -9,27 +9,20 @@ NOT package installation. To install you packages, you have to be real root.
 
 *** DEBIAN PACKAGES ***
 
-1) For the impatient:
+1) Files you need:
 
-	$ make deb			# you'll need root privs. or fakeroot utility
-	# dpkg -i cntlm*.deb
+	cntlm_0.XX-Y.diff.gz
+	cntlm_0.XX-Y.dsc
+	cntlm_0.XX.orig.tar.gz
 
-2) Detailed howto (or if make deb doesn't work for you)
+	Those can be acquired from the FTP and soon, from Debian pool directly.
 
-	You can use the integration with the Debian packaging system or install cntlm
-	the traditional way. To build a debian package, go the source directory and
-	type as root:
+2) Compilation steps:
 
-	# debian/rules binary
-
-	or if you don't have the root access, use fakeroot:
-
-	$ fakeroot debian/rules binary
-
-	When everything is finished, you should have a new .deb package ready in the
-	current directory. To install the .deb file use:
-
-	# dpkg -i cntlm_X.XX-X_arch.deb
+	$ dpkg-source -x cntlm_0.XX-Y.dsc
+	$ cd cntlm-0.XX/
+	$ dpkg-buildpackage -b -rfakeroot
+	# dpkg -i ../cntlm_0.XX-Y_arch.deb
 
 	Upon installation, the package takes care of creating a dedicated user for
 	cntlm, init script integration, manages eventual configuration file updates

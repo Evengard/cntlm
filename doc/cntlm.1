@@ -93,11 +93,11 @@ list in the same order as specified. \fBCntlm\fP then walks the list and the
 first \fIIP/mask\fP rule that matches the request source address is applied.
 The \fImask\fP can be any number from 0 to 32, where 32 is the default (that is
 exact IP match). This notation is also known as CIDR. If you want to match
-everything, use "0/0" or an asterix. ACLs on the command\-line take precedence
-over those in the config file. In such case, you will see info about that in
-the log (among the list of unused options). There you can also see warnings
-about possibly incorrect subnet spec, that's when the \fIIP\fP part has more
-bits than you declare by \fImask\fP (e.g. 10.20.30.40/24 should be
+everything, use \fB0/0\fP or an asterix. ACLs on the command\-line take
+precedence over those in the config file. In such case, you will see info about
+that in the log (among the list of unused options). There you can also see
+warnings about possibly incorrect subnet spec, that's when the \fIIP\fP part
+has more bits than you declare by \fImask\fP (e.g. 10.20.30.40/24 should be
 10.20.30.0/24).
 
 .TP 
@@ -160,11 +160,11 @@ as a part of the username with \fB\-u\fP.
 .B \-F <flags>
 NTLM authentication flags. This option is rater delicate and I do not recommend
 to change the default built-in values unless you had no success with parent proxy
-auth and tried all possible values for the "Auth" option (\fB\-a\fP). Remember
+auth and tried all possible values for the \fBAuth\fP option (\fB\-a\fP). Remember
 that each NT/LM hash combination requires different flags. This option is sort
 of a complete "manual override" and you'll have to deal with every aspect of it
 yourself. If the parent proxy refuses to authenticate you, try the following
-combinations and note that you have to use "0x" prefix to use hex numbers:
+combinations and note that you have to use \fB0x\fP prefix to use hex numbers:
 .nf
 .ft C
 
@@ -185,7 +185,7 @@ error and diagnostic messages are always sent to the system logger.
 
 .TP
 .B \-G <pattern>
-User-Agent matching (case sensitive) for trans-isa-scan plugin (see \fB\-S\fP
+User-Agent matching (case insensitive) for trans-isa-scan plugin (see \fB\-S\fP
 for explanation). Positive match identifies requests (applications) for which
 the plugin should be enabled without considering the size of the download (see
 \fB\-S\fP). You can use shell wildcard characters, namely "*", "?" and "[]". If
@@ -308,7 +308,7 @@ ISA's page does: it shows HTML countdown.
 If the plugin cannot parse the page for some reason (different formatting,
 etc.), it quits and you get the interactive page - it's never "lost".
 
-The keepalive header is called "\fCISA-Scanner\fP" and shows the ISA's
+The keepalive header is called \fCISA-Scanner\fP and shows the ISA's
 progress, e.g.:
 .nf
 .ft C
@@ -402,7 +402,7 @@ Header substitution. See \fB-h\fP for details and remember, no quoting.
 
 .TP
 .B ISAScannerAgent <pattern>
-Wildcard-enabled (*, ?, []) case sensitive User-Agent string matching for the
+Wildcard-enabled (*, ?, []) case insensitive User-Agent string matching for the
 trans-isa-plugin. If you don't define \fBISAScannerSize\fP, it is internally
 set to infinity, i.e. disabling the plugin for all downloads except those
 agent-matched ones. See \fB\-G\fP.
