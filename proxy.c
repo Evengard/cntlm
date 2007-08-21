@@ -1249,7 +1249,7 @@ void *process(void *client) {
 				 */
 				tl = header_list;
 				while (tl) {
-					data[loop]->headers = hlist_mod(data[loop]->headers, tl->key, tl->value, 1);
+					data[loop]->headers = hlist_mod(data[loop]->headers, tl->key, tl->value, 0);
 					tl = tl->next;
 				}
 
@@ -1258,7 +1258,8 @@ void *process(void *client) {
 				 * cause some ISAs to deny us, even if the connection is already auth'd.
 				 */
 				data[loop]->headers = hlist_mod(data[loop]->headers, "Proxy-Connection", "Keep-Alive", 1);
-				data[loop]->headers = hlist_mod(data[loop]->headers, "Connection", "Keep-Alive", 1);
+				if (!CONNECT(data[loop]))
+					data[loop]->headers = hlist_mod(data[loop]->headers, "Connection", "Keep-Alive", 1);
 				data[loop]->headers = hlist_del(data[loop]->headers, "Proxy-Authorization");
 			}
 
