@@ -680,7 +680,7 @@ int authenticate(int sd, rr_data_t data, char *user, char *password, char *domai
 	 */
 	if (!CONNECT(data)) {
 		free(auth->method);
-		auth->method = strdup("HEAD");
+		auth->method = strdup("GET");
 	}
 	auth->headers = hlist_mod(auth->headers, "Proxy-Authorization", buf, 1);
 	auth->headers = hlist_del(auth->headers, "Content-Length");
@@ -706,13 +706,11 @@ int authenticate(int sd, rr_data_t data, char *user, char *password, char *domai
 		goto bailout;
 	}
 
-	/*
 	tmp = hlist_get(auth->headers, "Content-Length");
 	if (tmp && (len = atoi(tmp))) {
 		printf("Got %d too many bytes.\n", len);
 		data_drop(sd, len);
 	}
-	*/
 
 	if (auth->code == 407) {
 		tmp = hlist_get(auth->headers, "Proxy-Authenticate");
