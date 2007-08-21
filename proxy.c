@@ -805,7 +805,7 @@ int scanner_hook(rr_data_t *request, rr_data_t *response, int *cd, int *sd, long
 	int ok = 1;
 	int done = 0;
 	int headers_initiated = 0;
-	long c, progress, filesize = 0;
+	long c, progress = 0, filesize = 0;
 
 	if (!(*request)->method || !(*response)->http
 		|| has_body(*request, *response) != -1
