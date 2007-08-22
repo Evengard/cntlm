@@ -336,7 +336,8 @@ int headers_recv(int fd, rr_data_t data) {
 			host = substr(tok+3, 0, s3 ? s3-tok-3 : 0);
 		}
 	} else {
-		syslog(LOG_ERR, "headers_recv: Unknown header (%s).\n", buf);
+		if (debug)
+			printf("headers_recv: Unknown header (%s).\n", buf);
 		i = -1;
 		goto bailout;
 	}
@@ -362,7 +363,7 @@ bailout:
 
 	if (i <= 0) {
 		if (debug)
-			syslog(LOG_WARNING, "headers_recv: fd %d warning %d (connection closed)\n", fd, i);
+			printf("headers_recv: fd %d warning %d (connection closed)\n", fd, i);
 		return 0;
 	}
 
@@ -432,7 +433,7 @@ int headers_send(int fd, rr_data_t data) {
 
 	if (i <= 0 || i != len+2) {
 		if (debug)
-			syslog(LOG_WARNING, "headers_send: fd %d warning %d (connection closed)\n", fd, i);
+			printf("headers_send: fd %d warning %d (connection closed)\n", fd, i);
 		return 0;
 	}
 
@@ -459,7 +460,7 @@ int data_drop(int src, int size) {
 	free(buf);
 	if (i <= 0) {
 		if (debug)
-			syslog(LOG_WARNING, "data_drop: fd %d warning %d (connection closed)\n", src, i);
+			printf("data_drop: fd %d warning %d (connection closed)\n", src, i);
 		return 0;
 	}
 
@@ -512,7 +513,7 @@ int data_send(int dst, int src, int size) {
 			return 1;
 
 		if (debug)
-			syslog(LOG_WARNING, "data_send: fds %d:%d warning %d (connection closed)\n", dst, src, i);
+			printf("data_send: fds %d:%d warning %d (connection closed)\n", dst, src, i);
 		return 0;
 	}
 
@@ -904,7 +905,8 @@ int scanner_hook(rr_data_t *request, rr_data_t *response, int *cd, int *sd, long
 						}
 
 						if (!headers_initiated) {
-							syslog(LOG_ERR, "scanner_hook: Giving up, \"To be downloaded\" line not found!\n");
+							if (debug)
+								printf("scanner_hook: Giving up, \"To be downloaded\" line not found!\n");
 							break;
 						}
 
@@ -971,7 +973,8 @@ int scanner_hook(rr_data_t *request, rr_data_t *response, int *cd, int *sd, long
 						if (debug)
 							printf("scanner_hook: Authentication OK, getting the file...\n");
 					} else {
-						syslog(LOG_ERR, "scanner_hook: Authentication failed\n");
+						if (debug)
+							printf("scanner_hook: Authentication failed\n");
 						nc = 0;
 					}
 				}
@@ -1005,8 +1008,8 @@ int scanner_hook(rr_data_t *request, rr_data_t *response, int *cd, int *sd, long
 
 					len = 0;
 					ok = PLUG_SENDHEAD | PLUG_SENDDATA;
-				} else
-					syslog(LOG_WARNING, "scanner_hook: New request failed\n");
+				} else if (debug)
+					printf("scanner_hook: New request failed\n");
 
 				free(newreq);
 				free(newres);
@@ -1016,8 +1019,8 @@ int scanner_hook(rr_data_t *request, rr_data_t *response, int *cd, int *sd, long
 
 			free(line);
 			free(isaid);
-		} else
-			syslog(LOG_ERR, "scanner_hook: ISA id not found\n");
+		} else if (debug)
+			printf("scanner_hook: ISA id not found\n");
 	}
 
 	if (len) {
@@ -1027,7 +1030,8 @@ int scanner_hook(rr_data_t *request, rr_data_t *response, int *cd, int *sd, long
 		}
 
 		if (!headers_send(*cd, *response)) {
-			syslog(LOG_WARNING, "scanner_hook: failed to send headers\n");
+			if (debug)
+				printf("scanner_hook: failed to send headers\n");
 			free(buf);
 			return PLUG_ERROR;
 		}
@@ -1819,6 +1823,7 @@ int main(int argc, char **argv) {
 						printf("%s ", argv[i]);
 					printf("\n");
 				}
+				break;
 			case 'U':
 				strlcpy(uid, optarg, AUTHSIZE);
 				break;
@@ -2199,7 +2204,7 @@ int main(int argc, char **argv) {
 			} else {
 				pw = getpwnam(uid);
 				if (!pw || !pw->pw_uid) {
-					syslog(LOG_ERR, "Username uid parameter invalid\n");
+					syslog(LOG_ERR, "Username %s in -U is invalid\n", uid);
 					myexit(1);
 				}
 				nuid = pw->pw_uid;
