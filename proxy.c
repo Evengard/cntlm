@@ -96,6 +96,8 @@ static int serialize = 0;
 static int scanner_plugin = 0;
 static long scanner_plugin_maxsize = 0;
 
+static int precache = 0;
+
 /*
  * List of finished threads. Each thread process() adds itself to it when
  * finished. Main regularly joins and removes all tid's in there.
@@ -660,7 +662,7 @@ int tunnel(int cd, int sd) {
  * error if not NULL, so it can be forwarded to the client. Caller
  * must then free it!
  */
-int authenticate(int sd, rr_data_t data, char *user, char *password, char *domain) {
+int authenticate(int sd, rr_data_t data, char *user, char *password, char *domain, int silent) {
 	char *tmp, *buf, *challenge;
 	rr_data_t auth;
 	int len, rc;
@@ -668,7 +670,7 @@ int authenticate(int sd, rr_data_t data, char *user, char *password, char *domai
 	buf = new(BUFSIZE);
 
 	strcpy(buf, "NTLM ");
-	len = ntlm_request(&tmp, workstation, domain, hashnt, hashlm, flags);
+	len = ntlm_request(&tmp, workstation, domain, hashnt, hashlm, flags, silent);
 	to_base64(MEM(buf, unsigned char, 5), MEM(tmp, unsigned char, 0), len, BUFSIZE-5);
 	free(tmp);
 	
@@ -685,7 +687,7 @@ int authenticate(int sd, rr_data_t data, char *user, char *password, char *domai
 	auth->headers = hlist_mod(auth->headers, "Proxy-Authorization", buf, 1);
 	auth->headers = hlist_del(auth->headers, "Content-Length");
 
-	if (debug) {
+	if (debug && !silent) {
 		printf("\nSending auth request...\n");
 		hlist_dump(auth->headers);
 	}
@@ -698,7 +700,7 @@ int authenticate(int sd, rr_data_t data, char *user, char *password, char *domai
 	free_rr_data(auth);
 	auth = new_rr_data();
 
-	if (debug)
+	if (debug && !silent)
 		printf("Reading auth response...\n");
 
 	if (!headers_recv(sd, auth)) {
@@ -718,7 +720,7 @@ int authenticate(int sd, rr_data_t data, char *user, char *password, char *domai
 			challenge = new(strlen(tmp));
 			from_base64(challenge, tmp+5);
 
-			len = ntlm_response(&tmp, challenge, user, password, workstation, domain, hashnt, hashlm);
+			len = ntlm_response(&tmp, challenge, user, password, workstation, domain, hashnt, hashlm, silent);
 			strcpy(buf, "NTLM ");
 			to_base64(MEM(buf, unsigned char, 5), MEM(tmp, unsigned char, 0), len, BUFSIZE-5);
 			data->headers = hlist_mod(data->headers, "Proxy-Authorization", buf, 1);
@@ -964,7 +966,7 @@ int scanner_hook(rr_data_t *request, rr_data_t *response, int *cd, int *sd, long
 					nc = i;
 				} else {
 					nc = proxy_connect();
-					c = authenticate(nc, newreq, user, password, domain);
+					c = authenticate(nc, newreq, user, password, domain, 0);
 					if (c > 0 && c != 500) {
 						if (debug)
 							printf("scanner_hook: Authentication OK, getting the file...\n");
@@ -1266,7 +1268,7 @@ void *process(void *client) {
 			 */
 			if (!loop && data[0]->req && !authok) {
 				errdata = NULL;
-				if (!(i = authenticate(*wsocket[0], data[0], puser, ppass, pdomain)))
+				if (!(i = authenticate(*wsocket[0], data[0], puser, ppass, pdomain, 0)))
 					syslog(LOG_ERR, "Authentication requests failed. Will try without.\n");
 
 				if (!i || so_closed(sd)) {
@@ -1445,6 +1447,52 @@ bailout:
 	return NULL;
 }
 
+void *precache_thread(void *data) {
+	int i, sd;
+	rr_data_t data1, data2;
+	char *tmp;
+	int new = 0;
+
+	while (!quit) {
+		if (plist_count(connection_list) < precache) {
+			printf("precache_thread: creating new connection\n");
+			sd = proxy_connect();
+
+			data1 = new_rr_data();
+			data2 = new_rr_data();
+
+			data1->req = 1;
+			data1->method = strdup("GET");
+			data1->url = strdup("http://www.google.com/");
+			data1->http = strdup("1");
+
+			i = authenticate(sd, data1, user, password, domain, 1);
+			if (i && i == 1 && !so_closed(sd) && headers_send(sd, data1) && headers_recv(sd, data2) && data2->code == 302) {
+				tmp = hlist_get(data2->headers, "Content-Length");
+				if (tmp)
+					data_drop(sd, atoi(tmp));
+
+				new++;
+				pthread_mutex_lock(&connection_mtx);
+				connection_list = plist_add(connection_list, sd, NULL);
+				pthread_mutex_unlock(&connection_mtx);
+			} else {
+				if (debug)
+					printf("precache_thread: cooling down (i = %d, closed = %d, code = %d)...\n", i, so_closed(sd), data2->code);
+				sleep(60);
+			}
+		} else {
+			if (debug && new > 0) {
+				printf("precache_thread: connection cache full (%d), resting\n", plist_count(connection_list));
+				new = 0;
+			}
+			sched_yield();
+		}
+	}
+
+	return NULL;
+}
+
 /*
  * Another thread-create function. This one does the tunneling/forwarding
  * for the -L parameter. We receive malloced structure (pthreads pass only
@@ -1483,7 +1531,7 @@ void *autotunnel(void *client) {
 	if (debug)
 		printf("Starting authentication...\n");
 
-	i = authenticate(sd, data1, user, password, domain);
+	i = authenticate(sd, data1, user, password, domain, 0);
 	if (i && i != 500) {
 		if (so_closed(sd)) {
 			close(sd);
@@ -1634,6 +1682,8 @@ int main(int argc, char **argv) {
 	char *tmp, *head, *uid, *pidfile, *auth;
 	struct passwd *pw;
 	struct termios termold, termnew;
+	pthread_attr_t pattr;
+	pthread_t pthr;
 	hlist_t list;
 	int i;
 
@@ -2200,6 +2250,17 @@ int main(int argc, char **argv) {
 	signal(SIGTERM, &sighandler);
 	signal(SIGHUP, &sighandler);
 
+	if (precache) {
+		pthread_attr_init(&pattr);
+		pthread_attr_setdetachstate(&pattr, PTHREAD_CREATE_DETACHED);
+		pthread_attr_setstacksize(&pattr, STACK_SIZE);
+#ifndef __CYGWIN__
+		pthread_attr_setguardsize(&pattr, 0);
+#endif
+		pthread_create(&pthr, &pattr, precache_thread, NULL);
+		pthread_attr_destroy(&pattr);
+	}
+
 	/*
 	 * This loop iterates over every connection request on any of
 	 * the listening ports. We keep the number of created threads.
@@ -2217,10 +2278,8 @@ int main(int argc, char **argv) {
 	while (quit < 1 || tc != tj) {
 		struct thread_arg_s *data;
 		struct sockaddr_in caddr;
-		pthread_attr_t attr;
 		struct timeval tv;
 		socklen_t clen;
-		pthread_t thr;
 		fd_set set;
 		plist_t t;
 		int tid = 0;
@@ -2285,25 +2344,25 @@ int main(int argc, char **argv) {
 					if (debug || (gateway && caddr.sin_addr.s_addr != htonl(INADDR_LOOPBACK)))
 						syslog(LOG_INFO, "Connection accepted from %s:%d\n", inet_ntoa(caddr.sin_addr), ntohs(caddr.sin_port));
 
-					pthread_attr_init(&attr);
-					pthread_attr_setstacksize(&attr, STACK_SIZE);
+					pthread_attr_init(&pattr);
+					pthread_attr_setstacksize(&pattr, STACK_SIZE);
 #ifndef __CYGWIN__
-					pthread_attr_setguardsize(&attr, 0);
+					pthread_attr_setguardsize(&pattr, 0);
 #endif
 
 					if (!plist_in(proxyd_list, i)) {
 						data = (struct thread_arg_s *)new(sizeof(struct thread_arg_s));
 						data->fd = cd;
 						data->target = plist_get(tunneld_list, i);
-						tid = pthread_create(&thr, &attr, autotunnel, (void *)data);
+						tid = pthread_create(&pthr, &pattr, autotunnel, (void *)data);
 					} else {
 						if (!serialize)
-							tid = pthread_create(&thr, &attr, process, (void *)cd);
+							tid = pthread_create(&pthr, &pattr, process, (void *)cd);
 						else
 							process((void *)cd);
 					}
 
-					pthread_attr_destroy(&attr);
+					pthread_attr_destroy(&pattr);
 
 					if (tid)
 						syslog(LOG_ERR, "Serious error during pthread_create: %d\n", tid);

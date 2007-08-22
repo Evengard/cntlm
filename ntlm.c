@@ -95,14 +95,14 @@ static void ntlm_nt_password(char *dst, char *password, char *challenge) {
 	free(keys);
 }
 
-int ntlm_request(char **dst, char *hostname, char *domain, int nt, int lm, uint32_t flags) {
+int ntlm_request(char **dst, char *hostname, char *domain, int nt, int lm, uint32_t flags, int silent) {
 	char *buf, *tmp;
 	int dlen, hlen;
 
 	dlen = strlen(domain);
 	hlen = strlen(hostname);
 
-	if (debug) {
+	if (debug && !silent) {
 		printf("NTLM Request:\n");
 		printf("\t   Domain: %s\n", domain);
 		printf("\t Hostname: %s\n", hostname);
@@ -178,8 +178,8 @@ void dump(char *src, size_t len) {
 }
 */
 
-int ntlm_response(char **dst, char *challenge, char *username, char *password, char *hostname, char *domain, int nt, int lm) {
-	char pwlm[24], pwnt[24];
+int ntlm_response(char **dst, char *challenge, char *username, char *password, char *hostname, char *domain, int nt, int lm, int silent) {
+	char lmhash[24], nthash[24];
 	char *buf, *udomain, *uuser, *uhost, *tmp;
 	int dlen, ulen, hlen, lmlen = 0, ntlen = 0;
 	uint32_t flags;
@@ -187,12 +187,12 @@ int ntlm_response(char **dst, char *challenge, char *username, char *password, c
 
 	if (lm) {
 		lmlen = 24;
-		ntlm_lm_password((char *)pwlm, password, MEM(challenge, char, lmlen));
+		ntlm_lm_password((char *)lmhash, password, MEM(challenge, char, lmlen));
 	}
 
 	if (nt) {
 		ntlen = 24;
-		ntlm_nt_password((char *)pwnt, password, MEM(challenge, char, ntlen));
+		ntlm_nt_password((char *)nthash, password, MEM(challenge, char, ntlen));
 	}
 
 	if (nt) {
@@ -209,7 +209,7 @@ int ntlm_response(char **dst, char *challenge, char *username, char *password, c
 		hlen = strlen(hostname);
 	}
 
-	if (debug) {
+	if (debug && !silent) {
 		printf("NTLM Challenge:\n");
 		tmp = printmem(MEM(challenge, char, lmlen), 8);
 		printf("\tChallenge: %s\n", tmp);
@@ -247,12 +247,12 @@ int ntlm_response(char **dst, char *challenge, char *username, char *password, c
 		printf("\t Username: '%s'\n", username);
 		printf("\t Password: '%s'\n", password);
 		if (nt) {
-			tmp = printmem(pwnt, 24);
+			tmp = printmem(nthash, 24);
 			printf("\t  NT hash: %s\n", tmp);
 			free(tmp);
 		}
 		if (lm) {
-			tmp = printmem(pwlm, 24);
+			tmp = printmem(lmhash, 24);
 			printf("\t  LM hash: %s\n", tmp);
 			free(tmp);
 		}
@@ -298,8 +298,8 @@ int ntlm_response(char **dst, char *challenge, char *username, char *password, c
 	memcpy(MEM(buf, char, 64), udomain, dlen);
 	memcpy(MEM(buf, char, 64+dlen), uuser, ulen);
 	memcpy(MEM(buf, char, 64+dlen+ulen), uhost, hlen);
-	memcpy(MEM(buf, char, 64+dlen+ulen+hlen), pwlm, lmlen);
-	memcpy(MEM(buf, char, 64+dlen+ulen+hlen+24), pwnt, ntlen);
+	memcpy(MEM(buf, char, 64+dlen+ulen+hlen), lmhash, lmlen);
+	memcpy(MEM(buf, char, 64+dlen+ulen+hlen+24), nthash, ntlen);
 
 	free(uhost);
 	free(uuser);
