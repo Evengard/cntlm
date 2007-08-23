@@ -110,6 +110,9 @@ extern rr_data_t new_rr_data(void);
 extern rr_data_t dup_rr_data(rr_data_t data);
 extern void free_rr_data(rr_data_t data);
 
+extern char *printmem(char *src, size_t len);
+extern char *scanmem(char *src);
+
 extern void to_base64(unsigned char *out, const unsigned char *in, size_t len, size_t olen);
 extern int from_base64(char *out, const char *in);
 

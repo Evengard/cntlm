@@ -34,6 +34,14 @@
 #include "utils.h"
 #include "socket.h"
 
+char hextab[17] = {'0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'A', 'B', 'C', 'D', 'E', 'F', 0};
+int hexindex[128] = {-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
+	-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
+	-1,-1,-1,-1,-1,-1,-1,-1,-1,0,1,2,3,4,5,6,7,8,9,-1,-1,-1,-1,-1,-1,
+	-1,10,11,12,13,14,15,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
+	-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,10,11,12,13,14,15,-1,-1,-1,-1,-1,
+	-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1};
+
 /*
  * Add a new item to a list. Every plist_t variable must be 
  * initialized to NULL (or pass NULL for "list" when adding
@@ -687,6 +695,44 @@ char *urlencode(const char *str) {
 
 	return tmp;
 }
+
+char *printmem(char *src, size_t len) {
+	char *tmp;
+	int i;
+
+	tmp = new(2*len+1);
+	for (i = 0; i < len; ++i) {
+		tmp[i*2] = hextab[(uint8_t)src[i] >> 4];
+		tmp[i*2+1] = hextab[src[i] & 0x0F];
+	}
+
+	return tmp;
+}
+
+char *scanmem(char *src) {
+	int h, l, i, bytes;
+	char *tmp;
+
+	if (strlen(src) % 2)
+		return NULL;
+
+	bytes = strlen(src)/2;
+	tmp = new(bytes+1);
+	for (i = 0; i < bytes; ++i) {
+		h = hexindex[(int)src[i*2]];
+		l = hexindex[(int)src[i*2+1]];
+		if (h < 0 || l < 0) {
+			free(tmp);
+			return NULL;
+		}
+		tmp[i] = (h << 4) + l;
+	}
+	tmp[i] = 0;
+
+	return tmp;
+}
+
+
 
 /* 
  * BASE64 CODE FROM MUTT BEGIN - ORIGINAL COPYRIGHT APPLIES:

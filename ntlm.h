@@ -26,7 +26,9 @@
 
 #define NTLM_BUFSIZE		1024
 
+extern char *ntlm_hash_nt_password(char *password);
+extern char *ntlm_hash_lm_password(char *password);
 extern int ntlm_request(char **dst, char *hostname, char *domain, int nt, int lm, uint32_t flags, int silent);
-extern int ntlm_response(char **dst, char *challenge, char *username, char *password, char *hostname, char *domain, int nt, int lm, int silent);
+extern int ntlm_response(char **dst, char *challenge, char *username, char *passnt, char *passlm, char *hostname, char *domain, int nt, int lm, int silent);
 
 #endif /* _NTLM_H */

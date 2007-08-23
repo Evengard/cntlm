@@ -84,7 +84,8 @@ int debug = 0;						/* all debug printf's and possibly external modules */
 static char *user;					/* authenticate() */
 static char *domain;
 static char *workstation;
-static char *password;
+static char *passnt = NULL;
+static char *passlm = NULL;
 static int hashnt = 1;
 static int hashlm = 1;
 static uint32_t flags = 0;
@@ -663,7 +664,7 @@ int tunnel(int cd, int sd) {
  * error if not NULL, so it can be forwarded to the client. Caller
  * must then free it!
  */
-int authenticate(int sd, rr_data_t data, char *user, char *password, char *domain, int silent) {
+int authenticate(int sd, rr_data_t data, char *user, char *passnt, char *passlm, char *domain, int silent) {
 	char *tmp, *buf, *challenge;
 	rr_data_t auth;
 	int len, rc;
@@ -721,7 +722,7 @@ int authenticate(int sd, rr_data_t data, char *user, char *password, char *domai
 			challenge = new(strlen(tmp));
 			from_base64(challenge, tmp+5);
 
-			len = ntlm_response(&tmp, challenge, user, password, workstation, domain, hashnt, hashlm, silent);
+			len = ntlm_response(&tmp, challenge, user, passnt, passlm, workstation, domain, hashnt, hashlm, silent);
 			strcpy(buf, "NTLM ");
 			to_base64(MEM(buf, unsigned char, 5), MEM(tmp, unsigned char, 0), len, BUFSIZE-5);
 			data->headers = hlist_mod(data->headers, "Proxy-Authorization", buf, 1);
@@ -968,7 +969,7 @@ int scanner_hook(rr_data_t *request, rr_data_t *response, int *cd, int *sd, long
 					nc = i;
 				} else {
 					nc = proxy_connect();
-					c = authenticate(nc, newreq, user, password, domain, 0);
+					c = authenticate(nc, newreq, user, passnt, passlm, domain, 0);
 					if (c > 0 && c != 500) {
 						if (debug)
 							printf("scanner_hook: Authentication OK, getting the file...\n");
@@ -1089,7 +1090,7 @@ void *process(void *client) {
 	rr_data_t data[2], errdata;
 	hlist_t tl;
 	char *tmp, *buf, *pos, *dom;
-	char *puser, *ppass, *pdomain;				/* Per-thread credentials; for NTLM-to-basic */
+	char *puser, *ppassnt, *ppasslm, *pdomain;		/* Per-thread credentials; for NTLM-to-basic */
 
 	int cd = (int)client;
 	int authok = 0;
@@ -1114,13 +1115,15 @@ void *process(void *client) {
 		sd = proxy_connect();
 
 	puser = new(AUTHSIZE);
-	ppass = new(AUTHSIZE);
+	ppassnt = new(AUTHSIZE);
+	ppasslm = new(AUTHSIZE);
 	pdomain = new(AUTHSIZE);
 
 	strlcpy(pdomain, domain, AUTHSIZE);
 	if (!ntlmbasic) {
 		strlcpy(puser, user, AUTHSIZE);
-		strlcpy(ppass, password, AUTHSIZE);
+		memcpy(ppassnt, passnt, AUTHSIZE);
+		memcpy(ppasslm, passlm, AUTHSIZE);
 	}
 
 	if (sd <= 0)
@@ -1192,8 +1195,10 @@ void *process(void *client) {
 					write(cd, tmp, strlen(tmp));
 					free(tmp);
 
-					if (buf)
+					if (buf) {
+						memset(buf, 0, strlen(buf));
 						free(buf);
+					}
 
 					close(sd);
 					free_rr_data(data[0]);
@@ -1207,9 +1212,24 @@ void *process(void *client) {
 						strlcpy(pdomain, buf, MIN(AUTHSIZE, dom-buf+1));
 						strlcpy(puser, dom+1, MIN(AUTHSIZE, pos-dom));
 					}
-					strlcpy(ppass, pos+1, AUTHSIZE);
-					if (debug)
-						printf("NTLM-to-basic: Credentials parsed: %s\\%s:%s at %s\n", pdomain, puser, ppass, workstation);
+
+					tmp = ntlm_hash_nt_password(pos+1);
+					memcpy(ppassnt, tmp, AUTHSIZE);
+					free(tmp);
+
+					tmp = ntlm_hash_lm_password(pos+1);
+					memcpy(ppasslm, tmp, AUTHSIZE);
+					free(tmp);
+
+					if (debug) {
+						tmp = printmem(ppassnt, 21);
+						pos = printmem(ppasslm, 21);
+						printf("NTLM-to-basic: Credentials parsed: %s\\%s:(%s:%s) at %s\n", pdomain, puser, ppassnt, ppasslm, workstation);
+						free(pos);
+						free(tmp);
+					}
+
+					memset(buf, 0, strlen(buf));
 					free(buf);
 				}
 			}
@@ -1272,7 +1292,7 @@ void *process(void *client) {
 			 */
 			if (!loop && data[0]->req && !authok) {
 				errdata = NULL;
-				if (!(i = authenticate(*wsocket[0], data[0], puser, ppass, pdomain, 0)))
+				if (!(i = authenticate(*wsocket[0], data[0], puser, ppassnt, ppasslm, pdomain, 0)))
 					syslog(LOG_ERR, "Authentication requests failed. Will try without.\n");
 
 				if (!i || so_closed(sd)) {
@@ -1423,7 +1443,8 @@ void *process(void *client) {
 
 bailout:
 	free(puser);
-	free(ppass);
+	free(ppassnt);
+	free(ppasslm);
 	free(pdomain);
 
 	if (debug)
@@ -1470,7 +1491,7 @@ void *precache_thread(void *data) {
 			data1->url = strdup("http://www.google.com/");
 			data1->http = strdup("1");
 
-			i = authenticate(sd, data1, user, password, domain, 1);
+			i = authenticate(sd, data1, user, passnt, passlm, domain, 1);
 			if (i && i == 1 && !so_closed(sd) && headers_send(sd, data1) && headers_recv(sd, data2) && data2->code == 302) {
 				tmp = hlist_get(data2->headers, "Content-Length");
 				if (tmp)
@@ -1535,7 +1556,7 @@ void *autotunnel(void *client) {
 	if (debug)
 		printf("Starting authentication...\n");
 
-	i = authenticate(sd, data1, user, password, domain, 0);
+	i = authenticate(sd, data1, user, passnt, passlm, domain, 0);
 	if (i && i != 500) {
 		if (so_closed(sd)) {
 			close(sd);
@@ -1684,6 +1705,7 @@ void tunnel_add(plist_t *list, char *spec, int gateway) {
 
 int main(int argc, char **argv) {
 	char *tmp, *head, *uid, *pidfile, *auth;
+	char *password, *cpassnt, *cpasslm;
 	struct passwd *pw;
 	struct termios termold, termnew;
 	pthread_attr_t pattr;
@@ -1699,6 +1721,7 @@ int main(int argc, char **argv) {
 	int tc = 0;
 	int tj = 0;
 	int interactivepwd = 0;
+	int interactivehash = 0;
 	int tracefile = 0;
 	plist_t tunneld_list = NULL;
 	plist_t proxyd_list = NULL;
@@ -1708,6 +1731,8 @@ int main(int argc, char **argv) {
 	user = new(AUTHSIZE);
 	domain = new(AUTHSIZE);
 	password = new(AUTHSIZE);
+	cpassnt = new(AUTHSIZE);
+	cpasslm = new(AUTHSIZE);
 	workstation = new(AUTHSIZE);
 	pidfile = new(AUTHSIZE);
 	uid = new(AUTHSIZE);
@@ -1721,7 +1746,7 @@ int main(int argc, char **argv) {
 	syslog(LOG_INFO, "Starting cntlm version " VERSION " for LITTLE endian\n");
 #endif
 
-	while ((i = getopt(argc, argv, ":-:a:c:d:fgh:il:p:su:vw:A:BD:F:G:L:P:S:T:U:")) != -1) {
+	while ((i = getopt(argc, argv, ":-:a:c:d:fgh:il:p:su:vw:A:BD:F:G:HL:P:S:T:U:")) != -1) {
 		switch (i) {
 			case 'A':
 			case 'D':
@@ -1762,6 +1787,9 @@ int main(int argc, char **argv) {
 				break;
 			case 'g':
 				gateway = 1;
+				break;
+			case 'H':
+				interactivehash = 1;
 				break;
 			case 'h':
 				if (head_ok(optarg))
@@ -1972,6 +2000,8 @@ int main(int argc, char **argv) {
 		CFG_DEFAULT(cf, "Auth", auth, AUTHSIZE);
 		CFG_DEFAULT(cf, "Domain", domain, AUTHSIZE);
 		CFG_DEFAULT(cf, "Password", password, AUTHSIZE);
+		CFG_DEFAULT(cf, "PassNT", cpassnt, AUTHSIZE);
+		CFG_DEFAULT(cf, "PassLM", cpasslm, AUTHSIZE);
 		CFG_DEFAULT(cf, "Username", user, AUTHSIZE);
 		CFG_DEFAULT(cf, "Workstation", workstation, AUTHSIZE);
 
@@ -2023,9 +2053,63 @@ int main(int argc, char **argv) {
 	config_close(cf);
 
 	/*
+	 * Parse selected NTLM hash combination.
+	 */
+	if (strlen(auth)) {
+		if (!strcasecmp("ntlm", auth)) {
+			hashnt = hashlm = 1;
+		} else if (!strcasecmp("nt", auth)) {
+			hashnt = 1;
+			hashlm = 0;
+		} else if (!strcasecmp("lm", auth)) {
+			hashnt = 0;
+			hashlm = 1;
+		} else {
+			syslog(LOG_ERR, "Unknown NTLM auth combination.\n");
+			myexit(1);
+		}
+	}
+
+	/*
+	 * Last chance to get password from the user
+	 */
+	if (interactivehash || (interactivepwd && !ntlmbasic)) {
+		printf("Password: ");
+		tcgetattr(0, &termold);
+		termnew = termold;
+		termnew.c_lflag &= ~(ISIG | ECHO);
+		tcsetattr(0, TCSADRAIN, &termnew);
+		fgets(password, AUTHSIZE, stdin);
+		tcsetattr(0, TCSADRAIN, &termold);
+		i = strlen(password)-1;
+		trimr(password);
+		printf("\n");
+	}
+
+	/*
+	 * If plain password present, calculate its NT and LM hashes 
+	 * and remove it from the memory.
+	 */
+	if (strlen(password)) {
+		passnt = ntlm_hash_nt_password(password);
+		passlm = ntlm_hash_lm_password(password);
+		memset(password, 0, strlen(password));
+	}
+
+	if (interactivehash) {
+		tmp = printmem(passnt, 21);
+		printf("PassNT %s\n", tmp);
+		free(tmp);
+		tmp = printmem(passlm, 21);
+		printf("PassLM %s\n", tmp);
+		free(tmp);
+		exit(0);
+	}
+
+	/*
 	 * Any of the vital options missing?
 	 */
-	if (help || (!ntlmbasic && (!strlen(user) || (!interactivepwd && !strlen(password)))) || !parent_list || !proxyd_list) {
+	if (help || (!ntlmbasic && (!strlen(user) || !strlen(domain))) || !parent_list || !proxyd_list) {
 		if (help) {
 			printf("CNTLM - Accelerating NTLM Authentication Proxy version " VERSION "\nCopyright (c) 2oo7 David Kubicek\n\n"
 				"This program comes with NO WARRANTY, to the extent permitted by law. You\n"
@@ -2033,7 +2117,7 @@ int main(int argc, char **argv) {
 				"newer. For more information about these matters, see the file LICENSE.\n"
 				"For copyright holders of included encryption routines see headers.\n\n");
 
-			fprintf(stderr, "Usage: %s [-AaBcDdFfghiLlPsSTUvw] -u <user>[@<domain>] -p <pass> <proxy_host>[:]<proxy_port> ...\n", argv[0]);
+			fprintf(stderr, "Usage: %s [-AaBcDdFfgHhiLlPsSTUvw] -u <user>[@<domain>] -p <pass> <proxy_host>[:]<proxy_port> ...\n", argv[0]);
 			fprintf(stderr, "\t-A  <address>[/<net>]\n"
 					"\t    New ACL allow rule. Address can be an IP or a hostname, net must be a number (CIDR notation)\n");
 			fprintf(stderr, "\t-a  ntlm | nt | lm\n"
@@ -2053,6 +2137,7 @@ int main(int argc, char **argv) {
 			fprintf(stderr, "\t-G  <pattern>\n"
 					"\t    User-Agent matching for the trans-isa-scan plugin.\n");
 			fprintf(stderr, "\t-g  Gateway mode - listen on all interfaces, not only loopback.\n");
+			fprintf(stderr, "\t-H  Prompt for the password interactively, print its hashes and exit.\n");
 			fprintf(stderr, "\t-h  \"HeaderName: value\"\n"
 					"\t    Add a header substitution. All such headers will be added/replaced\n"
 					"\t    in the client's requests.\n");
@@ -2084,9 +2169,11 @@ int main(int argc, char **argv) {
 		if (!ntlmbasic && !strlen(user)) {
 			syslog(LOG_ERR, "Parent proxy account username missing.\n");
 		}
-		if (!ntlmbasic && !interactivepwd && !strlen(password)) {
-			syslog(LOG_ERR, "Parent proxy account password missing.\n");
+
+		if (!ntlmbasic && !strlen(domain)) {
+			syslog(LOG_ERR, "Parent proxy account domain missing.\n");
 		}
+
 		if (!parent_list) {
 			syslog(LOG_ERR, "Parent proxy address missing.\n");
 		}
@@ -2097,34 +2184,30 @@ int main(int argc, char **argv) {
 		myexit(help < 2);
 	}
 
-	if (interactivepwd && !ntlmbasic) {
-		printf("Password: ");
-		tcgetattr(0, &termold);
-		termnew = termold;
-		termnew.c_lflag &= ~(ISIG | ECHO);
-		tcsetattr(0, TCSADRAIN, &termnew);
-		fgets(password, AUTHSIZE, stdin);
-		tcsetattr(0, TCSADRAIN, &termold);
-		i = strlen(password)-1;
-		trimr(password);
+	/*
+	 * Convert optional PassNT and PassLM strings to hashes.
+	 */
+	if (strlen(cpassnt)) {
+		passnt = scanmem(cpassnt);
+		if (!passnt) {
+			syslog(LOG_ERR, "Invalid PassNT hash, terminating\n");
+			exit(1);
+		}
+	}
+	if (strlen(cpasslm)) {
+		passlm = scanmem(cpasslm);
+		if (!passlm) {
+			syslog(LOG_ERR, "Invalid PassLM hash, terminating\n");
+			exit(1);
+		}
 	}
 
 	/*
-	 * Setup selected NTLM hash combination.
+	 * If we're going to need a password, check we really have it.
 	 */
-	if (strlen(auth)) {
-		if (!strcasecmp("ntlm", auth)) {
-			hashnt = hashlm = 1;
-		} else if (!strcasecmp("nt", auth)) {
-			hashnt = 1;
-			hashlm = 0;
-		} else if (!strcasecmp("lm", auth)) {
-			hashnt = 0;
-			hashlm = 1;
-		} else {
-			syslog(LOG_ERR, "Unknown NTLM auth combination.\n");
-			myexit(1);
-		}
+	if (!ntlmbasic && ((hashnt && !passnt) || (hashlm && !passlm))) {
+		syslog(LOG_ERR, "Parent proxy account password (or required hashes) missing.\n");
+		exit(1);
 	}
 
 	syslog(LOG_INFO, "Using following NTLM hashes: NT(%d) LM(%d)\n", hashnt, hashlm);
@@ -2133,7 +2216,7 @@ int main(int argc, char **argv) {
 		syslog(LOG_INFO, "Using manual NTLM flags: 0x%X\n", flags);
 
 	/*
-	 * Set default values.
+	 * Set default value for the workstation. Hostname if possible.
 	 */
 	if (!strlen(workstation)) {
 #if config_gethostname == 1
@@ -2244,6 +2327,9 @@ int main(int argc, char **argv) {
 	 */
 	free(auth);
 	free(uid);
+	free(password);
+	free(cpassnt);
+	free(cpasslm);
 
 	/*
 	 * Change the handler for signals recognized as clean shutdown.
@@ -2413,11 +2499,14 @@ int main(int argc, char **argv) {
 
 	if (strlen(pidfile))
 		unlink(pidfile);
+	if (passnt)
+		free(passnt);
+	if (passlm)
+		free(passlm);
 
 	free(pidfile);
 	free(user);
 	free(domain);
-	free(password);
 	free(workstation);
 
 	parent_list = plist_free(parent_list);
