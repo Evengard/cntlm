@@ -37,16 +37,31 @@
 		(((uint32_t)(x) & (uint32_t)0x00ff0000UL) >>  8) | \
 		(((uint32_t)(x) & (uint32_t)0xff000000UL) >> 24) ))
 
+#define swap64(x) \
+	((uint64_t)( \
+		(((uint64_t)(x) & (uint64_t)0xff00000000000000ULL) >> 56) | \
+		(((uint64_t)(x) & (uint64_t)0x00ff000000000000ULL) >> 40) | \
+		(((uint64_t)(x) & (uint64_t)0x0000ff0000000000ULL) >> 24) | \
+		(((uint64_t)(x) & (uint64_t)0x000000ff00000000ULL) >> 8) | \
+		(((uint64_t)(x) & (uint64_t)0x00000000ff000000ULL) << 8) | \
+		(((uint64_t)(x) & (uint64_t)0x0000000000ff0000ULL) << 24) | \
+		(((uint64_t)(x) & (uint64_t)0x000000000000ff00ULL) << 40) | \
+		(((uint64_t)(x) & (uint64_t)0x00000000000000ffULL) << 56) ))
+
 #if config_endian == 0
 # define U16LE(x)		swap16(x)
 # define U32LE(x)		swap32(x)
+# define U64LE(x)		swap64(x)
 # define U16BE(x)		(x)
 # define U32BE(x)		(x)
+# define U64BE(x)		(x)
 #else
 # define U16LE(x)		(x)
 # define U32LE(x)		(x)
+# define U64LE(x)		(x)
 # define U16BE(x)		swap16(x)
 # define U32BE(x)		swap32(x)
+# define U64BE(x)		swap64(x)
 #endif
 
 #endif /* _SWAP_H */

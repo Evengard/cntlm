@@ -11,7 +11,7 @@ MANDIR=/usr/local/man
 #
 CC=gcc
 OBJS=utils.o ntlm.o xcrypt.o config.o socket.o acl.o proxy.o
-CFLAGS=$(FLAGS) -Wall -pedantic -O3 -D_POSIX_C_SOURCE=199506L -D_ISOC99_SOURCE -D_REENTRANT -DVERSION=\"`cat VERSION`\"
+CFLAGS=$(FLAGS) -g -std=c99 -Wall -pedantic -O0 -D_XOPEN_SOURCE=600 -D_REENTRANT -DVERSION=\"`cat VERSION`\"
 LDFLAGS=-lpthread
 NAME=cntlm
 VER=`cat VERSION`

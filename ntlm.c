@@ -45,32 +45,63 @@ static void ntlm_set_key(unsigned char *src, gl_des_ctx *context) {
 	gl_des_setkey(context, key);
 }
 
-static void ntlm_calc_resp(char *dst, char *keys, char *challenge) {
+static int ntlm_calc_resp(char **dst, char *keys, char *challenge) {
 	gl_des_ctx context;
 
+	*dst = new(24);
+
 	ntlm_set_key(MEM(keys, unsigned char, 0), &context);
-	gl_des_ecb_encrypt(&context, challenge, dst);
+	gl_des_ecb_encrypt(&context, challenge, *dst);
 
 	ntlm_set_key(MEM(keys, unsigned char, 7), &context);
-	gl_des_ecb_encrypt(&context, challenge, dst+8);
+	gl_des_ecb_encrypt(&context, challenge, *dst+8);
 
 	ntlm_set_key(MEM(keys, unsigned char, 14), &context);
-	gl_des_ecb_encrypt(&context, challenge, dst+16);
+	gl_des_ecb_encrypt(&context, challenge, *dst+16);
+
+	return 24;
 }
 
-char *ntlm_hash_nt_password(char *password) {
-	char *u16, *keys;
-	int len;
+static void ntlm2_calc_resp(char **nthash, int *ntlen, char **lmhash, int *lmlen, 
+		char *username, char *domain, char *passnt2, char *challenge, int tbofs, int tblen) {
+	char *blob, *nonce, *buf;
+	int blen;
+	int64_t tw;
 
-	keys = new(21);
-	len = unicode(&u16, password);
-	md4_buffer(u16, len, keys);
+	nonce = new(8 + 1);
+	VAL(nonce, uint64_t, 0) = ((uint64_t)random() << 32) | random();
+	tw = ((uint64_t)time(NULL) + 11644473600LLU) * 10000000LLU;
 
-	memset(keys+16, 0, 5);
-	memset(u16, 0, len);
-	free(u16);
+	blob = new(4+4+8+8+4+tblen+4 + 1);
+	VAL(blob, uint32_t, 0) = U32LE(0x00000101);
+	VAL(blob, uint32_t, 4) = U32LE(0);
+	VAL(blob, uint64_t, 8) = U64LE(tw);
+	VAL(blob, uint64_t, 16) = U64LE(VAL(nonce, uint64_t, 0));
+	VAL(blob, uint32_t, 24) = U32LE(0);
+	memcpy(blob+28, MEM(challenge, char, tbofs), tblen);
+	VAL(blob, uint32_t, 28+tblen) = U32LE(0);
+	blen = 28+tblen+4;
 
-	return keys;
+	*nthash = new(16 + 1);
+	buf = new(8+blen + 1);
+	memcpy(buf, MEM(challenge, char, 24), 8);
+	memcpy(buf+8, blob, blen);
+	hmac_md5(passnt2, 16, buf, 8+blen, *nthash);
+	*ntlen = 16;
+	free(buf);
+
+	*lmhash = new(24 + 1);
+	buf = new(16 + 1);
+	memcpy(buf, MEM(challenge, char, 24), 8);
+	memcpy(buf+8, nonce, 8);
+	hmac_md5(passnt2, 16, buf, 16, *lmhash);
+	memcpy(*lmhash+16, nonce, 8);
+	*lmlen = 24;
+	free(buf);
+
+	free(blob);
+	free(nonce);
+	return;
 }
 
 char *ntlm_hash_lm_password(char *password) {
@@ -95,24 +126,71 @@ char *ntlm_hash_lm_password(char *password) {
 	return keys;
 }
 
-int ntlm_request(char **dst, char *hostname, char *domain, int nt, int lm, uint32_t flags, int silent) {
+char *ntlm_hash_nt_password(char *password) {
+	char *u16, *keys;
+	int len;
+
+	keys = new(21);
+	len = unicode(&u16, password);
+	md4_buffer(u16, len, keys);
+
+	memset(keys+16, 0, 5);
+	memset(u16, 0, len);
+	free(u16);
+
+	return keys;
+}
+
+char *ntlm2_hash_password(char *username, char *domain, char *password) {
+	char *tmp, *buf, *passnt, *passnt2;
+	int len;
+
+	passnt = ntlm_hash_nt_password(password);
+
+	buf = new(strlen(username)+strlen(domain) + 1);
+	strcat(buf, username);
+	strcat(buf, domain);
+	uppercase(buf);
+	len = unicode(&tmp, buf);
+
+	passnt2 = new(16 + 1);
+	hmac_md5(passnt, 16, tmp, len, passnt2);
+
+	free(tmp);
+	free(buf);
+
+	return passnt2;
+}
+
+int ntlm_request(char **dst, char *hostname, char *domain, int ntlm2, int nt, int lm, uint32_t flags) {
 	char *buf, *tmp;
 	int dlen, hlen;
 
 	dlen = strlen(domain);
 	hlen = strlen(hostname);
 
-	if (debug && !silent) {
+	if (!flags) {
+		if (ntlm2) {
+			flags = 0xa208b205;
+		} else if (nt && lm)
+			flags = 0xb207;
+		else if (nt)
+			flags = 0xb205;
+		else if (lm)
+			flags = 0xb206;
+	}
+
+	if (debug) {
 		printf("NTLM Request:\n");
 		printf("\t   Domain: %s\n", domain);
 		printf("\t Hostname: %s\n", hostname);
-		printf("\t    Flags: 0x%X\n", (unsigned int)U32LE(flags ? flags : (nt ? 0xB207 : 0xB206)));
+		printf("\t    Flags: 0x%X\n", (unsigned int)U32LE(flags));
 	}
 
 	buf = new(NTLM_BUFSIZE);
 	memcpy(buf, "NTLMSSP\0", 8);
 	VAL(buf, uint32_t, 8) = U32LE(1);
-	VAL(buf, uint32_t, 12) = U32LE(flags ? flags : (nt ? 0xB207 : 0xB206));
+	VAL(buf, uint32_t, 12) = U32LE(flags);
 	VAL(buf, uint16_t, 16) = U16LE(dlen);
 	VAL(buf, uint16_t, 18) = U16LE(dlen);
 	VAL(buf, uint32_t, 20) = U32LE(32 + hlen);
@@ -164,24 +242,81 @@ void dump(char *src, size_t len) {
 }
 */
 
-int ntlm_response(char **dst, char *challenge, char *username, char *passnt, char *passlm, char *hostname, char *domain, int nt, int lm, int silent) {
-	char lmhash[24], nthash[24];
+int ntlm_response(char **dst, char *challenge, int challen, char *username, char *passnt2, char *passnt, char *passlm, char *hostname, char *domain, int ntlm2, int nt, int lm) {
 	char *buf, *udomain, *uuser, *uhost, *tmp;
-	int dlen, ulen, hlen, lmlen = 0, ntlen = 0;
+	int dlen, ulen, hlen;
 	uint32_t flags;
-	uint16_t tpos, ttype, tlen;
+	uint16_t tpos, ttype, tlen, tbofs = 0, tblen = 0;
+	char *lmhash = NULL, *nthash = NULL;
+	int lmlen = 0, ntlen = 0;
+
+	if (debug) {
+		printf("NTLM Challenge:\n");
+		tmp = printmem(MEM(challenge, char, lmlen), 8, 7);
+		printf("\tChallenge: %s\n", tmp);
+		free(tmp);
+		flags = U32LE(VAL(challenge, uint32_t, 20));
+		printf("\t    Flags: 0x%X\n", (unsigned int)flags);
+	}
+
+	if (challen > 48) {
+		tbofs = tpos = U16LE(VAL(challenge, uint16_t, 44));
+		while (tpos+4 < challen && (ttype = U16LE(VAL(challenge, uint16_t, tpos)))) {
+			tlen = U16LE(VAL(challenge, uint16_t, tpos+2));
+			if (tpos+4+tlen > challen)
+				break;
+
+			if (debug) {
+				switch (ttype) {
+					case 0x1:
+						printf("\t   Server: ");
+						break;
+					case 0x2:
+						printf("\tNT domain: ");
+						break;
+					case 0x3:
+						printf("\t     FQDN: ");
+						break;
+					case 0x4:
+						printf("\t   Domain: ");
+						break;
+					case 0x5:
+						printf("\t      TLD: ");
+						break;
+					default:
+						printf("\t  Unknown: ");
+						break;
+				}
+				tmp = printuc(MEM(challenge, char, tpos+4), tlen);
+				printf("%s\n", tmp);
+				free(tmp);
+			}
+
+			tpos += 4+tlen;
+			tblen += 4+tlen;
+		}
+
+		if (tblen && ttype == 0)
+			tblen += 4;
+	}
+
+	if (ntlm2 && !tblen) {
+		return 0;
+	}
 
 	if (lm) {
-		lmlen = 24;
-		ntlm_calc_resp((char *)lmhash, passlm, MEM(challenge, char, lmlen));
+		lmlen = ntlm_calc_resp(&lmhash, passlm, MEM(challenge, char, 24));
 	}
 
 	if (nt) {
-		ntlen = 24;
-		ntlm_calc_resp((char *)nthash, passnt, MEM(challenge, char, ntlen));
+		ntlen = ntlm_calc_resp(&nthash, passnt, MEM(challenge, char, 24));
 	}
 
-	if (nt) {
+	if (ntlm2) {
+		ntlm2_calc_resp(&nthash, &ntlen, &lmhash, &lmlen, username, domain, passnt2, challenge, tbofs, tblen);
+	}
+
+	if (nt || ntlm2) {
 		dlen = unicode(&udomain, domain);
 		ulen = unicode(&uuser, username);
 		hlen = unicode(&uhost, hostname);
@@ -195,52 +330,19 @@ int ntlm_response(char **dst, char *challenge, char *username, char *passnt, cha
 		hlen = strlen(hostname);
 	}
 
-	if (debug && !silent) {
-		printf("NTLM Challenge:\n");
-		tmp = printmem(MEM(challenge, char, lmlen), 8);
-		printf("\tChallenge: %s\n", tmp);
-		free(tmp);
-		flags = U32LE(VAL(challenge, uint32_t, 20));
-		printf("\t    Flags: 0x%X\n", (unsigned int)flags);
-
-		tpos = U16LE(VAL(challenge, uint16_t, 44));
-		while ((ttype = U16LE(VAL(challenge, uint16_t, tpos)))) {
-			tlen = U16LE(VAL(challenge, uint16_t, tpos+2));
-
-			if (ttype == 0x1)
-				printf("\t   Server: ");
-			else if (ttype == 0x2)
-				printf("\tNT domain: ");
-			else if (ttype == 0x3)
-				printf("\t     FQDN: ");
-			else if (ttype == 0x4)
-				printf("\t   Domain: ");
-			else if (ttype == 0x5)
-				printf("\t      TLD: ");
-			else
-				printf("\t  Unknown: ");
-
-			tmp = printuc(MEM(challenge, char, tpos+4), tlen);
-			printf("%s\n", tmp);
-			free(tmp);
-
-			tpos += 4+tlen;
-		}
-
+	if (debug) {
 		printf("NTLM Response:\n");
 		printf("\t Hostname: '%s'\n", hostname);
 		printf("\t   Domain: '%s'\n", domain);
 		printf("\t Username: '%s'\n", username);
-		printf("\t   PassNT: '%s'\n", passnt);
-		printf("\t   PassLM: '%s'\n", passlm);
-		if (nt) {
-			tmp = printmem(nthash, 24);
-			printf("\t  NT hash: %s\n", tmp);
+		if (nt || ntlm2) {
+			tmp = printmem(nthash, ntlen, 7);
+			printf("\t Response: '%s'\n", tmp);
 			free(tmp);
 		}
-		if (lm) {
-			tmp = printmem(lmhash, 24);
-			printf("\t  LM hash: %s\n", tmp);
+		if (lm || ntlm2) {
+			tmp = printmem(lmhash, lmlen, 7);
+			printf("\t Response: '%s'\n", tmp);
 			free(tmp);
 		}
 	}
@@ -287,6 +389,11 @@ int ntlm_response(char **dst, char *challenge, char *username, char *passnt, cha
 	memcpy(MEM(buf, char, 64+dlen+ulen), uhost, hlen);
 	memcpy(MEM(buf, char, 64+dlen+ulen+hlen), lmhash, lmlen);
 	memcpy(MEM(buf, char, 64+dlen+ulen+hlen+24), nthash, ntlen);
+
+	if (nthash)
+		free(nthash);
+	if (lmhash)
+		free(lmhash);
 
 	free(uhost);
 	free(uuser);

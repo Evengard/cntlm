@@ -696,20 +696,20 @@ char *urlencode(const char *str) {
 	return tmp;
 }
 
-char *printmem(char *src, size_t len) {
+char *printmem(char *src, size_t len, int bitwidth) {
 	char *tmp;
 	int i;
 
 	tmp = new(2*len+1);
 	for (i = 0; i < len; ++i) {
-		tmp[i*2] = hextab[(uint8_t)src[i] >> 4];
-		tmp[i*2+1] = hextab[src[i] & 0x0F];
+		tmp[i*2] = hextab[((uint8_t)src[i] ^ (uint8_t)(7-bitwidth)) >> 4];
+		tmp[i*2+1] = hextab[(src[i] ^ (uint8_t)(7-bitwidth)) & 0x0F];
 	}
 
 	return tmp;
 }
 
-char *scanmem(char *src) {
+char *scanmem(char *src, int bitwidth) {
 	int h, l, i, bytes;
 	char *tmp;
 
@@ -725,7 +725,7 @@ char *scanmem(char *src) {
 			free(tmp);
 			return NULL;
 		}
-		tmp[i] = (h << 4) + l;
+		tmp[i] = ((h << 4) + l) ^ (uint8_t)(7-bitwidth);
 	}
 	tmp[i] = 0;
 
