@@ -1135,9 +1135,9 @@ void *process(void *client) {
 		if (passntlm2)
 			memcpy(ppassntlm2, passntlm2, 16);
 		if (passnt)
-			memcpy(ppassnt, passnt, 24);
+			memcpy(ppassnt, passnt, 21);
 		if (passlm)
-			memcpy(ppasslm, passlm, 24);
+			memcpy(ppasslm, passlm, 21);
 	}
 
 	if (sd <= 0)
@@ -1235,13 +1235,13 @@ void *process(void *client) {
 
 					if (hashnt) {
 						tmp = ntlm_hash_nt_password(pos+1);
-						memcpy(ppassnt, tmp, 24);
+						memcpy(ppassnt, tmp, 21);
 						free(tmp);
 					}
 
 					if (hashlm) {
 						tmp = ntlm_hash_lm_password(pos+1);
-						memcpy(ppasslm, tmp, 24);
+						memcpy(ppasslm, tmp, 21);
 						free(tmp);
 					}
 

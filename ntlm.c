@@ -48,7 +48,7 @@ static void ntlm_set_key(unsigned char *src, gl_des_ctx *context) {
 static int ntlm_calc_resp(char **dst, char *keys, char *challenge) {
 	gl_des_ctx context;
 
-	*dst = new(24);
+	*dst = new(24 + 1);
 
 	ntlm_set_key(MEM(keys, unsigned char, 0), &context);
 	gl_des_ecb_encrypt(&context, challenge, *dst);
@@ -109,8 +109,8 @@ char *ntlm_hash_lm_password(char *password) {
 	gl_des_ctx context;
 	char *keys, *pass;
 
-	keys = new(21);
-	pass = new(14);
+	keys = new(21 + 1);
+	pass = new(14 + 1);
 	uppercase(strncpy(pass, password, MIN(14, strlen(password))));
 
 	ntlm_set_key(MEM(pass, unsigned char, 0), &context);
@@ -130,7 +130,7 @@ char *ntlm_hash_nt_password(char *password) {
 	char *u16, *keys;
 	int len;
 
-	keys = new(21);
+	keys = new(21 + 1);
 	len = unicode(&u16, password);
 	md4_buffer(u16, len, keys);
 
@@ -156,6 +156,7 @@ char *ntlm2_hash_password(char *username, char *domain, char *password) {
 	passnt2 = new(16 + 1);
 	hmac_md5(passnt, 16, tmp, len, passnt2);
 
+	free(passnt);
 	free(tmp);
 	free(buf);
 
