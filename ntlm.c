@@ -64,13 +64,19 @@ static int ntlm_calc_resp(char **dst, char *keys, char *challenge) {
 
 static void ntlm2_calc_resp(char **nthash, int *ntlen, char **lmhash, int *lmlen, 
 		char *username, char *domain, char *passnt2, char *challenge, int tbofs, int tblen) {
-	char *blob, *nonce, *buf;
-	int blen;
+	char *tmp, *blob, *nonce, *buf;
 	int64_t tw;
+	int blen;
 
 	nonce = new(8 + 1);
 	VAL(nonce, uint64_t, 0) = ((uint64_t)random() << 32) | random();
 	tw = ((uint64_t)time(NULL) + 11644473600LLU) * 10000000LLU;
+
+	if (0 && debug) {
+		tmp = printmem(nonce, 8, 7);
+		printf("NTLMv2:\n\t    Nonce: %s\n\tTimestamp: %lld\n", tmp, tw);
+		free(tmp);
+	}
 
 	blob = new(4+4+8+8+4+tblen+4 + 1);
 	VAL(blob, uint32_t, 0) = U32LE(0x00000101);
@@ -82,21 +88,28 @@ static void ntlm2_calc_resp(char **nthash, int *ntlen, char **lmhash, int *lmlen
 	VAL(blob, uint32_t, 28+tblen) = U32LE(0);
 	blen = 28+tblen+4;
 
-	*nthash = new(16 + 1);
+	if (0 && debug) {
+		tmp = printmem(blob, blen, 7);
+		printf("\t     Blob: %s (%d)\n", tmp, blen);
+		free(tmp);
+	}
+
+	*ntlen = 16+blen;
+	*nthash = new(*ntlen + 1);
 	buf = new(8+blen + 1);
 	memcpy(buf, MEM(challenge, char, 24), 8);
 	memcpy(buf+8, blob, blen);
 	hmac_md5(passnt2, 16, buf, 8+blen, *nthash);
-	*ntlen = 16;
+	memcpy(*nthash+16, blob, blen);
 	free(buf);
 
-	*lmhash = new(24 + 1);
+	*lmlen = 24;
+	*lmhash = new(*lmlen + 1);
 	buf = new(16 + 1);
 	memcpy(buf, MEM(challenge, char, 24), 8);
 	memcpy(buf+8, nonce, 8);
 	hmac_md5(passnt2, 16, buf, 16, *lmhash);
 	memcpy(*lmhash+16, nonce, 8);
-	*lmlen = 24;
 	free(buf);
 
 	free(blob);
@@ -254,7 +267,7 @@ int ntlm_response(char **dst, char *challenge, int challen, char *username, char
 	if (debug) {
 		printf("NTLM Challenge:\n");
 		tmp = printmem(MEM(challenge, char, lmlen), 8, 7);
-		printf("\tChallenge: %s\n", tmp);
+		printf("\tChallenge: %s (len: %d)\n", tmp, challen);
 		free(tmp);
 		flags = U32LE(VAL(challenge, uint32_t, 20));
 		printf("\t    Flags: 0x%X\n", (unsigned int)flags);
@@ -262,7 +275,7 @@ int ntlm_response(char **dst, char *challenge, int challen, char *username, char
 
 	if (challen > 48) {
 		tbofs = tpos = U16LE(VAL(challenge, uint16_t, 44));
-		while (tpos+4 < challen && (ttype = U16LE(VAL(challenge, uint16_t, tpos)))) {
+		while (tpos+4 <= challen && (ttype = U16LE(VAL(challenge, uint16_t, tpos)))) {
 			tlen = U16LE(VAL(challenge, uint16_t, tpos+2));
 			if (tpos+4+tlen > challen)
 				break;
@@ -285,7 +298,7 @@ int ntlm_response(char **dst, char *challenge, int challen, char *username, char
 						printf("\t      TLD: ");
 						break;
 					default:
-						printf("\t  Unknown: ");
+						printf("\t      %3d: ", ttype);
 						break;
 				}
 				tmp = printuc(MEM(challenge, char, tpos+4), tlen);
@@ -299,6 +312,10 @@ int ntlm_response(char **dst, char *challenge, int challen, char *username, char
 
 		if (tblen && ttype == 0)
 			tblen += 4;
+
+		if (debug) {
+			printf("\t    TBofs: %d\n\t    TBlen: %d\n\t    ttype: %d\n", tbofs, tblen, ttype);
+		}
 	}
 
 	if (ntlm2 && !tblen) {
@@ -318,9 +335,13 @@ int ntlm_response(char **dst, char *challenge, int challen, char *username, char
 	}
 
 	if (nt || ntlm2) {
-		dlen = unicode(&udomain, domain);
+		tmp = uppercase(strdup(domain));
+		dlen = unicode(&udomain, tmp);
+		free(tmp);
 		ulen = unicode(&uuser, username);
-		hlen = unicode(&uhost, hostname);
+		tmp = uppercase(strdup(hostname));
+		hlen = unicode(&uhost, tmp);
+		free(tmp);
 	} else {
 		udomain = uppercase(strdup(domain));
 		uuser = uppercase(strdup(username));
@@ -338,12 +359,12 @@ int ntlm_response(char **dst, char *challenge, int challen, char *username, char
 		printf("\t Username: '%s'\n", username);
 		if (nt || ntlm2) {
 			tmp = printmem(nthash, ntlen, 7);
-			printf("\t Response: '%s'\n", tmp);
+			printf("\t Response: '%s' (%d)\n", tmp, ntlen);
 			free(tmp);
 		}
 		if (lm || ntlm2) {
 			tmp = printmem(lmhash, lmlen, 7);
-			printf("\t Response: '%s'\n", tmp);
+			printf("\t Response: '%s' (%d)\n", tmp, lmlen);
 			free(tmp);
 		}
 	}
