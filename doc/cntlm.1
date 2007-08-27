@@ -92,8 +92,10 @@ proxies might be unable to process anything but LM. If none of those work, see c
 \fB\-F\fP. There you can find settings, which should do for even the most obscure proxies. :)
 
 .br
-NOTE: Although NTLMv2 is not widely adopted, it is supported on all Windows since NT\ 4.0\ SP4 - for a \fBvery
-long time\fP. I strongly suggest that you use it.
+\fBIMPORTANT:\fP Although NTLMv2 is not widely adopted (i.e. enforced), it is supported on all Windows since
+NT\ 4.0\ SP4. That's for \fBa very long time\fP! I strongly suggest you use it to protect your credentials
+on-line. You should also replace plaintext \fBPassword\fP options with hashed \fBPass[NTLMv2|NT|LM]\fP
+equivalents. NTLMv2 is the most and soon probably the only secure authentication of the NTLM family.
 
 When you want to use hashes in the config (instead of plaintext password), each \fBAuth\fP settings requires
 different options:
@@ -290,8 +292,8 @@ psychological\fP matter, there's no difference if \fBcntlm\fP or your browser re
 must wait for ISA to do it's job and download then. You just expect to see some progress indicator move, which
 is all what the ISA's page does: it shows HTML countdown.
 
-If the plugin cannot parse the page for some reason (different formatting, etc.), it quits and you get the
-interactive page - it's never "lost".
+If the plugin cannot parse the interactive page for some reason (unknown formatting, etc.), it quits and the
+page is forwarded to you - it's never "lost".
 
 .ne 6
 The keepalive header is called \fCISA-Scanner\fP and shows ISA's progress, e.g.:

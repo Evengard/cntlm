@@ -888,55 +888,53 @@ int scanner_hook(rr_data_t *request, rr_data_t *response, int *cd, int *sd, long
 				strcat(buf, line);
 				len += c;
 
-				if (i > 0) {
-					if (debug && (!strncmp(line, " UpdatePage(", 12) || (done=!strncmp(line, "DownloadFinished(", 17)))) {
+				if (i > 0 && (!strncmp(line, " UpdatePage(", 12) || (done=!strncmp(line, "DownloadFinished(", 17)))) {
+					if (debug)
+						printf("scanner_hook: %s", line);
+
+					if ((pos=strstr(line, "To be downloaded"))) {
+						filesize = atol(pos+16);
 						if (debug)
-							printf("scanner_hook: %s", line);
+							printf("scanner_hook: file size detected: %ld KiBs (max: %ld)\n", filesize/1024, maxKBs);
 
-						if ((pos=strstr(line, "To be downloaded"))) {
-							filesize = atol(pos+16);
-							if (debug)
-								printf("scanner_hook: file size detected: %ld KiBs (max: %ld)\n", filesize/1024, maxKBs);
-
-							if (maxKBs && (maxKBs == 1 || filesize/1024 > maxKBs))
-								break;
-
-							/*
-							 * We have to send HTTP protocol ID so we can send the notification
-							 * headers during downloading. Once we've done that, it cannot appear
-							 * again, which it would if we returned PLUG_SENDHEAD, so we must
-							 * remember to not include it.
-							 */
-							headers_initiated = 1;
-							tmp = new(AUTHSIZE);
-							snprintf(tmp, AUTHSIZE, "HTTP/1.%s 200 OK\r\n", (*request)->http);
-							write(*cd, tmp, strlen(tmp));
-							free(tmp);
-						}
-
-						if (!headers_initiated) {
-							if (debug)
-								printf("scanner_hook: Giving up, \"To be downloaded\" line not found!\n");
+						if (maxKBs && (maxKBs == 1 || filesize/1024 > maxKBs))
 							break;
-						}
 
 						/*
-						 * Send a notification header to the client, just so it doesn't timeout
+						 * We have to send HTTP protocol ID so we can send the notification
+						 * headers during downloading. Once we've done that, it cannot appear
+						 * again, which it would if we returned PLUG_SENDHEAD, so we must
+						 * remember to not include it.
 						 */
-						if (!done) {
-							tmp = new(AUTHSIZE);
-							progress = atol(line+12);
-							snprintf(tmp, AUTHSIZE, "ISA-Scanner: %ld of %ld\r\n", progress, filesize);
-							write(*cd, tmp, strlen(tmp));
-							free(tmp);
-						}
-
-						/*
-						 * If download size is unknown beforehand, stop when downloaded amount is over ISAScannerSize
-						 */
-						if (!filesize && maxKBs && maxKBs != 1 && progress/1024 > maxKBs)
-							break;
+						headers_initiated = 1;
+						tmp = new(AUTHSIZE);
+						snprintf(tmp, AUTHSIZE, "HTTP/1.%s 200 OK\r\n", (*request)->http);
+						write(*cd, tmp, strlen(tmp));
+						free(tmp);
 					}
+
+					if (!headers_initiated) {
+						if (debug)
+							printf("scanner_hook: Giving up, \"To be downloaded\" line not found!\n");
+						break;
+					}
+
+					/*
+					 * Send a notification header to the client, just so it doesn't timeout
+					 */
+					if (!done) {
+						tmp = new(AUTHSIZE);
+						progress = atol(line+12);
+						snprintf(tmp, AUTHSIZE, "ISA-Scanner: %ld of %ld\r\n", progress, filesize);
+						write(*cd, tmp, strlen(tmp));
+						free(tmp);
+					}
+
+					/*
+					 * If download size is unknown beforehand, stop when downloaded amount is over ISAScannerSize
+					 */
+					if (!filesize && maxKBs && maxKBs != 1 && progress/1024 > maxKBs)
+						break;
 				}
 			} while (i > 0 && !done);
 
