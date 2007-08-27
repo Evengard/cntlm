@@ -5,7 +5,7 @@
 .SH SYNOPSIS
 .B cntlm
 [
-.B \-AaBcDdFfgHhiLlPpSsTUuvw
+.B \-AaBcDdFfgHhiLlMPpSsTUuvw
 ] [ \fIhost1\fP \fIport1\fP | \fIhost1\fP:\fIport1\fP ] ... \fIhostN\fP \fIportN\fP
 
 .SH DESCRIPTION
@@ -87,15 +87,15 @@ the \fIIP\fP part has more bits than you declare by \fImask\fP (e.g. 10.20.30.40
 Authentication type. NTLM(v2) comprises of one or two hashed responses, NT and LM or NTv2 and LMv2, which are
 computed from the password hash. Each response uses a different hashing algorithm; as new response types were
 invented, stronger algorithms were used. When you first install \fBcntlm\fP, find the strongest one which
-works for you. Each in turn, it's NTLMv2, NT, NTLM and the weakest LM. Very old servers or dedicated HW
-proxies might be unable to process anything but LM. If none of those work, see compatibility flags option
-\fB\-F\fP. There you can find settings, which should do for even the most obscure proxies. :)
+works for you (preferably using \fB\-M\fP). Each in turn, it's NTLMv2, NT, NTLM and the weakest LM. Very old
+servers or dedicated HW proxies might be unable to process anything but LM. If none of those work, see
+compatibility flags option \fB\-F\fP or submit a Support request.
 
 .br
 \fBIMPORTANT:\fP Although NTLMv2 is not widely adopted (i.e. enforced), it is supported on all Windows since
 NT\ 4.0\ SP4. That's for \fBa very long time\fP! I strongly suggest you use it to protect your credentials
 on-line. You should also replace plaintext \fBPassword\fP options with hashed \fBPass[NTLMv2|NT|LM]\fP
-equivalents. NTLMv2 is the most and soon probably the only secure authentication of the NTLM family.
+equivalents. NTLMv2 is the most and possibly the only secure authentication of the NTLM family.
 
 When you want to use hashes in the config (instead of plaintext password), each \fBAuth\fP settings requires
 different options:
@@ -111,7 +111,7 @@ different options:
 .ft P
 .fi
 
-.ne 10
+.ne 8
 .TP
 .B \-B\ \ \ \ (NTLMToBasic)
 This option enables the "NTLM-to-basic" feature, which allows you to keep your credentials super-secret or to
@@ -122,7 +122,7 @@ window). This allows more people to use one \fBcntlm\fP, BUT there is a downside
 convenient "authentication behind the scenes" feature, which normally gives you Internet access without being
 bothered by any password dialogs.
 
-.ne 7
+.ne 6
 IMPORTANT: HTTP protocol obviously has means to negotiate authorization before letting you through, but TCP/IP
 doesn't (i.e. open port is open port). If you use NTLM-to-basic and DON'T specify some username/password in
 the configuration file, you are bound to loose tunneling features, because \fBcntlm\fP alone won't know your
@@ -155,11 +155,11 @@ The domain or workgroup of the proxy account. This value can also be specified a
 .TP
 .B \-F <flags>\ \ \ \ (Flags)
 NTLM authentication flags. This option is rater delicate and I do not recommend to change the default built-in
-values unless you had no success with parent proxy auth and tried all possible values for the \fBAuth\fP
-option (\fB\-a\fP). Remember that each NT/LM hash combination requires different flags. This option is sort of
-a complete "manual override" and you'll have to deal with every aspect of it yourself. If the parent proxy
-refuses to authenticate you, try the following combinations and note that you have to use \fB0x\fP prefix to
-use hex numbers:
+values unless you had no success with parent proxy auth and tried magic autodetection (\fB\-M\fP) and all
+possible values for the \fBAuth\fP option (\fB\-a\fP). Remember that each NT/LM hash combination requires
+different flags. This option is sort of a complete "manual override" and you'll have to deal with it yourself.
+If the parent proxy refuses to authenticate you, try the following combinations (note that you have to use
+\fB0x\fP prefix to use hex numbers):
 .nf
 .ft C
 
@@ -256,6 +256,13 @@ B and make it invisible for subnet C. See \fB-g\fP for the details concerning lo
 \fIsaddr\fP is not used.
 
 .TP
+.B \-M <testurl>
+Run magic NTLM dialect detection. In this mode, \fBcntlm\fP tries some known working presets against your
+proxy. Probe requests are made for the specified \fItesturl\fP, with the the strongest hashes first.  Settings
+for the most secure one working are printed. This mode requires otherwise finished configuration, that is your
+credentials, proxy address, etc. Autodetection takes care of only \fBAuth\fP and \fBFlags\fP.
+
+.TP
 .B \-P <pidfile>
 Create a PID file \fIpidfile\fP upon startup. If the specified file exists, it is truncated and overwritten.
 This option is intended for use with \fBstart\-stop\-daemon(8)\fP and other servicing mechanisms. Please note
@@ -276,6 +283,7 @@ page (displaying the scanning progress) instead of the file/data you've requeste
 scanning the contents.  This presumptuous behavior breaks every automated downloader, updater and basically
 EVERY application relying on downloads (e.g. wget, apt-get).
 
+.ne 6
 The parameter \fImax_size_in_kb\fP allows you to choose maximum download size you wish to handle by the plugin
 (see below why you might want that). If the file size is bigger than this, \fBcntlm\fP forwards you the
 interactive page, effectively disabling the plugin for that download. Zero means no limit. Use
@@ -283,6 +291,7 @@ interactive page, effectively disabling the plugin for that download. Zero means
 (forcing the plugin). It works by matching User-Agent header and is necessary for e.g. wget, apt-get and yum,
 which would fail if the response is some HTTP page instead of requested data.
 
+.ne 8
 How it works: the client asks for a file, \fBcntlm\fP detects ISA's bullshit response and waits for the secret
 link to ISA's cache, which comes no sooner than the file is downloaded and scanned by ISA. Only then can
 \fBcntlm\fP make the second request for the real file and forward it along with correct headers to the client.
@@ -292,6 +301,7 @@ psychological\fP matter, there's no difference if \fBcntlm\fP or your browser re
 must wait for ISA to do it's job and download then. You just expect to see some progress indicator move, which
 is all what the ISA's page does: it shows HTML countdown.
 
+.ne 2
 If the plugin cannot parse the interactive page for some reason (unknown formatting, etc.), it quits and the
 page is forwarded to you - it's never "lost".
 

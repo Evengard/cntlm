@@ -658,7 +658,7 @@ int tunnel(int cd, int sd) {
  * (so we avoid any body transfers during NTLM negotiation), and add
  * proxy authentication request headers.
  *
- * Read in the reply, if it contains NTLM challenge, generate final
+ * Read the reply, if it contains NTLM challenge, generate final
  * NTLM auth message and insert it into the original client header,
  * which is then normally proessed back in process().
  *
@@ -714,7 +714,8 @@ int authenticate(int sd, rr_data_t data, char *user, char *passntlm2, char *pass
 
 	tmp = hlist_get(auth->headers, "Content-Length");
 	if (tmp && (len = atoi(tmp))) {
-		printf("Got %d too many bytes.\n", len);
+		if (debug)
+			printf("Got %d too many bytes.\n", len);
 		data_drop(sd, len);
 	}
 
@@ -742,6 +743,8 @@ int authenticate(int sd, rr_data_t data, char *user, char *passntlm2, char *pass
 
 			free(challenge);
 		} else {
+			if (debug)
+				hlist_dump(auth->headers);
 			syslog(LOG_WARNING, "No Proxy-Authenticate received! NTLM not supported?\n");
 		}
 	} else if (auth->code >= 500 && auth->code <= 599) {
@@ -1722,6 +1725,108 @@ void tunnel_add(plist_t *list, char *spec, int gateway) {
 	free(spec);
 }
 
+#define MAGIC_TESTS	9
+
+void magic_auth_detect(const char *url) {
+	int i, nc, c, found = -1;
+	rr_data_t req, res;
+	char *tmp, *pos, *host = NULL;
+
+	char *authstr[4] = { "NTLMv2", "NT", "NTLM", "LM" };
+	int prefs[MAGIC_TESTS][5] = {
+		/* NT, LM, NTLMv2, Flags, Auth param equiv. */
+		{ 0, 0, 1, 0, 0 },
+		{ 0, 0, 1, 0xa208b207, 0 },
+		{ 0, 0, 1, 0xa2088207, 0 },
+		{ 1, 0, 0, 0, 1 },
+		{ 1, 0, 0, 0x8205, 1 },
+		{ 1, 1, 0, 0, 2 },
+		{ 1, 1, 0, 0x8207, 2 },
+		{ 0, 1, 0, 0, 3 },
+		{ 0, 1, 0, 0x8206, 3 }
+	};
+
+	if (!passnt || !passlm || !passntlm2) {
+		printf("Cannot autodetect NTLM dialect - some password hashes are undefined.\n");
+		exit(1);
+	}
+
+	pos = strstr(url, "://");
+	if (pos) {
+		tmp = strchr(pos+3, '/');
+		host = substr(pos+3, 0, tmp ? tmp-pos-3 : 0);
+	} else {
+		fprintf(stderr, "Invalid URL (%s)\n", url);
+		return;
+	}
+
+	for (i = 0; i < MAGIC_TESTS; ++i) {
+		res = new_rr_data();
+		req = new_rr_data();
+
+		req->req = 1;
+		req->method = strdup("GET");
+		req->url = strdup(url);
+		req->http = strdup("1");
+		req->headers = hlist_add(req->headers, "Proxy-Connection", "Keep-Alive", 1, 1);
+		if (host)
+			req->headers = hlist_add(req->headers, "Host", host, 1, 1);
+
+		hashnt = prefs[i][0];
+		hashlm = prefs[i][1];
+		hashntlm2 = prefs[i][2];
+		flags = prefs[i][3];
+
+		printf("Config profile %2d/%d... ", i+1, MAGIC_TESTS);
+
+		nc = proxy_connect();
+		if (nc <= 0) {
+			printf("\nConnection to proxy failed, bailing out\n");
+			free_rr_data(res);
+			free_rr_data(req);
+			close(nc);
+			break;
+		}
+
+		c = authenticate(nc, req, user, passntlm2, passnt, passlm, domain, 0);
+		if (c <= 0 || c == 500) {
+			printf("Auth request ignored (HTTP code: %d)\n", c);
+			free_rr_data(res);
+			free_rr_data(req);
+			close(nc);
+			continue;
+		}
+
+		if (!headers_send(nc, req) || !headers_recv(nc, res)) {
+			printf("Connection closed\n");
+		} else {
+			if (res->code == 407) {
+				printf("Credentials rejected\n");
+			} else {
+				printf("OK (HTTP code: %d)\n", res->code);
+				if (found < 0)
+					found = i;
+			}
+		}
+
+		free_rr_data(res);
+		free_rr_data(req);
+		close(nc);
+	}
+
+	if (found > -1) {
+		printf("-----------------------[ Profile %2d ]------\n", found);
+		printf("Auth\t%s\n", authstr[prefs[found][4]]);
+		if (prefs[found][3])
+			printf("Flags\t0x%x\n", prefs[found][3]);
+		printf("-------------------------------------------\n");
+	} else
+		printf("You have used a bad URL or your proxy is quite insane.\nTry submitting a support request.\n");
+
+	if (host)
+		free(host);
+}
+
 int main(int argc, char **argv) {
 	char *tmp, *head, *uid, *pidfile, *auth;
 	char *password, *cpassntlm2, *cpassnt, *cpasslm;
@@ -1746,6 +1851,7 @@ int main(int argc, char **argv) {
 	plist_t proxyd_list = NULL;
 	plist_t rules = NULL;
 	config_t cf = NULL;
+	char *magic_detect = NULL;
 
 	user = new(AUTHSIZE);
 	domain = new(AUTHSIZE);
@@ -1766,7 +1872,7 @@ int main(int argc, char **argv) {
 	syslog(LOG_INFO, "Starting cntlm version " VERSION " for LITTLE endian\n");
 #endif
 
-	while ((i = getopt(argc, argv, ":-:a:c:d:fgh:il:p:su:vw:A:BD:F:G:HL:P:S:T:U:")) != -1) {
+	while ((i = getopt(argc, argv, ":-:a:c:d:fgh:il:p:su:vw:A:BD:F:G:HL:M:P:S:T:U:")) != -1) {
 		switch (i) {
 			case 'A':
 			case 'D':
@@ -1830,6 +1936,9 @@ int main(int argc, char **argv) {
 				 * Create a listening socket for proxy function.
 				 */
 				proxy_add(&proxyd_list, optarg, gateway);
+				break;
+			case 'M':
+				magic_detect = strdup(optarg);
 				break;
 			case 'P':
 				strlcpy(pidfile, optarg, AUTHSIZE);
@@ -2114,6 +2223,7 @@ int main(int argc, char **argv) {
 	/*
 	 * If plain password present, calculate its NT and LM hashes 
 	 * and remove it from the memory.
+	 * XXX hash only required ones XXX
 	 */
 	if (strlen(password)) {
 		passnt = ntlm_hash_nt_password(password);
@@ -2152,7 +2262,7 @@ int main(int argc, char **argv) {
 				"newer. For more information about these matters, see the file LICENSE.\n"
 				"For copyright holders of included encryption routines see headers.\n\n");
 
-			fprintf(stderr, "Usage: %s [-AaBcDdFfgHhiLlPsSTUvw] -u <user>[@<domain>] -p <pass> <proxy_host>[:]<proxy_port> ...\n", argv[0]);
+			fprintf(stderr, "Usage: %s [-AaBcDdFfgHhiLlMPsSTUvw] -u <user>[@<domain>] -p <pass> <proxy_host>[:]<proxy_port> ...\n", argv[0]);
 			fprintf(stderr, "\t-A  <address>[/<net>]\n"
 					"\t    New ACL allow rule. Address can be an IP or a hostname, net must be a number (CIDR notation)\n");
 			fprintf(stderr, "\t-a  ntlm | nt | lm\n"
@@ -2183,6 +2293,8 @@ int main(int argc, char **argv) {
 					"\t    Can be used for direct tunneling without corkscrew, etc.\n");
 			fprintf(stderr, "\t-l  [<saddr>:]<lport>\n"
 					"\t    Main listening port for the NTLM proxy.\n");
+			fprintf(stderr, "\t-M  <testurl>\n"
+					"\t    Magic autodetection of proxy's NTLM dialect.\n");
 			fprintf(stderr, "\t-P  <pidfile>\n"
 					"\t    Create a PID file upon successful start.\n");
 			fprintf(stderr, "\t-p  <password>\n"
@@ -2220,32 +2332,35 @@ int main(int argc, char **argv) {
 	}
 
 	/*
-	 * Convert optional PassNT, PassLM and PassNTLMv2 strings to hashes.
+	 * Convert optional PassNT, PassLM and PassNTLMv2 strings to hashes
+	 * unless plaintext pass was used, which has higher priority.
 	 */
-	if (strlen(cpassntlm2)) {
-		passntlm2 = scanmem(cpassntlm2, 8);
-		if (!passntlm2) {
-			syslog(LOG_ERR, "Invalid PassNTLMv2 hash, terminating\n");
-			exit(1);
+	if (!strlen(password)) {
+		if (strlen(cpassntlm2)) {
+			passntlm2 = scanmem(cpassntlm2, 8);
+			if (!passntlm2) {
+				syslog(LOG_ERR, "Invalid PassNTLMv2 hash, terminating\n");
+				exit(1);
+			}
 		}
-	}
-	if (strlen(cpassnt)) {
-		passnt = scanmem(cpassnt, 8);
-		if (!passnt) {
-			syslog(LOG_ERR, "Invalid PassNT hash, terminating\n");
-			exit(1);
+		if (strlen(cpassnt)) {
+			passnt = scanmem(cpassnt, 8);
+			if (!passnt) {
+				syslog(LOG_ERR, "Invalid PassNT hash, terminating\n");
+				exit(1);
+			}
+			passnt = realloc(passnt, 21);
+			memset(passnt+16, 0, 5);
 		}
-		passnt = realloc(passnt, 21);
-		memset(passnt+16, 0, 5);
-	}
-	if (strlen(cpasslm)) {
-		passlm = scanmem(cpasslm, 8);
-		if (!passlm) {
-			syslog(LOG_ERR, "Invalid PassLM hash, terminating\n");
-			exit(1);
+		if (strlen(cpasslm)) {
+			passlm = scanmem(cpasslm, 8);
+			if (!passlm) {
+				syslog(LOG_ERR, "Invalid PassLM hash, terminating\n");
+				exit(1);
+			}
+			passlm = realloc(passlm, 21);
+			memset(passlm+16, 0, 5);
 		}
-		passlm = realloc(passlm, 21);
-		memset(passlm+16, 0, 5);
 	}
 
 	/*
@@ -2272,6 +2387,15 @@ int main(int argc, char **argv) {
 			strlcpy(workstation, "cntlm", AUTHSIZE);
 
 		syslog(LOG_INFO, "Workstation name used: %s\n", workstation);
+	}
+
+	/*
+	 * Try known NTLM auth combinations and print which ones work.
+	 * User can pick the best (most secure) one as his config.
+	 */
+	if (magic_detect) {
+		magic_auth_detect(magic_detect);
+		exit(0);
 	}
 
 	/*
