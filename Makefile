@@ -70,6 +70,10 @@ tgz:
 	rm tmp/$(NAME)-$(VER)
 	rmdir tmp 2>/dev/null || true
 
+win:
+	groff -t -e -mandoc -Tps doc/cntlm.1 | ps2pdf - win32/cntlm_manual.pdf
+	cat doc/cntlm.conf | unix2dos > win32/cntlm.ini
+
 uninstall:
 	rm -f $(BINDIR)/$(NAME) $(MANDIR)/man1/$(NAME).1 2>/dev/null || true
 
