@@ -258,9 +258,10 @@ B and make it invisible for subnet C. See \fB-g\fP for the details concerning lo
 .TP
 .B \-M <testurl>
 Run magic NTLM dialect detection. In this mode, \fBcntlm\fP tries some known working presets against your
-proxy. Probe requests are made for the specified \fItesturl\fP, with the the strongest hashes first.  Settings
-for the most secure one working are printed. This mode requires otherwise finished configuration, that is your
-credentials, proxy address, etc. Autodetection takes care of only \fBAuth\fP and \fBFlags\fP.
+proxy. Probe requests are made for the specified \fItesturl\fP, with the strongest hashes going first.
+When finished, settings for the most secure setup are printed. Although the detection will tell you which and
+how to use \fBAuth\fP, \fBFlags\fP and password-hash options, you have to configure at least your credentials
+and proxy address first. You can use \fB\-i\fP to enter your password interactively.
 
 .TP
 .B \-P <pidfile>

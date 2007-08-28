@@ -1747,7 +1747,7 @@ void magic_auth_detect(const char *url) {
 	};
 
 	if (!passnt || !passlm || !passntlm2) {
-		printf("Cannot autodetect NTLM dialect - some password hashes are undefined.\n");
+		printf("Cannot detect NTLM dialect - password or its hashes must be defined, try -i\n");
 		exit(1);
 	}
 
@@ -1785,7 +1785,7 @@ void magic_auth_detect(const char *url) {
 			free_rr_data(res);
 			free_rr_data(req);
 			close(nc);
-			break;
+			goto bailout;
 		}
 
 		c = authenticate(nc, req, user, passntlm2, passnt, passlm, domain, 0);
@@ -1827,8 +1827,9 @@ void magic_auth_detect(const char *url) {
 			printf("PassNTLMv2 %s\n", printmem(passntlm2, 16, 8));
 		printf("-------------------------------------------\n");
 	} else
-		printf("You have used a bad URL or your proxy is quite insane.\nTry submitting a Support Request.\n");
+		printf("You have used wrong credentials, bad URL or your proxy is quite insane,\nin which case try submitting a Support Request.\n");
 
+bailout:
 	if (host)
 		free(host);
 }
@@ -2210,6 +2211,11 @@ int main(int argc, char **argv) {
 		}
 	}
 
+	if ((hashntlm2 || magic_detect || interactivehash) && (!strlen(user) || !strlen(domain))) {
+		printf("To hash NTLMv2 password, I need username and domain (-u, -d) as well.\n");
+		exit(1);
+	}
+
 	/*
 	 * Last chance to get password from the user
 	 */
@@ -2227,19 +2233,71 @@ int main(int argc, char **argv) {
 	}
 
 	/*
-	 * If plain password present, calculate its NT and LM hashes 
+	 * Convert optional PassNT, PassLM and PassNTLMv2 strings to hashes
+	 * unless plaintext pass was used, which has higher priority.
+	 *
+	 * If plain password is present, calculate its NT and LM hashes 
 	 * and remove it from the memory.
-	 * XXX hash only required ones XXX
 	 */
-	if (strlen(password)) {
-		passnt = ntlm_hash_nt_password(password);
-		passlm = ntlm_hash_lm_password(password);
-		if (strlen(user) && strlen(domain)) {
+	if (!strlen(password)) {
+		if (strlen(cpassntlm2)) {
+			passntlm2 = scanmem(cpassntlm2, 8);
+			if (!passntlm2) {
+				syslog(LOG_ERR, "Invalid PassNTLMv2 hash, terminating\n");
+				exit(1);
+			}
+			passntlm2 = realloc(passntlm2, 21);
+			memset(passntlm2+16, 0, 5);
+		}
+		if (strlen(cpassnt)) {
+			passnt = scanmem(cpassnt, 8);
+			if (!passnt) {
+				syslog(LOG_ERR, "Invalid PassNT hash, terminating\n");
+				exit(1);
+			}
+			passnt = realloc(passnt, 21);
+			memset(passnt+16, 0, 5);
+		}
+		if (strlen(cpasslm)) {
+			passlm = scanmem(cpasslm, 8);
+			if (!passlm) {
+				syslog(LOG_ERR, "Invalid PassLM hash, terminating\n");
+				exit(1);
+			}
+			passlm = realloc(passlm, 21);
+			memset(passlm+16, 0, 5);
+		}
+	} else {
+		if (hashnt || magic_detect || interactivehash)
+			passnt = ntlm_hash_nt_password(password);
+		if (hashlm || magic_detect || interactivehash)
+			passlm = ntlm_hash_lm_password(password);
+		if (hashntlm2 || magic_detect || interactivehash) {
 			passntlm2 = ntlm2_hash_password(user, domain, password);
-		} else {
-			printf("To hash NTLMv2 password, specify also username and domain (-u, -d)\n");
 		}
 		memset(password, 0, strlen(password));
+	}
+
+	/*
+	 * Set default value for the workstation. Hostname if possible.
+	 */
+	if (!strlen(workstation)) {
+#if config_gethostname == 1
+		gethostname(workstation, MINIBUF_SIZE);
+#endif
+		if (!strlen(workstation))
+			strlcpy(workstation, "cntlm", MINIBUF_SIZE);
+
+		syslog(LOG_INFO, "Workstation name used: %s\n", workstation);
+	}
+
+	/*
+	 * Try known NTLM auth combinations and print which ones work.
+	 * User can pick the best (most secure) one as his config.
+	 */
+	if (magic_detect) {
+		magic_auth_detect(magic_detect);
+		exit(0);
 	}
 
 	if (interactivehash) {
@@ -2338,71 +2396,17 @@ int main(int argc, char **argv) {
 	}
 
 	/*
-	 * Convert optional PassNT, PassLM and PassNTLMv2 strings to hashes
-	 * unless plaintext pass was used, which has higher priority.
-	 */
-	if (!strlen(password)) {
-		if (strlen(cpassntlm2)) {
-			passntlm2 = scanmem(cpassntlm2, 8);
-			if (!passntlm2) {
-				syslog(LOG_ERR, "Invalid PassNTLMv2 hash, terminating\n");
-				exit(1);
-			}
-		}
-		if (strlen(cpassnt)) {
-			passnt = scanmem(cpassnt, 8);
-			if (!passnt) {
-				syslog(LOG_ERR, "Invalid PassNT hash, terminating\n");
-				exit(1);
-			}
-			passnt = realloc(passnt, 21);
-			memset(passnt+16, 0, 5);
-		}
-		if (strlen(cpasslm)) {
-			passlm = scanmem(cpasslm, 8);
-			if (!passlm) {
-				syslog(LOG_ERR, "Invalid PassLM hash, terminating\n");
-				exit(1);
-			}
-			passlm = realloc(passlm, 21);
-			memset(passlm+16, 0, 5);
-		}
-	}
-
-	/*
 	 * If we're going to need a password, check we really have it.
 	 */
 	if (!ntlmbasic && ((hashnt && !passnt) || (hashlm && !passlm) || (hashntlm2 && !passntlm2))) {
 		syslog(LOG_ERR, "Parent proxy account password (or required hashes) missing.\n");
-		exit(1);
+		myexit(1);
 	}
 
 	syslog(LOG_INFO, "Using following NTLM hashes: NT(%d) LM(%d) NTLMv2(%d)\n", hashnt, hashlm, hashntlm2);
 
 	if (flags)
 		syslog(LOG_INFO, "Using manual NTLM flags: 0x%X\n", flags);
-
-	/*
-	 * Set default value for the workstation. Hostname if possible.
-	 */
-	if (!strlen(workstation)) {
-#if config_gethostname == 1
-		gethostname(workstation, MINIBUF_SIZE);
-#endif
-		if (!strlen(workstation))
-			strlcpy(workstation, "cntlm", MINIBUF_SIZE);
-
-		syslog(LOG_INFO, "Workstation name used: %s\n", workstation);
-	}
-
-	/*
-	 * Try known NTLM auth combinations and print which ones work.
-	 * User can pick the best (most secure) one as his config.
-	 */
-	if (magic_detect) {
-		magic_auth_detect(magic_detect);
-		exit(0);
-	}
 
 	/*
 	 * Ok, we are ready to rock. If daemon mode was requested,
