@@ -57,7 +57,7 @@
 #define DEFAULT_PORT	"3128"
 
 #define BLOCK		2048
-#define AUTHSIZE	100
+#define MINIBUF_SIZE	100
 #define SAMPLE		4096
 #define STACK_SIZE	sizeof(int)*8*1024
 
@@ -910,8 +910,8 @@ int scanner_hook(rr_data_t *request, rr_data_t *response, int *cd, int *sd, long
 						 * remember to not include it.
 						 */
 						headers_initiated = 1;
-						tmp = new(AUTHSIZE);
-						snprintf(tmp, AUTHSIZE, "HTTP/1.%s 200 OK\r\n", (*request)->http);
+						tmp = new(MINIBUF_SIZE);
+						snprintf(tmp, MINIBUF_SIZE, "HTTP/1.%s 200 OK\r\n", (*request)->http);
 						write(*cd, tmp, strlen(tmp));
 						free(tmp);
 					}
@@ -926,9 +926,9 @@ int scanner_hook(rr_data_t *request, rr_data_t *response, int *cd, int *sd, long
 					 * Send a notification header to the client, just so it doesn't timeout
 					 */
 					if (!done) {
-						tmp = new(AUTHSIZE);
+						tmp = new(MINIBUF_SIZE);
 						progress = atol(line+12);
-						snprintf(tmp, AUTHSIZE, "ISA-Scanner: %ld of %ld\r\n", progress, filesize);
+						snprintf(tmp, MINIBUF_SIZE, "ISA-Scanner: %ld of %ld\r\n", progress, filesize);
 						write(*cd, tmp, strlen(tmp));
 						free(tmp);
 					}
@@ -954,8 +954,8 @@ int scanner_hook(rr_data_t *request, rr_data_t *response, int *cd, int *sd, long
 				if (debug)
 					printf("scanner_hook: Getting file with URL data = %s\n", (*request)->url);
 
-				tmp = new(AUTHSIZE);
-				snprintf(tmp, AUTHSIZE, "%d", strlen(post));
+				tmp = new(MINIBUF_SIZE);
+				snprintf(tmp, MINIBUF_SIZE, "%d", strlen(post));
 
 				newres = new_rr_data();
 				newreq = dup_rr_data(*request);
@@ -1124,15 +1124,15 @@ void *process(void *client) {
 	if (!sd)
 		sd = proxy_connect();
 
-	puser = new(AUTHSIZE);
-	ppassntlm2 = new(AUTHSIZE);
-	ppassnt = new(AUTHSIZE);
-	ppasslm = new(AUTHSIZE);
-	pdomain = new(AUTHSIZE);
+	puser = new(MINIBUF_SIZE);
+	ppassntlm2 = new(MINIBUF_SIZE);
+	ppassnt = new(MINIBUF_SIZE);
+	ppasslm = new(MINIBUF_SIZE);
+	pdomain = new(MINIBUF_SIZE);
 
-	strlcpy(pdomain, domain, AUTHSIZE);
+	strlcpy(pdomain, domain, MINIBUF_SIZE);
 	if (!ntlmbasic) {
-		strlcpy(puser, user, AUTHSIZE);
+		strlcpy(puser, user, MINIBUF_SIZE);
 		if (passntlm2)
 			memcpy(ppassntlm2, passntlm2, 16);
 		if (passnt)
@@ -1222,10 +1222,10 @@ void *process(void *client) {
 				} else {
 					dom = strchr(buf, '\\');
 					if (dom == NULL) {
-						strlcpy(puser, buf, MIN(AUTHSIZE, pos-buf+1));
+						strlcpy(puser, buf, MIN(MINIBUF_SIZE, pos-buf+1));
 					} else {
-						strlcpy(pdomain, buf, MIN(AUTHSIZE, dom-buf+1));
-						strlcpy(puser, dom+1, MIN(AUTHSIZE, pos-dom));
+						strlcpy(pdomain, buf, MIN(MINIBUF_SIZE, dom-buf+1));
+						strlcpy(puser, dom+1, MIN(MINIBUF_SIZE, pos-dom));
 					}
 
 					if (hashntlm2) {
@@ -1816,12 +1816,18 @@ void magic_auth_detect(const char *url) {
 
 	if (found > -1) {
 		printf("-----------------------[ Profile %2d ]------\n", found);
-		printf("Auth\t%s\n", authstr[prefs[found][4]]);
+		printf("Auth       %s\n", authstr[prefs[found][4]]);
 		if (prefs[found][3])
-			printf("Flags\t0x%x\n", prefs[found][3]);
+			printf("Flags      0x%x\n", prefs[found][3]);
+		if (prefs[found][0])
+			printf("PassNT     %s\n", printmem(passnt, 16, 8));
+		if (prefs[found][1])
+			printf("PassLM     %s\n", printmem(passlm, 16, 8));
+		if (prefs[found][2])
+			printf("PassNTLMv2 %s\n", printmem(passntlm2, 16, 8));
 		printf("-------------------------------------------\n");
 	} else
-		printf("You have used a bad URL or your proxy is quite insane.\nTry submitting a support request.\n");
+		printf("You have used a bad URL or your proxy is quite insane.\nTry submitting a Support Request.\n");
 
 	if (host)
 		free(host);
@@ -1853,16 +1859,16 @@ int main(int argc, char **argv) {
 	config_t cf = NULL;
 	char *magic_detect = NULL;
 
-	user = new(AUTHSIZE);
-	domain = new(AUTHSIZE);
-	password = new(AUTHSIZE);
-	cpassntlm2 = new(AUTHSIZE);
-	cpassnt = new(AUTHSIZE);
-	cpasslm = new(AUTHSIZE);
-	workstation = new(AUTHSIZE);
-	pidfile = new(AUTHSIZE);
-	uid = new(AUTHSIZE);
-	auth = new(AUTHSIZE);
+	user = new(MINIBUF_SIZE);
+	domain = new(MINIBUF_SIZE);
+	password = new(MINIBUF_SIZE);
+	cpassntlm2 = new(MINIBUF_SIZE);
+	cpassnt = new(MINIBUF_SIZE);
+	cpasslm = new(MINIBUF_SIZE);
+	workstation = new(MINIBUF_SIZE);
+	pidfile = new(MINIBUF_SIZE);
+	uid = new(MINIBUF_SIZE);
+	auth = new(MINIBUF_SIZE);
 
 	openlog("cntlm", LOG_CONS, LOG_DAEMON);
 
@@ -1880,7 +1886,7 @@ int main(int argc, char **argv) {
 					myexit(1);
 				break;
 			case 'a':
-				strlcpy(auth, optarg, AUTHSIZE);
+				strlcpy(auth, optarg, MINIBUF_SIZE);
 				break;
 			case 'B':
 				ntlmbasic = 1;
@@ -1892,7 +1898,7 @@ int main(int argc, char **argv) {
 				}
 				break;
 			case 'd':
-				strlcpy(domain, optarg, AUTHSIZE);
+				strlcpy(domain, optarg, MINIBUF_SIZE);
 				break;
 			case 'F':
 				flags = swap32(strtoul(optarg, &tmp, 0));
@@ -1941,14 +1947,14 @@ int main(int argc, char **argv) {
 				magic_detect = strdup(optarg);
 				break;
 			case 'P':
-				strlcpy(pidfile, optarg, AUTHSIZE);
+				strlcpy(pidfile, optarg, MINIBUF_SIZE);
 				break;
 			case 'p':
 				/*
 				 * Overwrite the password parameter with '*'s to make it
 				 * invisible in "ps", /proc, etc.
 				 */
-				strlcpy(password, optarg, AUTHSIZE);
+				strlcpy(password, optarg, MINIBUF_SIZE);
 				for (i = strlen(optarg)-1; i >= 0; --i)
 					optarg[i] = '*';
 				break;
@@ -1982,15 +1988,15 @@ int main(int argc, char **argv) {
 				}
 				break;
 			case 'U':
-				strlcpy(uid, optarg, AUTHSIZE);
+				strlcpy(uid, optarg, MINIBUF_SIZE);
 				break;
 			case 'u':
 				i = strcspn(optarg, "@");
 				if (i != strlen(optarg)) {
-					strlcpy(user, optarg, MIN(AUTHSIZE, i+1));
-					strlcpy(domain, optarg+i+1, AUTHSIZE);
+					strlcpy(user, optarg, MIN(MINIBUF_SIZE, i+1));
+					strlcpy(domain, optarg+i+1, MINIBUF_SIZE);
 				} else {
-					strlcpy(user, optarg, AUTHSIZE);
+					strlcpy(user, optarg, MINIBUF_SIZE);
 				}
 				break;
 			case 'v':
@@ -1999,7 +2005,7 @@ int main(int argc, char **argv) {
 				openlog("cntlm", LOG_CONS | LOG_PERROR, LOG_DAEMON);
 				break;
 			case 'w':
-				strlcpy(workstation, optarg, AUTHSIZE);
+				strlcpy(workstation, optarg, MINIBUF_SIZE);
 				break;
 			default:
 				help = 1 + (i == '-');
@@ -2027,9 +2033,9 @@ int main(int argc, char **argv) {
 			tmp = "C:\\Program Files";
 		}
 
-		head = new(AUTHSIZE);
-		strlcpy(head, tmp, AUTHSIZE);
-		strlcat(head, "\\cntlm\\cntlm.ini", AUTHSIZE);
+		head = new(MINIBUF_SIZE);
+		strlcpy(head, tmp, MINIBUF_SIZE);
+		strlcat(head, "\\cntlm\\cntlm.ini", MINIBUF_SIZE);
 		cf = config_open(head);
 #else
 		cf = config_open(SYSCONFDIR "/cntlm.conf");
@@ -2050,8 +2056,8 @@ int main(int argc, char **argv) {
 		/*
 		 * Check if gateway mode is requested before actually binding any ports.
 		 */
-		tmp = new(AUTHSIZE);
-		CFG_DEFAULT(cf, "Gateway", tmp, AUTHSIZE);
+		tmp = new(MINIBUF_SIZE);
+		CFG_DEFAULT(cf, "Gateway", tmp, MINIBUF_SIZE);
 		if (!strcasecmp("yes", tmp))
 			gateway = 1;
 		free(tmp);
@@ -2059,8 +2065,8 @@ int main(int argc, char **argv) {
 		/*
 		 * Check for NTLM-to-basic settings
 		 */
-		tmp = new(AUTHSIZE);
-		CFG_DEFAULT(cf, "NTLMToBasic", tmp, AUTHSIZE);
+		tmp = new(MINIBUF_SIZE);
+		CFG_DEFAULT(cf, "NTLMToBasic", tmp, MINIBUF_SIZE);
 		if (!strcasecmp("yes", tmp))
 			ntlmbasic = 1;
 		free(tmp);
@@ -2126,23 +2132,23 @@ int main(int argc, char **argv) {
 		/*
 		 * Single options.
 		 */
-		CFG_DEFAULT(cf, "Auth", auth, AUTHSIZE);
-		CFG_DEFAULT(cf, "Domain", domain, AUTHSIZE);
-		CFG_DEFAULT(cf, "Password", password, AUTHSIZE);
-		CFG_DEFAULT(cf, "PassNTLMv2", cpassntlm2, AUTHSIZE);
-		CFG_DEFAULT(cf, "PassNT", cpassnt, AUTHSIZE);
-		CFG_DEFAULT(cf, "PassLM", cpasslm, AUTHSIZE);
-		CFG_DEFAULT(cf, "Username", user, AUTHSIZE);
-		CFG_DEFAULT(cf, "Workstation", workstation, AUTHSIZE);
+		CFG_DEFAULT(cf, "Auth", auth, MINIBUF_SIZE);
+		CFG_DEFAULT(cf, "Domain", domain, MINIBUF_SIZE);
+		CFG_DEFAULT(cf, "Password", password, MINIBUF_SIZE);
+		CFG_DEFAULT(cf, "PassNTLMv2", cpassntlm2, MINIBUF_SIZE);
+		CFG_DEFAULT(cf, "PassNT", cpassnt, MINIBUF_SIZE);
+		CFG_DEFAULT(cf, "PassLM", cpasslm, MINIBUF_SIZE);
+		CFG_DEFAULT(cf, "Username", user, MINIBUF_SIZE);
+		CFG_DEFAULT(cf, "Workstation", workstation, MINIBUF_SIZE);
 
-		tmp = new(AUTHSIZE);
-		CFG_DEFAULT(cf, "Flags", tmp, AUTHSIZE);
+		tmp = new(MINIBUF_SIZE);
+		CFG_DEFAULT(cf, "Flags", tmp, MINIBUF_SIZE);
 		if (!flags)
 			flags = swap32(strtoul(tmp, NULL, 0));
 		free(tmp);
 
-		tmp = new(AUTHSIZE);
-		CFG_DEFAULT(cf, "ISAScannerSize", tmp, AUTHSIZE);
+		tmp = new(MINIBUF_SIZE);
+		CFG_DEFAULT(cf, "ISAScannerSize", tmp, MINIBUF_SIZE);
 		if (!scanner_plugin_maxsize && strlen(tmp)) {
 			scanner_plugin = 1;
 			scanner_plugin_maxsize = atoi(tmp);
@@ -2175,8 +2181,8 @@ int main(int argc, char **argv) {
 		}
 
 		/*
-		CFG_DEFAULT(cf, "PidFile", pidfile, AUTHSIZE);
-		CFG_DEFAULT(cf, "Uid", uid, AUTHSIZE);
+		CFG_DEFAULT(cf, "PidFile", pidfile, MINIBUF_SIZE);
+		CFG_DEFAULT(cf, "Uid", uid, MINIBUF_SIZE);
 		*/
 	}
 
@@ -2213,7 +2219,7 @@ int main(int argc, char **argv) {
 		termnew = termold;
 		termnew.c_lflag &= ~(ISIG | ECHO);
 		tcsetattr(0, TCSADRAIN, &termnew);
-		fgets(password, AUTHSIZE, stdin);
+		fgets(password, MINIBUF_SIZE, stdin);
 		tcsetattr(0, TCSADRAIN, &termold);
 		i = strlen(password)-1;
 		trimr(password);
@@ -2254,7 +2260,7 @@ int main(int argc, char **argv) {
 	/*
 	 * Any of the vital options missing?
 	 */
-	if (help || (!ntlmbasic && (!strlen(user) || !strlen(domain))) || !parent_list || !proxyd_list) {
+	if (help || (!ntlmbasic && (!strlen(user) || !strlen(domain))) || !parent_list || (!proxyd_list && !magic_detect)) {
 		if (help) {
 			printf("CNTLM - Accelerating NTLM Authentication Proxy version " VERSION "\nCopyright (c) 2oo7 David Kubicek\n\n"
 				"This program comes with NO WARRANTY, to the extent permitted by law. You\n"
@@ -2381,10 +2387,10 @@ int main(int argc, char **argv) {
 	 */
 	if (!strlen(workstation)) {
 #if config_gethostname == 1
-		gethostname(workstation, AUTHSIZE);
+		gethostname(workstation, MINIBUF_SIZE);
 #endif
 		if (!strlen(workstation))
-			strlcpy(workstation, "cntlm", AUTHSIZE);
+			strlcpy(workstation, "cntlm", MINIBUF_SIZE);
 
 		syslog(LOG_INFO, "Workstation name used: %s\n", workstation);
 	}
