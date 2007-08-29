@@ -1049,7 +1049,7 @@ int scanner_hook(rr_data_t *request, rr_data_t *response, int *cd, int *sd, long
 					printf("scanner_hook: Getting file with URL data = %s\n", (*request)->url);
 
 				tmp = new(MINIBUF_SIZE);
-				snprintf(tmp, MINIBUF_SIZE, "%d", strlen(post));
+				snprintf(tmp, MINIBUF_SIZE, "%d", (int)strlen(post));
 
 				newres = new_rr_data();
 				newreq = dup_rr_data(*request);

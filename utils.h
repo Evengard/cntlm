@@ -116,6 +116,7 @@ extern char *scanmem(char *src, int bitwidth);
 extern void to_base64(unsigned char *out, const unsigned char *in, size_t len, size_t olen);
 extern int from_base64(char *out, const char *in);
 
+extern long int random(void);
 #if config_gethostname == 1
 extern int gethostname(char *name, size_t len);
 #endif
