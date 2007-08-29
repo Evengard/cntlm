@@ -30,7 +30,7 @@
 extern char *ntlm_hash_lm_password(char *password);
 extern char *ntlm_hash_nt_password(char *password);
 extern char *ntlm2_hash_password(char *username, char *domain, char *password);
-extern int ntlm_request(char **dst, char *hostname, char *domain, int ntlm2, int nt, int lm, uint32_t flags);
-extern int ntlm_response(char **dst, char *challenge, int challen, char *username, char *passnt2, char *passnt, char *passlm, char *hostname, char *domain, int ntlm2, int nt, int lm);
+extern size_t ntlm_request(char **dst, char *hostname, char *domain, int ntlm2, int nt, int lm, uint32_t flags);
+extern size_t ntlm_response(char **dst, char *challenge, size_t challen, char *username, char *passnt2, char *passnt, char *passlm, char *hostname, char *domain, int ntlm2, int nt, int lm);
 
 #endif /* _NTLM_H */

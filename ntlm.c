@@ -45,7 +45,7 @@ static void ntlm_set_key(unsigned char *src, gl_des_ctx *context) {
 	gl_des_setkey(context, key);
 }
 
-static int ntlm_calc_resp(char **dst, char *keys, char *challenge) {
+static size_t ntlm_calc_resp(char **dst, char *keys, char *challenge) {
 	gl_des_ctx context;
 
 	*dst = new(24 + 1);
@@ -62,11 +62,11 @@ static int ntlm_calc_resp(char **dst, char *keys, char *challenge) {
 	return 24;
 }
 
-static void ntlm2_calc_resp(char **nthash, int *ntlen, char **lmhash, int *lmlen, 
-		char *username, char *domain, char *passnt2, char *challenge, int tbofs, int tblen) {
+static void ntlm2_calc_resp(char **nthash, size_t *ntlen, char **lmhash, size_t *lmlen, 
+		char *username, char *domain, char *passnt2, char *challenge, size_t tbofs, size_t tblen) {
 	char *tmp, *blob, *nonce, *buf;
 	int64_t tw;
-	int blen;
+	size_t blen;
 
 	nonce = new(8 + 1);
 	VAL(nonce, uint64_t, 0) = ((uint64_t)random() << 32) | random();
@@ -141,7 +141,7 @@ char *ntlm_hash_lm_password(char *password) {
 
 char *ntlm_hash_nt_password(char *password) {
 	char *u16, *keys;
-	int len;
+	size_t len;
 
 	keys = new(21 + 1);
 	len = unicode(&u16, password);
@@ -156,7 +156,7 @@ char *ntlm_hash_nt_password(char *password) {
 
 char *ntlm2_hash_password(char *username, char *domain, char *password) {
 	char *tmp, *buf, *passnt, *passnt2;
-	int len;
+	size_t len;
 
 	passnt = ntlm_hash_nt_password(password);
 
@@ -176,9 +176,9 @@ char *ntlm2_hash_password(char *username, char *domain, char *password) {
 	return passnt2;
 }
 
-int ntlm_request(char **dst, char *hostname, char *domain, int ntlm2, int nt, int lm, uint32_t flags) {
+size_t ntlm_request(char **dst, char *hostname, char *domain, int ntlm2, int nt, int lm, uint32_t flags) {
 	char *buf, *tmp;
-	int dlen, hlen;
+	size_t dlen, hlen;
 
 	dlen = strlen(domain);
 	hlen = strlen(hostname);
@@ -256,13 +256,13 @@ void dump(char *src, size_t len) {
 }
 */
 
-int ntlm_response(char **dst, char *challenge, int challen, char *username, char *passnt2, char *passnt, char *passlm, char *hostname, char *domain, int ntlm2, int nt, int lm) {
+size_t ntlm_response(char **dst, char *challenge, size_t challen, char *username, char *passnt2, char *passnt, char *passlm, char *hostname, char *domain, int ntlm2, int nt, int lm) {
 	char *buf, *udomain, *uuser, *uhost, *tmp;
-	int dlen, ulen, hlen;
+	size_t dlen, ulen, hlen;
 	uint32_t flags;
 	uint16_t tpos, ttype, tlen, tbofs = 0, tblen = 0;
 	char *lmhash = NULL, *nthash = NULL;
-	int lmlen = 0, ntlen = 0;
+	size_t lmlen = 0, ntlen = 0;
 
 	if (debug) {
 		printf("NTLM Challenge:\n");

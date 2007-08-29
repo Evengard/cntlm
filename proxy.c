@@ -53,13 +53,14 @@
 #include "swap.h"
 #include "config.h"
 #include "acl.h"
+#include "pages.c"
 
 #define DEFAULT_PORT	"3128"
 
 #define BLOCK		2048
 #define MINIBUF_SIZE	100
 #define SAMPLE		4096
-#define STACK_SIZE	sizeof(int)*8*1024
+#define STACK_SIZE	sizeof(void *)*8*1024
 
 #define PLUG_NONE	0x0000
 #define PLUG_SENDHEAD	0x0001
@@ -211,7 +212,7 @@ int proxy_connect(void) {
 /*
  * Parse proxy parameter and add it to the global list.
  */
-int parent_proxy(char *proxy, int port) {
+int parent_add(char *proxy, int port) {
 	int len, i;
 	proxy_t *aux;
 	struct in_addr host;
@@ -264,8 +265,102 @@ int parent_proxy(char *proxy, int port) {
 }
 
 /*
+ * Register and bind new proxy service port.
+ */
+void listen_add(plist_t *list, char *spec, int gateway) {
+	struct in_addr source;
+	int i, p, len, port;
+	char *tmp;
+
+	len = strlen(spec);
+	p = strcspn(spec, ":");
+	if (p < len-1) {
+		tmp = substr(spec, 0, p);
+		if (!so_resolv(&source, tmp)) {
+			syslog(LOG_ERR, "Cannot resolve listen address %s\n", tmp);
+			myexit(1);
+		}
+		free(tmp);
+		port = atoi(tmp = spec+p+1);
+	} else {
+		source.s_addr = htonl(gateway ? INADDR_ANY : INADDR_LOOPBACK);
+		port = atoi(tmp = spec);
+	}
+
+	if (port == 0) {
+		syslog(LOG_ERR, "Invalid listen port %s.\n", tmp);
+		myexit(1);
+	}
+
+	i = so_listen(port, source);
+	if (i > 0) {
+		*list = plist_add(*list, i, NULL);
+		syslog(LOG_INFO, "Proxy listening on %s:%d\n", inet_ntoa(source), port);
+	}
+}
+
+/*
+ * Register a new tunnel definition, bind service port.
+ */
+void tunnel_add(plist_t *list, char *spec, int gateway) {
+	struct in_addr source;
+	int i, len, count, pos, port;
+	char *field[4];
+	char *tmp;
+
+	spec = strdup(spec);
+	len = strlen(spec);
+	field[0] = spec;
+	for (count = 1, i = 0; i < len; ++i)
+		if (spec[i] == ':') {
+			spec[i] = 0;
+			field[count++] = spec+i+1;
+		}
+
+	pos = 0;
+	if (count == 4) {
+		if (!so_resolv(&source, field[pos])) {
+                        syslog(LOG_ERR, "Cannot resolve tunel listen address: %s\n", field[pos]);
+                        myexit(1);
+                }
+		pos++;
+	} else
+		source.s_addr = htonl(gateway ? INADDR_ANY : INADDR_LOOPBACK);
+
+	if (count-pos == 3) {
+		port = atoi(field[pos]);
+		if (port == 0) {
+			syslog(LOG_ERR, "Invalid tunnel local port: %s\n", field[pos]);
+			myexit(1);
+		}
+
+		if (!strlen(field[pos+1]) || !strlen(field[pos+2])) {
+			syslog(LOG_ERR, "Invalid tunnel target: %s:%s\n", field[pos+1], field[pos+2]);
+			myexit(1);
+		}
+
+		tmp = new(strlen(field[pos+1]) + strlen(field[pos+2]) + 2 + 1);
+		strcpy(tmp, field[pos+1]);
+		strcat(tmp, ":");
+		strcat(tmp, field[pos+2]);
+
+		i = so_listen(port, source);
+		if (i > 0) {
+			*list = plist_add(*list, i, tmp);
+			syslog(LOG_INFO, "New tunnel from %s:%d to %s\n", inet_ntoa(source), port, tmp);
+		} else
+			free(tmp);
+	} else {
+		printf("Tunnel specification incorrect ([laddress:]lport:rserver:rport).\n");
+		myexit(1);
+	}
+
+	free(spec);
+}
+
+/*
  * Receive HTTP request/response from the given socket. Fill in pre-allocated
- * "data" structure.
+ * rr_data_t structure.
  * Returns: 1 if OK, 0 in case of socket EOF or other error
  */
 int headers_recv(int fd, rr_data_t data) {
@@ -444,7 +539,7 @@ int headers_send(int fd, rr_data_t data) {
 }
 
 /*
- * Read "size" of data from the socket and discard it.
+ * Connection cleanup - discard "size" of incomming data.
  */
 int data_drop(int src, int size) {
 	char *buf;
@@ -524,8 +619,7 @@ int data_send(int dst, int src, int size) {
 }
 
 /*
- * Forward "size" of data from "src" to "dst". If size == -1 then keep
- * forwarding until src reaches EOF.
+ * Forward chunked HTTP body from "src" descriptor to "dst".
  */
 int chunked_data_send(int dst, int src) {
 	char *buf;
@@ -602,7 +696,7 @@ int chunked_data_send(int dst, int src) {
 
 /*
  * Full-duplex forwarding between proxy and client descriptors.
- * Used for the HTTP CONNECT method.
+ * Used for bidirectional HTTP CONNECT connection.
  */
 int tunnel(int cd, int sd) {
 	struct timeval timeout;
@@ -660,7 +754,7 @@ int tunnel(int cd, int sd) {
  *
  * Read the reply, if it contains NTLM challenge, generate final
  * NTLM auth message and insert it into the original client header,
- * which is then normally proessed back in process().
+ * which is then processed by caller himself.
  *
  * If the immediate reply is an error message, it get stored into
  * error if not NULL, so it can be forwarded to the client. Caller
@@ -1059,32 +1153,6 @@ int scanner_hook(rr_data_t *request, rr_data_t *response, int *cd, int *sd, long
 
 	free(buf);
 	return ok;
-}
-
-char *gen_auth_page(char *http) {
-	char *tmp;
-
-	tmp = new(BUFSIZE);
-	snprintf(tmp, BUFSIZE, "HTTP/1.%s 407 Access denied.\r\n", http);
-	strcat(tmp, "Proxy-Authenticate: Basic realm=\"Cntlm Proxy\"\r\n");
-	strcat(tmp, "Content-Type: text/html\r\n\r\n");
-	strcat(tmp, "<html><body><h1>Authentication error</h1><p><a href='http://cntlm.sf.net/'>Cntlm</a> "
-		"proxy has NTLM-to-basic feature enabled. You have to enter correct credentials to continue "
-		"(try Ctrl-R or F5).</p></body></html>");
-
-	return tmp;
-}
-
-
-char *gen_denied_page(char *ip) {
-	char *tmp;
-
-	tmp = new(BUFSIZE);
-	snprintf(tmp, BUFSIZE, "HTTP/1.0 407 Access denied.\r\nContent-Type: text/html\r\n\r\n"
-		"<html><body><h1>Access denied</h1><p>Your request has been declined, %s "
-		"is not allowed to connect.</p></body></html>", ip);
-
-	return tmp;
 }
 
 /*
@@ -1635,96 +1703,6 @@ bailout:
 	return NULL;
 }
 
-void proxy_add(plist_t *list, char *spec, int gateway) {
-	struct in_addr source;
-	int i, p, len, port;
-	char *tmp;
-
-	len = strlen(spec);
-	p = strcspn(spec, ":");
-	if (p < len-1) {
-		tmp = substr(spec, 0, p);
-		if (!so_resolv(&source, tmp)) {
-			syslog(LOG_ERR, "Cannot resolve listen address %s\n", tmp);
-			myexit(1);
-		}
-		free(tmp);
-		port = atoi(tmp = spec+p+1);
-	} else {
-		source.s_addr = htonl(gateway ? INADDR_ANY : INADDR_LOOPBACK);
-		port = atoi(tmp = spec);
-	}
-
-	if (port == 0) {
-		syslog(LOG_ERR, "Invalid listen port %s.\n", tmp);
-		myexit(1);
-	}
-
-	i = so_listen(port, source);
-	if (i > 0) {
-		*list = plist_add(*list, i, NULL);
-		syslog(LOG_INFO, "Proxy listening on %s:%d\n", inet_ntoa(source), port);
-	}/* else
-		exit(1);
-	*/
-}
-
-void tunnel_add(plist_t *list, char *spec, int gateway) {
-	struct in_addr source;
-	int i, len, count, pos, port;
-	char *field[4];
-	char *tmp;
-
-	spec = strdup(spec);
-	len = strlen(spec);
-	field[0] = spec;
-	for (count = 1, i = 0; i < len; ++i)
-		if (spec[i] == ':') {
-			spec[i] = 0;
-			field[count++] = spec+i+1;
-		}
-
-	pos = 0;
-	if (count == 4) {
-		if (!so_resolv(&source, field[pos])) {
-                        syslog(LOG_ERR, "Cannot resolve tunel listen address: %s\n", field[pos]);
-                        myexit(1);
-                }
-		pos++;
-	} else
-		source.s_addr = htonl(gateway ? INADDR_ANY : INADDR_LOOPBACK);
-
-	if (count-pos == 3) {
-		port = atoi(field[pos]);
-		if (port == 0) {
-			syslog(LOG_ERR, "Invalid tunnel local port: %s\n", field[pos]);
-			myexit(1);
-		}
-
-		if (!strlen(field[pos+1]) || !strlen(field[pos+2])) {
-			syslog(LOG_ERR, "Invalid tunnel target: %s:%s\n", field[pos+1], field[pos+2]);
-			myexit(1);
-		}
-
-		tmp = new(strlen(field[pos+1]) + strlen(field[pos+2]) + 2 + 1);
-		strcpy(tmp, field[pos+1]);
-		strcat(tmp, ":");
-		strcat(tmp, field[pos+2]);
-
-		i = so_listen(port, source);
-		if (i > 0) {
-			*list = plist_add(*list, i, tmp);
-			syslog(LOG_INFO, "New tunnel from %s:%d to %s\n", inet_ntoa(source), port, tmp);
-		} else
-			free(tmp);
-	} else {
-		printf("Tunnel specification incorrect ([laddress:]lport:rserver:rport).\n");
-		myexit(1);
-	}
-
-	free(spec);
-}
-
 #define MAGIC_TESTS	9
 
 void magic_auth_detect(const char *url) {
@@ -1942,7 +1920,7 @@ int main(int argc, char **argv) {
 				/*
 				 * Create a listening socket for proxy function.
 				 */
-				proxy_add(&proxyd_list, optarg, gateway);
+				listen_add(&proxyd_list, optarg, gateway);
 				break;
 			case 'M':
 				magic_detect = strdup(optarg);
@@ -2019,7 +1997,7 @@ int main(int argc, char **argv) {
 	i = optind;
 	while (i < argc) {
 		tmp = strchr(argv[i], ':');
-		parent_proxy(argv[i], !tmp && i+1 < argc ? atoi(argv[i+1]) : 0);
+		parent_add(argv[i], !tmp && i+1 < argc ? atoi(argv[i+1]) : 0);
 		i += (!tmp ? 2 : 1);
 	}
 
@@ -2084,7 +2062,7 @@ int main(int argc, char **argv) {
 		 * Bind the rest of proxy service ports.
 		 */
 		while ((tmp = config_pop(cf, "Listen"))) {
-			proxy_add(&proxyd_list, tmp, gateway);
+			listen_add(&proxyd_list, tmp, gateway);
 			free(tmp);
 		}
 
@@ -2108,7 +2086,7 @@ int main(int argc, char **argv) {
 		 * Add the rest of parent proxies.
 		 */
 		while ((tmp = config_pop(cf, "Proxy"))) {
-			parent_proxy(tmp, 0);
+			parent_add(tmp, 0);
 			free(tmp);
 		}
 
