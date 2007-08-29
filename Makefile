@@ -11,7 +11,7 @@ MANDIR=/usr/local/man
 #
 CC=gcc
 OBJS=utils.o ntlm.o xcrypt.o config.o socket.o acl.o proxy.o
-CFLAGS=$(FLAGS) -g -std=c99 -Wall -pedantic -O0 -D_XOPEN_SOURCE=600 -D_REENTRANT -DVERSION=\"`cat VERSION`\"
+CFLAGS=$(FLAGS) -std=c99 -Wall -pedantic -O3 -D_XOPEN_SOURCE=600 -D_REENTRANT -DVERSION=\"`cat VERSION`\"
 LDFLAGS=-lpthread
 NAME=cntlm
 VER=`cat VERSION`
@@ -74,6 +74,7 @@ win:
 	groff -t -e -mandoc -Tps doc/cntlm.1 | ps2pdf - win32/cntlm_manual.pdf
 	cat doc/cntlm.conf | unix2dos > win32/cntlm.ini
 	cp /bin/cygwin1.dll /bin/cygrunsrv.exe win32/
+	strip cntlm.exe
 	cp cntlm.exe win32/
 	rm -f cntlm-install
 	ln -s win32 cntlm-install
