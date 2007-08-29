@@ -73,12 +73,20 @@ tgz:
 win:
 	groff -t -e -mandoc -Tps doc/cntlm.1 | ps2pdf - win32/cntlm_manual.pdf
 	cat doc/cntlm.conf | unix2dos > win32/cntlm.ini
+	cp /bin/cygwin1.dll /bin/cygrunsrv.exe win32/
+	cp cntlm.exe win32/
+	rm -f cntlm-install
+	ln -s win32 cntlm-install
+	zip -r cntlm-$(VER)-win32.zip cntlm-install -x *.svn/*
+	rm -f cntlm-install cntlm-$(VER)-win32.zip.sig
+	gpg -b cntlm-$(VER)-win32.zip 
 
 uninstall:
 	rm -f $(BINDIR)/$(NAME) $(MANDIR)/man1/$(NAME).1 2>/dev/null || true
 
 clean:
 	@rm -f *.o cntlm configure-stamp build-stamp config/config.h 2>/dev/null
+	@rm -f cntlm-install win32/cyg* win32/cntlm* 2>/dev/null
 	@find config/ -type f -perm -1 -exec rm -f {} \;
 
 cleanp: clean
