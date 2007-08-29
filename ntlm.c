@@ -198,7 +198,7 @@ int ntlm_request(char **dst, char *hostname, char *domain, int ntlm2, int nt, in
 		printf("NTLM Request:\n");
 		printf("\t   Domain: %s\n", domain);
 		printf("\t Hostname: %s\n", hostname);
-		printf("\t    Flags: 0x%X\n", flags);
+		printf("\t    Flags: 0x%X\n", (int)flags);
 	}
 
 	buf = new(NTLM_BUFSIZE);

@@ -81,14 +81,16 @@ win:
 	zip -r cntlm-$(VER)-win32.zip cntlm-install -x *.svn/*
 	rm -f cntlm-install cntlm-$(VER)-win32.zip.sig
 	gpg -b cntlm-$(VER)-win32.zip 
+	md5sum cntlm-$(VER)-win32.zip > cntlm-$(VER)-win32.zip.md5 
+	sha1sum cntlm-$(VER)-win32.zip > cntlm-$(VER)-win32.zip.sha1
 
 uninstall:
 	rm -f $(BINDIR)/$(NAME) $(MANDIR)/man1/$(NAME).1 2>/dev/null || true
 
 clean:
-	@rm -f *.o cntlm configure-stamp build-stamp config/config.h 2>/dev/null
+	@rm -f *.o cntlm cntlm.exe configure-stamp build-stamp config/config.h 2>/dev/null
 	@rm -f cntlm-install win32/cyg* win32/cntlm* 2>/dev/null
-	@find config/ -type f -perm -1 -exec rm -f {} \;
+	@find config/ -type f -perm -1 ! -name \*.c -exec rm -f {} \;
 
 cleanp: clean
 	@rm -f *.deb *.tgz *.tar.gz *.rpm *.o tags cntlm pid massif* callgrind* 2>/dev/null
