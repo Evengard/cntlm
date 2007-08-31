@@ -80,9 +80,6 @@ win:
 	ln -s win32 cntlm-install
 	zip -r cntlm-$(VER)-win32.zip cntlm-install -x *.svn/*
 	rm -f cntlm-install cntlm-$(VER)-win32.zip.sig
-	gpg -b cntlm-$(VER)-win32.zip 
-	md5sum cntlm-$(VER)-win32.zip > cntlm-$(VER)-win32.zip.md5 
-	sha1sum cntlm-$(VER)-win32.zip > cntlm-$(VER)-win32.zip.sha1
 
 uninstall:
 	rm -f $(BINDIR)/$(NAME) $(MANDIR)/man1/$(NAME).1 2>/dev/null || true

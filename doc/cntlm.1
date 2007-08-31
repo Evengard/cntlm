@@ -5,7 +5,7 @@
 .SH SYNOPSIS
 .B cntlm
 [
-.B \-AaBcDdFfgHhiLlMPpSsTUuvw
+.B \-AaBcDdFfgHhILlMPprSsTUuvw
 ] [ \fIhost1\fP \fIport1\fP | \fIhost1\fP:\fIport1\fP ] ... \fIhostN\fP \fIportN\fP
 
 .SH DESCRIPTION
@@ -69,6 +69,8 @@ which creates a new instance of some feature. \fBCntlm\fP can be built with a ha
 (e.g. /etc/cntlm.conf), which is always loaded, if possible.  See \fB\-c\fP option on how to override some or
 all of its settings.
 
+Use \fB\-h\fP to see available options with short description.
+
 .TP 
 .B \-A IP/mask\ \ \ \ (Allow)
 Allow ACL rule. Together with \fB-D\fP (Deny) they are the two rules allowed in ACL policy. It is more usual
@@ -111,16 +113,12 @@ different options:
 .ft P
 .fi
 
-.ne 8
+.ne 4
 .TP
 .B \-B\ \ \ \ (NTLMToBasic)
-This option enables the "NTLM-to-basic" feature, which allows you to keep your credentials super-secret or to
-use one \fBcntlm\fP for multiple users. The basic idea is that you don't have to store the username and the
-password in the config file (normally, \fBcntlm\fP won't run without them if you don't enable NTLM-to-basic),
-but rather pass it using the widely supported "Basic" proxy authentication scheme (e.g. via the browser's
-window). This allows more people to use one \fBcntlm\fP, BUT there is a downside to this: it removes the
-convenient "authentication behind the scenes" feature, which normally gives you Internet access without being
-bothered by any password dialogs.
+This option enables "NTLM-to-basic", which allows you to use one \fBcntlm\fP for multiple users. Please note
+that all security of NTLM is lost this way. Basic auth uses just a simple encoding algorithm to "hide" your
+credentials and it is moderately easy to sniff them.
 
 .ne 6
 IMPORTANT: HTTP protocol obviously has means to negotiate authorization before letting you through, but TCP/IP
@@ -138,10 +136,9 @@ username in the password dialog: "domain\\username".
 
 .TP 
 .B \-c <filename>
-Configuration file. Command\-line arguments can be used in combination with this one, overriding config file
-values. If no configuration file is specified and \fBcntlm\fP is built with SYSCONFDIR (default), it tries to
-load \fIcntlm.conf\fP from that directory. Should you then want to disable its loading, you will have to use
-\fB\-c\fP \fI/dev/null\fP on the command\-line to override it.
+Configuration file. Command\-line options, if used, override its single options or are added at the top of the
+list for multi options (tunnels, parent proxies, etc) with the exception of ACLs, which are completely
+overriden. Use \fI/dev/null\fP to disable any config file.
 
 .TP
 .B \-D IP/mask\ \ \ \ (Deny)
@@ -158,17 +155,8 @@ NTLM authentication flags. This option is rater delicate and I do not recommend 
 values unless you had no success with parent proxy auth and tried magic autodetection (\fB\-M\fP) and all
 possible values for the \fBAuth\fP option (\fB\-a\fP). Remember that each NT/LM hash combination requires
 different flags. This option is sort of a complete "manual override" and you'll have to deal with it yourself.
-If the parent proxy refuses to authenticate you, try the following combinations (note that you have to use
-\fB0x\fP prefix to use hex numbers):
-.nf
-.ft C
 
-    1) Auth = nt,   Flags = 0x05820000
-    2) Auth = ntlm, Flags = 0x07820000
-    3) Auth = lm,   Flags = 0x06820000
-.ft P
-.fi
-
+.ne 5
 .TP
 .B \-f
 Run in console as a foreground job, do not fork into background. In this mode, all syslog messages will be
@@ -186,6 +174,7 @@ of the download (see \fB\-S\fP). You can use shell wildcard characters, namely "
 without \fB\-S\fP or \fBISAScannerSize\fP, the \fImax_size_in_kb\fP is internally set to infinity, so the
 plugin will be active ONLY for selected User-Agents, regardless of download size.
 
+.ne 6
 .TP
 .B \-g\ \ \ \ (Gateway)
 Gateway mode, \fBcntlm\fP listens on all network interfaces. Default is to bind just loopback. That way, only
@@ -201,21 +190,17 @@ you did, \fBcntlm\fP tries to bind the given port only on the specified interfac
 .B \-H
 Use this option to get hashes for password-less configuration. In this mode, \fBcntlm\fP prints the results
 and exits. You can just copy & paste right into the config file. You ought to use this option with explicit
-\fB\-u\fP and \fB\-d\fP, because some hashes include the username and domain name in the calculation.
-
-.br
-NOTE: Some hashes are stronger/better than others, so do NOT use the whole output, just the lines required by
-your \fBAuth\fP settings; see \fB\-a\fP for security recommendations about auth setup and hashes.
+\fB\-u\fP and \fB\-d\fP, because some hashes include the username and domain name in the calculation. Do see
+\fB\-a\fP for security recommendations.
 
 .TP
-.B \-h \fB"<name>: <value>"\fP\ \ \ \ (Header)
-Header substitution. Every client's request will be processed and any headers defined using \fB-h\fP or in the
-configuration file will be added to it. In case the header is already present, its value will be replaced.
+.B \-h
+Display help (available options with a short description) and exit.
 
 .TP
-.B \-i
-Interactive password prompt. Any password settings from the command line or config file is ignored with this
-option and a password prompt is issued.  Use this option only from shell.
+.B \-I
+Interactive password prompt. Any password settings from the command line or config file is ignored and a
+password prompt is issued. Use this option only from shell.
 
 .TP
 .B \-L [<saddr>:]<lport>:<rhost>:<rport>\ \ \ \ (Tunnel)
@@ -232,6 +217,7 @@ nobody would be able to browse https:// sites. In any case, first try if you can
 through the tunnel, before you rely on it. This feature does the same job as tools like \fBcorkscrew(1)\fP,
 but instead of communicating over a terminal, \fBcntlm\fP keeps it TCP/IP.
 
+.ne 5
 .TP
 .B \-l [<saddr>:]<lport>\ \ \ \ (Listen)
 Local port for the \fBcntlm\fP proxy service. Use the number you have chosen here and the hostname of the
@@ -261,7 +247,7 @@ Run magic NTLM dialect detection. In this mode, \fBcntlm\fP tries some known wor
 proxy. Probe requests are made for the specified \fItesturl\fP, with the strongest hashes going first.
 When finished, settings for the most secure setup are printed. Although the detection will tell you which and
 how to use \fBAuth\fP, \fBFlags\fP and password-hash options, you have to configure at least your credentials
-and proxy address first. You can use \fB\-i\fP to enter your password interactively.
+and proxy address first. You can use \fB\-I\fP to enter your password interactively.
 
 .TP
 .B \-P <pidfile>
@@ -319,6 +305,11 @@ The keepalive header is called \fCISA-Scanner\fP and shows ISA's progress, e.g.:
 .fi
 
 .TP
+.B \-r \fB"<name>: <value>"\fP\ \ \ \ (Header)
+Header substitution. Every client's request will be processed and any headers defined using \fB-r\fP or in the
+configuration file will be added to it. In case the header is already present, its value will be replaced.
+
+.TP
 .B \-s
 Serializes all requests by not using concurrent threads for proxy (tunneling still works in parallel). This
 has a horrible impact on performance and is available only for debugging purposes. When used with \fB\-v\fP,
@@ -345,9 +336,7 @@ Proxy account/user name. Domain can be be entered as well.
 
 .TP
 .B \-v
-Print debugging information. This option enables foreground mode of operation (\fB\-f\fP) for you to be able
-to see the output and interact with the program.  In case of any trouble, try to repeat the condition with
-this option and attach the whole output to the bug report.
+Print debugging information. Automatically enables (\fB\-f\fP).
 
 .TP
 .B \-w <workstation>\ \ \ \ (Workstation)
@@ -388,7 +377,7 @@ applies the same to all tunnels.
 
 .TP
 .B Header <headername: value>
-Header substitution. See \fB-h\fP for details and remember, no quoting.
+Header substitution. See \fB-r\fP for details and remember, no quoting.
 
 .TP
 .B ISAScannerAgent <pattern>

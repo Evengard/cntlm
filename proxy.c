@@ -88,9 +88,9 @@ static char *workstation;
 static char *passlm = NULL;
 static char *passnt = NULL;
 static char *passntlm2 = NULL;
-static int hashntlm2 = 0;
-static int hashnt = 1;
-static int hashlm = 1;
+static int hashntlm2 = 1;
+static int hashnt = 0;
+static int hashlm = 0;
 static uint32_t flags = 0;
 
 static int quit = 0;					/* sighandler() */
@@ -212,15 +212,16 @@ int proxy_connect(void) {
 /*
  * Parse proxy parameter and add it to the global list.
  */
-int parent_add(char *proxy, int port) {
+int parent_add(char *parent, int port) {
 	int len, i;
+	char *proxy;
 	proxy_t *aux;
 	struct in_addr host;
 
 	/*
 	 * Check format and parse it.
 	 */
-	proxy = strdup(proxy);
+	proxy = strdup(parent);
 	len = strlen(proxy);
 	i = strcspn(proxy, ": ");
 	if (i != len) {
@@ -240,8 +241,9 @@ int parent_add(char *proxy, int port) {
 	 * No port argument and not parsed from proxy?
 	 */
 	if (!port) {
+		syslog(LOG_ERR, "Invalid proxy specification %s.\n", parent);
 		free(proxy);
-		return 0;
+		myexit(1);
 	}
 
 	/*
@@ -250,7 +252,7 @@ int parent_add(char *proxy, int port) {
 	if (debug)
 		syslog(LOG_INFO, "Resolving proxy %s...\n", proxy);
 	if (!so_resolv(&host, proxy)) {
-		syslog(LOG_ERR, "Cannot resolve proxy %s, discarding.\n", proxy);
+		syslog(LOG_ERR, "Cannot resolve proxy %s, discarding.\n", parent);
 		free(proxy);
 		return 0;
 	}
@@ -287,7 +289,7 @@ void listen_add(plist_t *list, char *spec, int gateway) {
 		port = atoi(tmp = spec);
 	}
 
-	if (port == 0) {
+	if (!port) {
 		syslog(LOG_ERR, "Invalid listen port %s.\n", tmp);
 		myexit(1);
 	}
@@ -1724,8 +1726,10 @@ void magic_auth_detect(const char *url) {
 		{ 0, 1, 0, 0x8206, 3 }
 	};
 
+	debug = 0;
+
 	if (!passnt || !passlm || !passntlm2) {
-		printf("Cannot detect NTLM dialect - password or its hashes must be defined, try -i\n");
+		printf("Cannot detect NTLM dialect - password or its hashes must be defined, try -I\n");
 		exit(1);
 	}
 
@@ -1763,7 +1767,9 @@ void magic_auth_detect(const char *url) {
 			free_rr_data(res);
 			free_rr_data(req);
 			close(nc);
-			goto bailout;
+			if (host)
+				free(host);
+			return;
 		}
 
 		c = authenticate(nc, req, user, passntlm2, passnt, passlm, domain, 0);
@@ -1782,8 +1788,13 @@ void magic_auth_detect(const char *url) {
 				printf("Credentials rejected\n");
 			} else {
 				printf("OK (HTTP code: %d)\n", res->code);
-				if (found < 0)
+				if (found < 0) {
 					found = i;
+					free_rr_data(res);
+					free_rr_data(req);
+					close(nc);
+					break;
+				}
 			}
 		}
 
@@ -1793,23 +1804,37 @@ void magic_auth_detect(const char *url) {
 	}
 
 	if (found > -1) {
-		printf("-----------------------[ Profile %2d ]------\n", found);
-		printf("Auth       %s\n", authstr[prefs[found][4]]);
+		printf("----------------------------[ Profile %2d ]------\n", found);
+		printf("Auth            %s\n", authstr[prefs[found][4]]);
 		if (prefs[found][3])
-			printf("Flags      0x%x\n", prefs[found][3]);
-		if (prefs[found][0])
-			printf("PassNT     %s\n", printmem(passnt, 16, 8));
-		if (prefs[found][1])
-			printf("PassLM     %s\n", printmem(passlm, 16, 8));
-		if (prefs[found][2])
-			printf("PassNTLMv2 %s\n", printmem(passntlm2, 16, 8));
-		printf("-------------------------------------------\n");
+			printf("Flags           0x%x\n", prefs[found][3]);
+		if (prefs[found][0]) {
+			printf("PassNT          %s\n", tmp=printmem(passnt, 16, 8));
+			free(tmp);
+		}
+		if (prefs[found][1]) {
+			printf("PassLM          %s\n", tmp=printmem(passlm, 16, 8));
+			free(tmp);
+		}
+		if (prefs[found][2]) {
+			printf("PassNTLMv2      %s\n", tmp=printmem(passntlm2, 16, 8));
+			free(tmp);
+		}
+		printf("------------------------------------------------\n");
 	} else
 		printf("You have used wrong credentials, bad URL or your proxy is quite insane,\nin which case try submitting a Support Request.\n");
 
-bailout:
 	if (host)
 		free(host);
+}
+
+void carp(const char *msg, int console) {
+	if (console)
+		printf(msg);
+	else
+		syslog(LOG_ERR, msg);
+	
+	myexit(1);
 }
 
 int main(int argc, char **argv) {
@@ -1857,7 +1882,7 @@ int main(int argc, char **argv) {
 	syslog(LOG_INFO, "Starting cntlm version " VERSION " for LITTLE endian\n");
 #endif
 
-	while ((i = getopt(argc, argv, ":-:a:c:d:fgh:il:p:su:vw:A:BD:F:G:HL:M:P:S:T:U:")) != -1) {
+	while ((i = getopt(argc, argv, ":-:a:c:d:fghIl:p:r:su:vw:A:BD:F:G:HL:M:P:S:T:U:")) != -1) {
 		switch (i) {
 			case 'A':
 			case 'D':
@@ -1902,11 +1927,7 @@ int main(int argc, char **argv) {
 			case 'H':
 				interactivehash = 1;
 				break;
-			case 'h':
-				if (head_ok(optarg))
-					header_list = hlist_add(header_list, head_name(optarg), head_value(optarg), 0, 0);
-				break;
-			case 'i':
+			case 'I':
 				interactivepwd = 1;
 				break;
 			case 'L':
@@ -1936,6 +1957,10 @@ int main(int argc, char **argv) {
 				strlcpy(password, optarg, MINIBUF_SIZE);
 				for (i = strlen(optarg)-1; i >= 0; --i)
 					optarg[i] = '*';
+				break;
+			case 'r':
+				if (head_ok(optarg))
+					header_list = hlist_add(header_list, head_name(optarg), head_value(optarg), 0, 0);
 				break;
 			case 'S':
 				scanner_plugin = 1;
@@ -1986,9 +2011,71 @@ int main(int argc, char **argv) {
 			case 'w':
 				strlcpy(workstation, optarg, MINIBUF_SIZE);
 				break;
+			case 'h':
 			default:
-				help = 1 + (i == '-');
+				help = 1;
 		}
+	}
+
+	/*
+	 * Help requested?
+	 */
+	if (help) {
+		printf("CNTLM - Accelerating NTLM Authentication Proxy version " VERSION "\nCopyright (c) 2oo7 David Kubicek\n\n"
+			"This program comes with NO WARRANTY, to the extent permitted by law. You\n"
+			"may redistribute copies of it under the terms of the GNU GPL Version 2 or\n"
+			"newer. For more information about these matters, see the file LICENSE.\n"
+			"For copyright holders of included encryption routines see headers.\n\n");
+
+		fprintf(stderr, "Usage: %s [-AaBcDdFfgHhILlMPSsTUvw] -u <user>[@<domain>] -p <pass> <proxy_host>[:]<proxy_port> ...\n", argv[0]);
+		fprintf(stderr, "\t-A  <address>[/<net>]\n"
+				"\t    New ACL allow rule. Address can be an IP or a hostname, net must be a number (CIDR notation)\n");
+		fprintf(stderr, "\t-a  ntlm | nt | lm\n"
+				"\t    Authentication parameter - combined NTLM, just LM, or just NT. Default is to,\n"
+				"\t    send both, NTLM. It is the most versatile setting and likely to work for you.\n");
+		fprintf(stderr, "\t-B  Enable NTLM-to-basic authentication.\n");
+		fprintf(stderr, "\t-c  <config_file>\n"
+				"\t    Configuration file. Other arguments can be used as well, overriding\n"
+				"\t    config file settings.\n");
+		fprintf(stderr, "\t-D  <address>[/<net>]\n"
+				"\t    New ACL deny rule. Syntax same as -A.\n");
+		fprintf(stderr, "\t-d  <domain>\n"
+				"\t    Domain/workgroup can be set separately.\n");
+		fprintf(stderr, "\t-f  Run in foreground, do not fork into daemon mode.\n");
+		fprintf(stderr, "\t-F  <flags>\n"
+				"\t    NTLM authentication flags.\n");
+		fprintf(stderr, "\t-G  <pattern>\n"
+				"\t    User-Agent matching for the trans-isa-scan plugin.\n");
+		fprintf(stderr, "\t-g  Gateway mode - listen on all interfaces, not only loopback.\n");
+		fprintf(stderr, "\t-H  Prompt for the password interactively, print its hashes and exit (NTLMv2 needs -u and -d).\n");
+		fprintf(stderr, "\t-h  Print this help info along with version number.\n");
+		fprintf(stderr, "\t-I  Prompt for the password interactively.\n");
+		fprintf(stderr, "\t-L  [<saddr>:]<lport>:<rhost>:<rport>\n"
+				"\t    Forwarding/tunneling a la OpenSSH. Same syntax - listen on lport\n"
+				"\t    and forward all connections through the proxy to rhost:rport.\n"
+				"\t    Can be used for direct tunneling without corkscrew, etc.\n");
+		fprintf(stderr, "\t-l  [<saddr>:]<lport>\n"
+				"\t    Main listening port for the NTLM proxy.\n");
+		fprintf(stderr, "\t-M  <testurl>\n"
+				"\t    Magic autodetection of proxy's NTLM dialect.\n");
+		fprintf(stderr, "\t-P  <pidfile>\n"
+				"\t    Create a PID file upon successful start.\n");
+		fprintf(stderr, "\t-p  <password>\n"
+				"\t    Account password. Will not be visible in \"ps\", /proc, etc.\n");
+		fprintf(stderr, "\t-r  \"HeaderName: value\"\n"
+				"\t    Add a header substitution. All such headers will be added/replaced\n"
+				"\t    in the client's requests.\n");
+		fprintf(stderr, "\t-S  <size_in_kb>\n"
+				"\t    Enable transparent handler of ISA AV scanner plugin for files up to size_in_kb KiB.\n");
+		fprintf(stderr, "\t-s  Do not use threads, serialize all requests - for debugging only.\n");
+		fprintf(stderr, "\t-U  <uid>\n"
+				"\t    Run as uid. It is an important security measure not to run as root.\n");
+		fprintf(stderr, "\t-u  <user>[@<domain]\n"
+				"\t    Domain/workgroup can be set separately.\n");
+		fprintf(stderr, "\t-v  Print debugging information.\n");
+		fprintf(stderr, "\t-w  <workstation>\n"
+				"\t    Some proxies require correct NetBIOS hostname.\n\n");
+		exit(1);
 	}
 
 	/*
@@ -2167,6 +2254,31 @@ int main(int argc, char **argv) {
 
 	config_close(cf);
 
+	if (!ntlmbasic && !strlen(user))
+		carp("Parent proxy account username missing.\n", interactivehash || interactivepwd || magic_detect);
+
+	if (!ntlmbasic && !strlen(domain))
+		carp("Parent proxy account domain missing.\n", interactivehash || interactivepwd || magic_detect);
+
+	if (!interactivehash && !parent_list)
+		carp("Parent proxy address missing.\n", interactivepwd || magic_detect);
+
+	if (!interactivehash && !magic_detect && !proxyd_list)
+		carp("No proxy service ports were successfully opened.\n", interactivepwd);
+
+	/*
+	 * Set default value for the workstation. Hostname if possible.
+	 */
+	if (!strlen(workstation)) {
+#if config_gethostname == 1
+		gethostname(workstation, MINIBUF_SIZE);
+#endif
+		if (!strlen(workstation))
+			strlcpy(workstation, "cntlm", MINIBUF_SIZE);
+
+		syslog(LOG_INFO, "Workstation name used: %s\n", workstation);
+	}
+
 	/*
 	 * Parse selected NTLM hash combination.
 	 */
@@ -2189,10 +2301,10 @@ int main(int argc, char **argv) {
 		}
 	}
 
-	if ((hashntlm2 || magic_detect || interactivehash) && (!strlen(user) || !strlen(domain))) {
-		printf("To hash NTLMv2 password, I need username and domain (-u, -d) as well.\n");
-		exit(1);
-	}
+	syslog(LOG_INFO, "Using following NTLM hashes: NT(%d) LM(%d) NTLMv2(%d)\n", hashnt, hashlm, hashntlm2);
+
+	if (flags)
+		syslog(LOG_INFO, "Using manual NTLM flags: 0x%X\n", swap32(flags));
 
 	/*
 	 * Last chance to get password from the user
@@ -2257,19 +2369,6 @@ int main(int argc, char **argv) {
 	}
 
 	/*
-	 * Set default value for the workstation. Hostname if possible.
-	 */
-	if (!strlen(workstation)) {
-#if config_gethostname == 1
-		gethostname(workstation, MINIBUF_SIZE);
-#endif
-		if (!strlen(workstation))
-			strlcpy(workstation, "cntlm", MINIBUF_SIZE);
-
-		syslog(LOG_INFO, "Workstation name used: %s\n", workstation);
-	}
-
-	/*
 	 * Try known NTLM auth combinations and print which ones work.
 	 * User can pick the best (most secure) one as his config.
 	 */
@@ -2294,97 +2393,12 @@ int main(int argc, char **argv) {
 	}
 
 	/*
-	 * Any of the vital options missing?
-	 */
-	if (help || (!ntlmbasic && (!strlen(user) || !strlen(domain))) || !parent_list || (!proxyd_list && !magic_detect)) {
-		if (help) {
-			printf("CNTLM - Accelerating NTLM Authentication Proxy version " VERSION "\nCopyright (c) 2oo7 David Kubicek\n\n"
-				"This program comes with NO WARRANTY, to the extent permitted by law. You\n"
-				"may redistribute copies of it under the terms of the GNU GPL Version 2 or\n"
-				"newer. For more information about these matters, see the file LICENSE.\n"
-				"For copyright holders of included encryption routines see headers.\n\n");
-
-			fprintf(stderr, "Usage: %s [-AaBcDdFfgHhiLlMPsSTUvw] -u <user>[@<domain>] -p <pass> <proxy_host>[:]<proxy_port> ...\n", argv[0]);
-			fprintf(stderr, "\t-A  <address>[/<net>]\n"
-					"\t    New ACL allow rule. Address can be an IP or a hostname, net must be a number (CIDR notation)\n");
-			fprintf(stderr, "\t-a  ntlm | nt | lm\n"
-					"\t    Authentication parameter - combined NTLM, just LM, or just NT. Default is to,\n"
-					"\t    send both, NTLM. It is the most versatile setting and likely to work for you.\n");
-			fprintf(stderr, "\t-B  Enable NTLM-to-basic authentication.\n");
-			fprintf(stderr, "\t-c  <config_file>\n"
-					"\t    Configuration file. Other arguments can be used as well, overriding\n"
-					"\t    config file settings.\n");
-			fprintf(stderr, "\t-D  <address>[/<net>]\n"
-					"\t    New ACL deny rule. Syntax same as -A.\n");
-			fprintf(stderr, "\t-d  <domain>\n"
-					"\t    Domain/workgroup can be set separately.\n");
-			fprintf(stderr, "\t-f  Run in foreground, do not fork into daemon mode.\n");
-			fprintf(stderr, "\t-F  <flags>\n"
-					"\t    NTLM authentication flags.\n");
-			fprintf(stderr, "\t-G  <pattern>\n"
-					"\t    User-Agent matching for the trans-isa-scan plugin.\n");
-			fprintf(stderr, "\t-g  Gateway mode - listen on all interfaces, not only loopback.\n");
-			fprintf(stderr, "\t-H  Prompt for the password interactively, print its hashes and exit (NTLMv2 needs -u and -d).\n");
-			fprintf(stderr, "\t-h  \"HeaderName: value\"\n"
-					"\t    Add a header substitution. All such headers will be added/replaced\n"
-					"\t    in the client's requests.\n");
-			fprintf(stderr, "\t-i  Prompt for the password interactively.\n");
-			fprintf(stderr, "\t-L  [<saddr>:]<lport>:<rhost>:<rport>\n"
-					"\t    Forwarding/tunneling a la OpenSSH. Same syntax - listen on lport\n"
-					"\t    and forward all connections through the proxy to rhost:rport.\n"
-					"\t    Can be used for direct tunneling without corkscrew, etc.\n");
-			fprintf(stderr, "\t-l  [<saddr>:]<lport>\n"
-					"\t    Main listening port for the NTLM proxy.\n");
-			fprintf(stderr, "\t-M  <testurl>\n"
-					"\t    Magic autodetection of proxy's NTLM dialect.\n");
-			fprintf(stderr, "\t-P  <pidfile>\n"
-					"\t    Create a PID file upon successful start.\n");
-			fprintf(stderr, "\t-p  <password>\n"
-					"\t    Account password. Will not be visible in \"ps\", /proc, etc.\n");
-			fprintf(stderr, "\t-S  <size_in_kb>\n"
-					"\t    Enable transparent handler of ISA AV scanner plugin for files up to size_in_kb KiB.\n");
-			fprintf(stderr, "\t-s  Do not use threads, serialize all requests - for debugging only.\n");
-			fprintf(stderr, "\t-U  <uid>\n"
-					"\t    Run as uid. It is an important security measure not to run as root.\n");
-			fprintf(stderr, "\t-u  <user>[@<domain]\n"
-					"\t    Domain/workgroup can be set separately.\n");
-			fprintf(stderr, "\t-v  Print debugging information.\n");
-			fprintf(stderr, "\t-w  <workstation>\n"
-					"\t    Some proxies require correct NetBIOS hostname.\n");
-			fprintf(stderr, "\t--help\n"
-					"\t    Print this help info along with version number.\n\n");
-		}
-
-		if (!ntlmbasic && !strlen(user)) {
-			syslog(LOG_ERR, "Parent proxy account username missing.\n");
-		}
-
-		if (!ntlmbasic && !strlen(domain)) {
-			syslog(LOG_ERR, "Parent proxy account domain missing.\n");
-		}
-
-		if (!parent_list) {
-			syslog(LOG_ERR, "Parent proxy address missing.\n");
-		}
-		if (!proxyd_list) {
-			syslog(LOG_ERR, "No proxy service ports were successfully opened.\n");
-		}
-
-		myexit(help < 2);
-	}
-
-	/*
 	 * If we're going to need a password, check we really have it.
 	 */
 	if (!ntlmbasic && ((hashnt && !passnt) || (hashlm && !passlm) || (hashntlm2 && !passntlm2))) {
 		syslog(LOG_ERR, "Parent proxy account password (or required hashes) missing.\n");
 		myexit(1);
 	}
-
-	syslog(LOG_INFO, "Using following NTLM hashes: NT(%d) LM(%d) NTLMv2(%d)\n", hashnt, hashlm, hashntlm2);
-
-	if (flags)
-		syslog(LOG_INFO, "Using manual NTLM flags: 0x%X\n", flags);
 
 	/*
 	 * Ok, we are ready to rock. If daemon mode was requested,
