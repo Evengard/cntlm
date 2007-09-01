@@ -87,7 +87,7 @@ uninstall:
 clean:
 	@rm -f *.o cntlm cntlm.exe configure-stamp build-stamp config/config.h 2>/dev/null
 	@rm -f cntlm-install win32/cyg* win32/cntlm* 2>/dev/null
-	@find config/ -type f -perm -1 ! -name \*.c -exec rm -f {} \;
+	@rm -f config/endian config/gethostname config/strdup config/*.exe
 
 cleanp: clean
 	@rm -f *.deb *.tgz *.tar.gz *.rpm *.o tags cntlm pid massif* callgrind* 2>/dev/null
