@@ -829,6 +829,9 @@ int authenticate(int sd, rr_data_t data, char *user, char *passntlm2, char *pass
 					free(tmp);
 				} else {
 					syslog(LOG_ERR, "No target info block. Cannot do NTLMv2!\n");
+					rc = 0;
+					free(challenge);
+					goto bailout;
 				}
 			} else {
 				syslog(LOG_ERR, "Proxy returning invalid challenge!\n");
@@ -1705,25 +1708,27 @@ bailout:
 	return NULL;
 }
 
-#define MAGIC_TESTS	9
+#define MAGIC_TESTS	11
 
 void magic_auth_detect(const char *url) {
 	int i, nc, c, found = -1;
 	rr_data_t req, res;
 	char *tmp, *pos, *host = NULL;
 
-	char *authstr[4] = { "NTLMv2", "NT", "NTLM", "LM" };
+	char *authstr[5] = { "NTLMv2", "NTLM2SR", "NT", "NTLM", "LM" };
 	int prefs[MAGIC_TESTS][5] = {
 		/* NT, LM, NTLMv2, Flags, Auth param equiv. */
 		{ 0, 0, 1, 0, 0 },
 		{ 0, 0, 1, 0xa208b207, 0 },
 		{ 0, 0, 1, 0xa2088207, 0 },
-		{ 1, 0, 0, 0, 1 },
-		{ 1, 0, 0, 0x8205, 1 },
-		{ 1, 1, 0, 0, 2 },
-		{ 1, 1, 0, 0x8207, 2 },
-		{ 0, 1, 0, 0, 3 },
-		{ 0, 1, 0, 0x8206, 3 }
+		{ 2, 0, 0, 0, 1 },
+		{ 2, 0, 0, 0x88207, 1 },
+		{ 1, 0, 0, 0, 2 },
+		{ 1, 0, 0, 0x8205, 2 },
+		{ 1, 1, 0, 0, 3 },
+		{ 1, 1, 0, 0x8207, 3 },
+		{ 0, 1, 0, 0, 4 },
+		{ 0, 1, 0, 0x8206, 4 }
 	};
 
 	debug = 0;
@@ -2284,24 +2289,33 @@ int main(int argc, char **argv) {
 	 */
 	if (strlen(auth)) {
 		if (!strcasecmp("ntlm", auth)) {
-			hashnt = hashlm = 1;
+			hashnt = 1;
+			hashlm = 1;
+			hashntlm2 = 0;
 		} else if (!strcasecmp("nt", auth)) {
 			hashnt = 1;
 			hashlm = 0;
+			hashntlm2 = 0;
 		} else if (!strcasecmp("lm", auth)) {
 			hashnt = 0;
 			hashlm = 1;
+			hashntlm2 = 0;
 		} else if (!strcasecmp("ntlmv2", auth)) {
 			hashnt = 0;
 			hashlm = 0;
 			hashntlm2 = 1;
+		} else if (!strcasecmp("ntlm2sr", auth)) {
+			hashnt = 2;
+			hashlm = 0;
+			hashntlm2 = 0;
 		} else {
 			syslog(LOG_ERR, "Unknown NTLM auth combination.\n");
 			myexit(1);
 		}
 	}
 
-	syslog(LOG_INFO, "Using following NTLM hashes: NT(%d) LM(%d) NTLMv2(%d)\n", hashnt, hashlm, hashntlm2);
+	if (!magic_detect)
+		syslog(LOG_INFO, "Using following NTLM hashes: NTLMv2(%d) NT(%d) LM(%d)\n", hashntlm2, hashnt, hashlm);
 
 	if (flags)
 		syslog(LOG_INFO, "Using manual NTLM flags: 0x%X\n", swap32(flags));
@@ -2336,7 +2350,7 @@ int main(int argc, char **argv) {
 				syslog(LOG_ERR, "Invalid PassNTLMv2 hash, terminating\n");
 				exit(1);
 			}
-			passntlm2 = realloc(passntlm2, 21);
+			passntlm2 = realloc(passntlm2, 21 + 1);
 			memset(passntlm2+16, 0, 5);
 		}
 		if (strlen(cpassnt)) {
@@ -2345,7 +2359,7 @@ int main(int argc, char **argv) {
 				syslog(LOG_ERR, "Invalid PassNT hash, terminating\n");
 				exit(1);
 			}
-			passnt = realloc(passnt, 21);
+			passnt = realloc(passnt, 21 + 1);
 			memset(passnt+16, 0, 5);
 		}
 		if (strlen(cpasslm)) {
@@ -2354,7 +2368,7 @@ int main(int argc, char **argv) {
 				syslog(LOG_ERR, "Invalid PassLM hash, terminating\n");
 				exit(1);
 			}
-			passlm = realloc(passlm, 21);
+			passlm = realloc(passlm, 21 + 1);
 			memset(passlm+16, 0, 5);
 		}
 	} else {

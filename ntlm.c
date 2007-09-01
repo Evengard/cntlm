@@ -117,6 +117,32 @@ static void ntlm2_calc_resp(char **nthash, int *ntlen, char **lmhash, int *lmlen
 	return;
 }
 
+static void ntlm2sr_calc_rest(char **nthash, int *ntlen, char **lmhash, int *lmlen, char *passnt, char *challenge) {
+	char *sess, *nonce, *buf;
+
+	nonce = new(8 + 1);
+	VAL(nonce, uint64_t, 0) = ((uint64_t)random() << 32) | random();
+
+	*lmlen = 24;
+	*lmhash = new(*lmlen + 1);
+	memcpy(*lmhash, nonce, 8);
+	memset(*lmhash+8, 0, 16);
+
+	buf = new(16 + 1);
+	sess = new(16 + 1);
+	memcpy(buf, MEM(challenge, char, 24), 8);
+	memcpy(buf+8, nonce, 8);
+	md5_buffer(buf, 16, sess);
+	free(buf);
+
+	*ntlen = 24;
+	ntlm_calc_resp(nthash, passnt, sess);
+
+	free(sess);
+	free(nonce);
+	return;
+}
+
 char *ntlm_hash_lm_password(char *password) {
 	char magic[8] = {0x4B, 0x47, 0x53, 0x21, 0x40, 0x23, 0x24, 0x25};
 	gl_des_ctx context;
@@ -184,9 +210,11 @@ int ntlm_request(char **dst, char *hostname, char *domain, int ntlm2, int nt, in
 	hlen = strlen(hostname);
 
 	if (!flags) {
-		if (ntlm2) {
+		if (ntlm2)
 			flags = 0xa208b205;
-		} else if (nt && lm)
+		else if (nt == 2)
+			flags = 0xa208b207;
+		else if (nt && lm)
 			flags = 0xb207;
 		else if (nt)
 			flags = 0xb205;
@@ -212,18 +240,13 @@ int ntlm_request(char **dst, char *hostname, char *domain, int ntlm2, int nt, in
 	VAL(buf, uint16_t, 26) = U16LE(hlen);
 	VAL(buf, uint32_t, 28) = U32LE(32);
 
-	if (!nt) {
-		tmp = uppercase(strdup(hostname));
-		memcpy(buf+32, tmp, hlen);
-		free(tmp);
+	tmp = uppercase(strdup(hostname));
+	memcpy(buf+32, tmp, hlen);
+	free(tmp);
 
-		tmp = uppercase(strdup(domain));
-		memcpy(buf+32+hlen, tmp, dlen);
-		free(tmp);
-	} else {
-		memcpy(buf+32, hostname, hlen);
-		memcpy(buf+32+hlen, domain, dlen);
-	}
+	tmp = uppercase(strdup(domain));
+	memcpy(buf+32+hlen, tmp, dlen);
+	free(tmp);
 
 	*dst = buf;
 	return 32+dlen+hlen;
@@ -322,16 +345,20 @@ int ntlm_response(char **dst, char *challenge, int challen, char *username, char
 		return 0;
 	}
 
-	if (lm) {
-		lmlen = ntlm_calc_resp(&lmhash, passlm, MEM(challenge, char, 24));
+	if (ntlm2) {
+		ntlm2_calc_resp(&nthash, &ntlen, &lmhash, &lmlen, username, domain, passnt2, challenge, tbofs, tblen);
 	}
 
-	if (nt) {
+	if (nt == 2) {
+		ntlm2sr_calc_rest(&nthash, &ntlen, &lmhash, &lmlen, passnt, challenge);
+	}
+
+	if (nt == 1) {
 		ntlen = ntlm_calc_resp(&nthash, passnt, MEM(challenge, char, 24));
 	}
 
-	if (ntlm2) {
-		ntlm2_calc_resp(&nthash, &ntlen, &lmhash, &lmlen, username, domain, passnt2, challenge, tbofs, tblen);
+	if (lm) {
+		lmlen = ntlm_calc_resp(&lmhash, passlm, MEM(challenge, char, 24));
 	}
 
 	if (nt || ntlm2) {
@@ -357,12 +384,12 @@ int ntlm_response(char **dst, char *challenge, int challen, char *username, char
 		printf("\t Hostname: '%s'\n", hostname);
 		printf("\t   Domain: '%s'\n", domain);
 		printf("\t Username: '%s'\n", username);
-		if (nt || ntlm2) {
+		if (ntlen) {
 			tmp = printmem(nthash, ntlen, 7);
 			printf("\t Response: '%s' (%d)\n", tmp, ntlen);
 			free(tmp);
 		}
-		if (lm || ntlm2) {
+		if (lmlen) {
 			tmp = printmem(lmhash, lmlen, 7);
 			printf("\t Response: '%s' (%d)\n", tmp, lmlen);
 			free(tmp);
