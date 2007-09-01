@@ -20,14 +20,14 @@ connections to the given host:port behind the secondary proxy.  Manual page expl
 properly using configuration file or command\-line arguments.
 
 .PP
-\fBCntlm\fP works similarly to NTLMAPS, plus a bucket of new features and without its shortcomings and
-inefficiencies. It adds support for real keep\-alive (on both sides) and it caches all authenticated
-connections for reuse in subsequent requests. It can be restarted without TIME_WAIT delay, uses just a
-fraction of memory compared to NTLMAPS and by orders of magnitude less CPU. Each thread is completely
-independent and one cannot block another.  \fBCntlm\fP has many security/privacy features like \fBNTLMv2\fP
-support and password protection - it is possible to substitute password hashes (which can be obtained using
-\fB\-H\fP) for the actual password or to enter the password interactively. If plaintext password is used, it
-is automatically hashed during the startup and all its traces are removed from the process memory.
+\fBCntlm\fP works similarly to NTLMAPS, plus full NTLM support, a bucket of new features and none of its
+shortcomings and inefficiencies. It adds support for real keep\-alive (on both sides) and it caches all
+authenticated connections for reuse in subsequent requests. It can be restarted without TIME_WAIT delay, uses
+just a fraction of memory compared to NTLMAPS and by orders of magnitude less CPU. Each thread is completely
+independent and one cannot block another. \fBCntlm\fP has many security/privacy features like \fBNTLMv2\fP
+support and password protection - it is possible to substitute password hashes (which can be obtained
+using\ \fB\-H\fP) for the actual password or to enter the password interactively. If plaintext password is
+used, it is automatically hashed during the startup and all its traces are removed from the process memory.
 
 .PP
 In addition to lower usage of system resources, \fBcntlm\fP achieves higher throughput on a given link. By
@@ -64,9 +64,9 @@ emulated in Valgrind's virtual CPU during a typical production lifetime of the p
 
 .SH OPTIONS
 Most options can be pre\-set in a configuration file. Specifying an option more than once is not an error, but
-\fBcntlm\fP ignores all occurences except the last one. This does not apply to options like \fB\-L\fP, each of
+\fBcntlm\fP ignores all occurences except the last one. This does not apply to options like\ \fB\-L\fP, each of
 which creates a new instance of some feature. \fBCntlm\fP can be built with a hardcoded configuration file
-(e.g. /etc/cntlm.conf), which is always loaded, if possible.  See \fB\-c\fP option on how to override some or
+(e.g. /etc/cntlm.conf), which is always loaded, if possible.  See\ \fB\-c\fP option on how to override some or
 all of its settings.
 
 Use \fB\-h\fP to see available options with short description.
@@ -85,33 +85,19 @@ the list of unused options). There you can also see warnings about possibly inco
 the \fIIP\fP part has more bits than you declare by \fImask\fP (e.g. 10.20.30.40/24 should be 10.20.30.0/24).
 
 .TP 
-.B \-a NTLMv2 | NT | NTLM | LM\ \ \ \ (Auth)
-Authentication type. NTLM(v2) comprises of one or two hashed responses, NT and LM or NTv2 and LMv2, which are
-computed from the password hash. Each response uses a different hashing algorithm; as new response types were
-invented, stronger algorithms were used. When you first install \fBcntlm\fP, find the strongest one which
-works for you (preferably using \fB\-M\fP). Each in turn, it's NTLMv2, NT, NTLM and the weakest LM. Very old
+.B \-a NTLMv2 | NTLM2SR | NT | NTLM | LM\ \ \ \ (Auth)
+Authentication type. NTLM(v2) comprises of one or two hashed responses, NT and LM or NTLM2SR or NTv2 and LMv2,
+which are computed from the password hash. Each response uses a different hashing algorithm; as new response
+types were invented, stronger algorithms were used. When you first install \fBcntlm\fP, find the strongest one
+which works for you (preferably using\ \fB\-M\fP). Above they are listed from strongest to weakest. Very old
 servers or dedicated HW proxies might be unable to process anything but LM. If none of those work, see
-compatibility flags option \fB\-F\fP or submit a Support request.
+compatibility flags option\ \fB\-F\fP or submit a Support Request.
 
 .br
 \fBIMPORTANT:\fP Although NTLMv2 is not widely adopted (i.e. enforced), it is supported on all Windows since
 NT\ 4.0\ SP4. That's for \fBa very long time\fP! I strongly suggest you use it to protect your credentials
 on-line. You should also replace plaintext \fBPassword\fP options with hashed \fBPass[NTLMv2|NT|LM]\fP
 equivalents. NTLMv2 is the most and possibly the only secure authentication of the NTLM family.
-
-When you want to use hashes in the config (instead of plaintext password), each \fBAuth\fP settings requires
-different options:
-.nf
-.ft C
-
-    Settings    |  Requires
-    ------------+-----------------
-    Auth NTLMv2 |  PassNTLMv2
-    Auth NT     |  PassNT
-    Auth NTLM   |  PassNT + PassLM
-    Auth LM     |  PassLM
-.ft P
-.fi
 
 .ne 4
 .TP
@@ -124,9 +110,7 @@ credentials and it is moderately easy to sniff them.
 IMPORTANT: HTTP protocol obviously has means to negotiate authorization before letting you through, but TCP/IP
 doesn't (i.e. open port is open port). If you use NTLM-to-basic and DON'T specify some username/password in
 the configuration file, you are bound to loose tunneling features, because \fBcntlm\fP alone won't know your
-credentials. If you enable NTLM-to-basic and setup credentials in the configuration for you to be able to use
-local tunneling, the proxying feature will work as if it didn't know the password. All users will be prompted
-for their personal credentials the first time they try to use the proxy.
+credentials.
 
 Because NTLM identification has at least three parts (username, password, domain) and the basic authentication
 provides fields for only two (username, password), you have to smuggle the domain part somewhere. You can set
@@ -321,6 +305,7 @@ Used in combination with \fB\-v\fP to save the debug output into a trace file.  
 first parameter on the command line. To prevent data loss, it never overwrites an existing file. You have to
 pick a unique name or manually delete the old file.
 
+.ne 7
 .TP
 .B \-U <uid>
 When executed as root, do the stuff that needs such permissions (read config, bind ports, etc.) and then
@@ -355,7 +340,7 @@ For detailed explanation of keywords, see appropriate command-line options. Foll
 ACL allow rule, see \fB-A\fP.
 
 .TP
-.B Auth NTLMv2 | NT | NTLM | LM
+.B Auth NTLMv2 | NTLM2SR | NT | NTLM | LM
 Select any possible combination of NTLM hashes using a single parameter.
 
 .TP
@@ -379,16 +364,19 @@ applies the same to all tunnels.
 .B Header <headername: value>
 Header substitution. See \fB-r\fP for details and remember, no quoting.
 
+.ne 4
 .TP
 .B ISAScannerAgent <pattern>
 Wildcard-enabled (*, ?, []) case insensitive User-Agent string matching for the trans-isa-plugin. If you don't
 define \fBISAScannerSize\fP, it is internally set to infinity, i.e. disabling the plugin for all downloads
 except those agent-matched ones. See \fB\-G\fP.
 
+.ne 2
 .TP
 .B ISAScannerSize <max_size_in_kb>
 Enable trans-isa-scan plugin. See \fB\-S\fP for more.
 
+.ne 2
 .TP
 .B Listen [<saddr>:]<port_number>
 Local port number for the \fBcntlm\fP's proxy service. See \fB-l\fP for more.
@@ -397,9 +385,23 @@ Local port number for the \fBcntlm\fP's proxy service. See \fB-l\fP for more.
 .B Password <password>
 Proxy account password.
 
+.ne 11
 .TP
 .B PassNTLMv2, PassNT, PassLM <password>
-Hashes of the proxy account password. See \fB\-H\fP and \fB\-a\fP.
+Hashes of the proxy account password (see \fB\-H\fP and \fB\-a\fP). When you want to use hashes in the config
+(instead of plaintext password), each \fBAuth\fP settings requires different options:
+.nf
+.ft C
+
+    Settings     |  Requires
+    -------------+-----------------
+    Auth NTLMv2  |  PassNTLMv2
+    Auth NTLM2SR |  PassNT
+    Auth NT      |  PassNT
+    Auth NTLM    |  PassNT + PassLM
+    Auth LM      |  PassLM
+.ft P
+.fi
 
 .TP
 .B Proxy <host:port>
@@ -425,6 +427,7 @@ is interpreted literally).
 .B Workstation <hostname>
 The hostname of your workstation. 
 
+.ne 7
 .SH FILES
 The optional location of the configuration file is defined in the Makefile, with the default for 1) deb/rpm
 package, 2) traditional "make; make install" and 3) Windows installer being:

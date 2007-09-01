@@ -1795,6 +1795,9 @@ void magic_auth_detect(const char *url) {
 				printf("OK (HTTP code: %d)\n", res->code);
 				if (found < 0) {
 					found = i;
+					/*
+					 * Following only for prod. version
+					 */
 					free_rr_data(res);
 					free_rr_data(req);
 					close(nc);
