@@ -2393,14 +2393,14 @@ int main(int argc, char **argv) {
 
 	if (interactivehash) {
 		tmp = printmem(passlm, 16, 8);
-		printf("PassLM     %s\n", tmp);
+		printf("PassLM          %s\n", tmp);
 		free(tmp);
 		tmp = printmem(passnt, 16, 8);
-		printf("PassNT     %s\n", tmp);
+		printf("PassNT          %s\n", tmp);
 		free(tmp);
 		if (passntlm2 && strlen(passntlm2)) {
 			tmp = printmem(passntlm2, 16, 8);
-			printf("PassNTLMv2 %s		# Only for user '%s', domain '%s'\n", tmp, user, domain);
+			printf("PassNTLMv2      %s    # Only for user '%s', domain '%s'\n", tmp, user, domain);
 			free(tmp);
 		}
 		exit(0);
