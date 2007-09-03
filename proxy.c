@@ -397,15 +397,20 @@ int headers_recv(int fd, rr_data_t data) {
 		data->http = substr(tok, 7, 1);
 
 		tok = strtok_r(NULL, " ", &s3);
-		if (tok)
+		if (tok) {
 			ccode = strdup(tok);
 
-		while (s3 < buf+len && *s3 == ' ')
-			s3++;
-		if (strlen(s3))
-			data->msg = strdup(s3);
+			tok += strlen(ccode);
+			while (tok < buf+len && *tok++ == ' ');
 
-		if (!ccode || strlen(ccode) != 3 || (data->code = atoi(ccode)) == 0 || !data->http || !data->msg) {
+			if (strlen(tok))
+				data->msg = strdup(tok);
+		}
+
+		if (!data->msg)
+			data->msg = strdup("");
+
+		if (!ccode || strlen(ccode) != 3 || (data->code = atoi(ccode)) == 0 || !data->http) {
 			i = -1;
 			goto bailout;
 		}
