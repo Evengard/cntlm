@@ -49,5 +49,5 @@ _EOF_
 	restorerc
 elif [ "$1" = "clean" ]; then
 	for i in $RPMS; do rm -rf $DIR/$i; done		# Clean the whole mess, keep packages
-	rmdir $DIR 2>/dev/null
+	rmdir $DIR 2>/dev/null || true
 fi
