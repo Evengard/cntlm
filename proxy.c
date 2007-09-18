@@ -100,7 +100,9 @@ static int serialize = 0;
 static int scanner_plugin = 0;
 static long scanner_plugin_maxsize = 0;
 
-static int precache = 0;
+static int precache = 21;
+static int active_conns = 0;
+static pthread_mutex_t active_mtx = PTHREAD_MUTEX_INITIALIZER;
 
 /*
  * List of finished threads. Each thread process() adds itself to it when
@@ -152,6 +154,28 @@ void myexit(int rc) {
 		fprintf(stderr, "Exitting with error. Check daemon logs or run with -v.\n");
 	
 	exit(rc);
+}
+
+/*
+ * Keep count of active connections (trasferring data)
+ */
+inline void update_active(int i) {
+	pthread_mutex_lock(&active_mtx);
+	active_conns += i;
+	pthread_mutex_unlock(&active_mtx);
+}
+
+/*
+ * Retur/ count of active connections (trasferring data)
+ */
+inline int check_active(void) {
+	int r;
+
+	pthread_mutex_lock(&active_mtx);
+	r = active_conns;
+	pthread_mutex_unlock(&active_mtx);
+
+	return r;
 }
 
 /*
@@ -377,6 +401,7 @@ int headers_recv(int fd, rr_data_t data) {
 	buf = new(bsize);
 
 	i = so_recvln(fd, &buf, &bsize);
+
 	if (i <= 0)
 		goto bailout;
 
@@ -960,12 +985,12 @@ int scanner_hook(rr_data_t *request, rr_data_t *response, int *cd, int *sd, long
 
 	len = 0;
 	do {
-		size = read(*sd, buf + len, SAMPLE - len);
+		size = read(*sd, buf + len, SAMPLE - len - 1);
 		if (debug)
 			printf("scanner_hook: read %d of %d\n", size, SAMPLE - len);
 		if (size > 0)
 			len += size;
-	} while (size > 0 && len < SAMPLE);
+	} while (size > 0 && len < SAMPLE - 1);
 
 	if (strstr(buf, "<title>Downloading status</title>") && (pos=strstr(buf, "ISAServerUniqueID=")) && (pos = strchr(pos, '"'))) {
 		pos++;
@@ -1246,6 +1271,9 @@ void *process(void *client) {
 				printf("\n******* Round %d C: %d, S: %d *******!\n", loop+1, cd, sd);
 				printf("Reading headers...\n");
 			}
+
+			update_active(1);
+
 			if (!headers_recv(*rsocket[loop], data[loop])) {
 				close(sd);
 				free_rr_data(data[0]);
@@ -1296,6 +1324,7 @@ void *process(void *client) {
 					close(sd);
 					free_rr_data(data[0]);
 					free_rr_data(data[1]);
+					update_active(-1);
 					goto bailout;
 				} else {
 					dom = strchr(buf, '\\');
@@ -1402,6 +1431,7 @@ void *process(void *client) {
 					if (sd <= 0) {
 						free_rr_data(data[0]);
 						free_rr_data(data[1]);
+						update_active(-1);
 						goto bailout;
 					}
 				}
@@ -1460,6 +1490,7 @@ void *process(void *client) {
 					close(sd);
 					free_rr_data(data[0]);
 					free_rr_data(data[1]);
+					update_active(-1);
 					goto bailout;
 				}
 			}
@@ -1475,6 +1506,7 @@ void *process(void *client) {
 				close(sd);
 				free_rr_data(data[0]);
 				free_rr_data(data[1]);
+				update_active(-1);
 				goto bailout;
 			}
 			
@@ -1499,6 +1531,7 @@ void *process(void *client) {
 							close(sd);
 							free_rr_data(data[0]);
 							free_rr_data(data[1]);
+							update_active(-1);
 							goto bailout;
 						} else if (debug) {
 							printf("Chunked body sent.\n");
@@ -1513,6 +1546,7 @@ void *process(void *client) {
 							close(sd);
 							free_rr_data(data[0]);
 							free_rr_data(data[1]);
+							update_active(-1);
 							goto bailout;
 						} else if (debug) {
 							printf("Body sent.\n");
@@ -1520,6 +1554,8 @@ void *process(void *client) {
 					}
 				} else if (debug)
 					printf("No body.\n");
+
+				update_active(-1);
 
 				/*
 				 * Windows cannot detect remotely closed connection
@@ -1579,8 +1615,8 @@ void *precache_thread(void *data) {
 	int new = 0;
 
 	while (!quit) {
-		if (plist_count(connection_list) < precache) {
-			printf("precache_thread: creating new connection\n");
+		if (plist_count(connection_list) < precache && check_active() < 1) {
+			printf("precache_thread: creating new connection (active: %d)\n", active_conns);
 			sd = proxy_connect();
 
 			data1 = new_rr_data();
@@ -1607,9 +1643,12 @@ void *precache_thread(void *data) {
 				sleep(60);
 			}
 		} else {
-			if (debug && new > 0) {
-				printf("precache_thread: connection cache full (%d), resting\n", plist_count(connection_list));
+			printf("                                                                                                SLEEPING\n");
+			sleep(4);
+			//if (new > 0) {
+			if (active_conns > 0) {
 				new = 0;
+				printf("*************************************************************************\nprecache_thread: connection cache full (%d), resting (active: %d)\n", plist_count(connection_list), active_conns);
 			}
 			sched_yield();
 		}
