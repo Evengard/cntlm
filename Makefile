@@ -56,12 +56,6 @@ rpm:
 		fakeroot redhat/rules clean; \
 	fi
 
-deb:
-	@echo
-	@echo "This option is no longer available. Get the source"
-	@echo "from ftp://awk.cz/cntlm/debian/ and follow the README." 
-	@echo
-
 tgz:
 	mkdir -p tmp
 	rm -f tmp/$(NAME)-$(VER)
