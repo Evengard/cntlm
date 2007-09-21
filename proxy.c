@@ -100,7 +100,7 @@ static int serialize = 0;
 static int scanner_plugin = 0;
 static long scanner_plugin_maxsize = 0;
 
-static int precache = 21;
+static int precache = 0;
 static int active_conns = 0;
 static pthread_mutex_t active_mtx = PTHREAD_MUTEX_INITIALIZER;
 
@@ -1272,7 +1272,7 @@ void *process(void *client) {
 				printf("Reading headers...\n");
 			}
 
-			update_active(1);
+			if (precache) update_active(1);
 
 			if (!headers_recv(*rsocket[loop], data[loop])) {
 				close(sd);
@@ -1324,7 +1324,7 @@ void *process(void *client) {
 					close(sd);
 					free_rr_data(data[0]);
 					free_rr_data(data[1]);
-					update_active(-1);
+					if (precache) update_active(-1);
 					goto bailout;
 				} else {
 					dom = strchr(buf, '\\');
@@ -1431,7 +1431,7 @@ void *process(void *client) {
 					if (sd <= 0) {
 						free_rr_data(data[0]);
 						free_rr_data(data[1]);
-						update_active(-1);
+						if (precache) update_active(-1);
 						goto bailout;
 					}
 				}
@@ -1490,7 +1490,7 @@ void *process(void *client) {
 					close(sd);
 					free_rr_data(data[0]);
 					free_rr_data(data[1]);
-					update_active(-1);
+					if (precache) update_active(-1);
 					goto bailout;
 				}
 			}
@@ -1506,7 +1506,7 @@ void *process(void *client) {
 				close(sd);
 				free_rr_data(data[0]);
 				free_rr_data(data[1]);
-				update_active(-1);
+				if (precache) update_active(-1);
 				goto bailout;
 			}
 			
@@ -1531,7 +1531,7 @@ void *process(void *client) {
 							close(sd);
 							free_rr_data(data[0]);
 							free_rr_data(data[1]);
-							update_active(-1);
+							if (precache) update_active(-1);
 							goto bailout;
 						} else if (debug) {
 							printf("Chunked body sent.\n");
@@ -1546,7 +1546,7 @@ void *process(void *client) {
 							close(sd);
 							free_rr_data(data[0]);
 							free_rr_data(data[1]);
-							update_active(-1);
+							if (precache) update_active(-1);
 							goto bailout;
 						} else if (debug) {
 							printf("Body sent.\n");
@@ -1555,7 +1555,7 @@ void *process(void *client) {
 				} else if (debug)
 					printf("No body.\n");
 
-				update_active(-1);
+				if (precache) update_active(-1);
 
 				/*
 				 * Windows cannot detect remotely closed connection
