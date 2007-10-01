@@ -135,6 +135,7 @@ typedef struct {
  */
 static hlist_t header_list = NULL;			/* process() */
 static plist_t scanner_agent_list = NULL;		/* scanner_hook() */
+static hlist_t users_list = NULL;			/* socks5() */
 
 /*
  * General signal handler. Fast exit, no waiting for threads and shit.
@@ -159,7 +160,7 @@ void myexit(int rc) {
 /*
  * Keep count of active connections (trasferring data)
  */
-inline void update_active(int i) {
+void update_active(int i) {
 	pthread_mutex_lock(&active_mtx);
 	active_conns += i;
 	pthread_mutex_unlock(&active_mtx);
@@ -168,7 +169,7 @@ inline void update_active(int i) {
 /*
  * Retur/ count of active connections (trasferring data)
  */
-inline int check_active(void) {
+int check_active(void) {
 	int r;
 
 	pthread_mutex_lock(&active_mtx);
@@ -293,7 +294,7 @@ int parent_add(char *parent, int port) {
 /*
  * Register and bind new proxy service port.
  */
-void listen_add(plist_t *list, char *spec, int gateway) {
+void listen_add(const char *service, plist_t *list, char *spec, int gateway) {
 	struct in_addr source;
 	int i, p, len, port;
 	char *tmp;
@@ -321,7 +322,7 @@ void listen_add(plist_t *list, char *spec, int gateway) {
 	i = so_listen(port, source);
 	if (i > 0) {
 		*list = plist_add(*list, i, NULL);
-		syslog(LOG_INFO, "Proxy listening on %s:%d\n", inet_ntoa(source), port);
+		syslog(LOG_INFO, "%s listening on %s:%d\n", service, inet_ntoa(source), port);
 	}
 }
 
@@ -390,7 +391,7 @@ void tunnel_add(plist_t *list, char *spec, int gateway) {
  * Returns: 1 if OK, 0 in case of socket EOF or other error
  */
 int headers_recv(int fd, rr_data_t data) {
-	char *tok, *s3;
+	char *tok, *s3 = 0;
 	int len;
 	char *buf;
 	char *ccode = NULL;
@@ -892,6 +893,91 @@ bailout:
 	free(buf);
 
 	return rc;
+}
+
+/*
+ * Auth connection "sd" and try to return negotiated CONNECT
+ * connection to a remote host:port (thost).
+ *
+ * Return 0 for success, -1 for proxy negotiation error and
+ * -HTTP_CODE in case the request failed.
+ */
+int make_connect(int sd, const char *thost) {
+	rr_data_t data1, data2;
+	int ret;
+
+	if (!sd || !thost || !strlen(thost))
+		return -1;
+
+	data1 = new_rr_data();
+	data2 = new_rr_data();
+
+	data1->req = 1;
+	data1->method = strdup("CONNECT");
+	data1->url = strdup(thost);
+	data1->http = strdup("0");
+	data1->headers = hlist_mod(data1->headers, "Proxy-Connection", "Keep-Alive", 1);
+
+	if (debug)
+		printf("Starting authentication...\n");
+
+	ret = authenticate(sd, data1, user, passntlm2, passnt, passlm, domain, 0);
+	if (ret && ret != 500) {
+		if (so_closed(sd)) {
+			close(sd);
+			sd = proxy_connect();
+			if (sd <= 0) {
+				ret = -1;
+				goto bailout;
+			}
+		}
+
+		if (debug) {
+			printf("Sending real request:\n");
+			hlist_dump(data1->headers);
+		}
+
+		if (headers_send(sd, data1)) {
+			if (debug)
+				printf("Reading real response:\n");
+
+			if (headers_recv(sd, data2)) {
+				if (debug)
+					hlist_dump(data2->headers);
+				if (data2->code == 200) {
+					if (debug)
+						printf("Ok CONNECT response. Tunneling...\n");
+					ret = 0;
+					goto bailout;
+				} else if (data2->code == 407) {
+					syslog(LOG_ERR, "Authentication for tunnel %s failed!\n", thost);
+				} else {
+					syslog(LOG_ERR, "Request for CONNECT denied!\n");
+				}
+				ret = -data2->code;
+			} else { 
+				if (debug)
+					printf("Reading response failed!\n");
+				ret = -1;
+			}
+		} else {
+			if (debug)
+				printf("Sending request failed!\n");
+			ret = -1;
+		}
+	} else {
+		if (ret == 500)
+			syslog(LOG_ERR, "Tunneling to %s not allowed!\n", thost);
+		else
+			syslog(LOG_ERR, "Authentication requests failed!\n");
+		ret = -500;
+	}
+
+bailout:
+	free_rr_data(data1);
+	free_rr_data(data2);
+
+	return ret;
 }
 
 /*
@@ -1648,7 +1734,8 @@ void *precache_thread(void *data) {
 			//if (new > 0) {
 			if (active_conns > 0) {
 				new = 0;
-				printf("*************************************************************************\nprecache_thread: connection cache full (%d), resting (active: %d)\n", plist_count(connection_list), active_conns);
+				printf("*************************************************************************\n");
+				printf("precache_thread: connection cache full (%d), resting (active: %d)\n", plist_count(connection_list), active_conns);
 			}
 			sched_yield();
 		}
@@ -1668,10 +1755,9 @@ void *precache_thread(void *data) {
  *  their HTTP CONNECT in the end.
  */
 void *autotunnel(void *client) {
-	rr_data_t data1, data2;
-	int i, sd;
 	int cd = ((struct thread_arg_s *)client)->fd;
 	char *thost = ((struct thread_arg_s *)client)->target;
+	int sd;
 
 	sd = proxy_connect();
 	free(client);
@@ -1684,63 +1770,12 @@ void *autotunnel(void *client) {
 	if (debug)
 		printf("Tunneling to %s for client %d...\n", thost, cd);
 
-	data1 = new_rr_data();
-	data2 = new_rr_data();
+	if (!make_connect(sd, thost)) {
+		tunnel(cd, sd);
+	}
 
-	data1->req = 1;
-	data1->method = strdup("CONNECT");
-	data1->url = strdup(thost);
-	data1->http = strdup("0");
-
-	if (debug)
-		printf("Starting authentication...\n");
-
-	i = authenticate(sd, data1, user, passntlm2, passnt, passlm, domain, 0);
-	if (i && i != 500) {
-		if (so_closed(sd)) {
-			close(sd);
-			sd = proxy_connect();
-			if (sd <= 0) 
-				goto bailout;
-		}
-
-		if (debug) {
-			printf("Sending real request:\n");
-			hlist_dump(data1->headers);
-		}
-
-		if (headers_send(sd, data1)) {
-			if (debug)
-				printf("Reading real response:\n");
-
-			if (headers_recv(sd, data2)) {
-				if (debug)
-					hlist_dump(data2->headers);
-
-				if (data2->code == 200) {
-					if (debug)
-						printf("Ok CONNECT response. Tunneling...\n");
-
-					tunnel(cd, sd);
-				} else if (data2->code == 407) {
-					syslog(LOG_ERR, "Authentication for tunnel %s failed!\n", thost);
-				} else if (debug)
-					syslog(LOG_ERR, "Request for CONNECT denied!\n");
-			} else if (debug)
-				printf("Reading response failed!\n");
-		} else if (debug)
-			printf("Sending request failed!\n");
-	} else if (i == 500)
-		syslog(LOG_ERR, "Tunneling to %s not allowed!\n", thost);
-	else
-		syslog(LOG_ERR, "Authentication requests failed!\n");
-
-bailout:
 	close(sd);
 	close(cd);
-
-	free_rr_data(data1);
-	free_rr_data(data2);
 
 	/*
 	 * Add ourself to the "threads to join" list.
@@ -1748,6 +1783,193 @@ bailout:
 	pthread_mutex_lock(&threads_mtx);
 	threads_list = plist_add(threads_list, (unsigned long)pthread_self(), NULL);
 	pthread_mutex_unlock(&threads_mtx);
+
+	return NULL;
+}
+
+void *socks5(void *client) {
+	int cd = (int)client;
+	char *tmp, *thost, *tport, *uname, *upass;
+	unsigned char *bs, *auths, *addr;
+	unsigned short port;
+	int ver, r, c, i;
+
+	int found = -1;
+	int sd = 0;
+	int open = !hlist_count(users_list);
+
+	// Check version, possibly fuck'em
+	bs = (unsigned char *)new(10);
+	thost = new(MINIBUF_SIZE);
+	tport = new(MINIBUF_SIZE);
+	r = read(cd, bs, 2);
+	if (r != 2 || bs[0] != 5)
+		goto bail1;
+
+	// Read offered auth schemes
+	c = bs[1];
+	auths = (unsigned char *)new(c+1);
+	r = read(cd, auths, c);
+	if (r != c)
+		goto bail2;
+
+	// Are we wide open and client is OK with no auth?
+	if (open) {
+		for (i = 0; i < c && (auths[i] || (found = 0)); ++i);
+	}
+
+	// If not, accept plain auth if offered
+	if (found < 0) {
+		for (i = 0; i < c && (auths[i] != 2 || !(found = 2)); ++i);
+	}
+
+	// If not found fuck'em; if so, complete handshake
+	if (found < 0) {
+		bs[0] = 5;
+		bs[1] = 0xFF;
+		write(cd, bs, 2);
+		goto bail2;
+	} else {
+		bs[0] = 5;
+		bs[1] = found;
+		write(cd, bs, 2);
+	}
+
+	// Auth negotiated?
+	if (found != 0) {
+		// Check ver and read username len
+		r = read(cd, bs, 2);
+		if (r != 2) {
+			bs[0] = 1;
+			bs[1] = 0xFF;		// Unsuccessful (not supported)
+			write(cd, bs, 2);
+			goto bail2;
+		}
+		c = bs[1];
+
+		// Read username and pass len
+		uname = new(c+1);
+		r = read(cd, uname, c+1);
+		if (r != c+1) {
+			free(uname);
+			goto bail2;
+		}
+		i = uname[c];
+		uname[c] = 0;
+		c = i;
+
+		// Read pass
+		upass = new(c+1);
+		r = read(cd, upass, c);
+		if (r != c) {
+			free(upass);
+			free(uname);
+			goto bail2;
+		}
+		upass[c] = 0;
+		
+		// Check it
+		tmp = hlist_get(users_list, uname);
+		if (!hlist_count(users_list) || (tmp && !strcmp(tmp, upass))) {
+			bs[0] = 1;
+			bs[1] = 0;		// Success
+		} else {
+			bs[0] = 1;
+			bs[1] = 0xFF;		// Failed
+		}
+
+		// Send response
+		write(cd, bs, 2);
+		free(upass);
+		free(uname);
+
+		// Fuck'em if auth failed
+		if (!bs[0])
+			goto bail2;
+	}
+
+	// Read request type
+	r = read(cd, bs, 4);
+	if (r != 4)
+		goto bail2;
+
+	// Do we support it? If not, fuck'em
+	if (bs[1] != 1 || (bs[3] != 1 && bs[3] != 3)) {
+		bs[0] = 5;
+		bs[1] = 2;			// Not allowed
+		bs[2] = 0;
+		bs[3] = 1;			// Dummy IPv4
+		memset(bs+4, 0, 6);
+		write(cd, bs, 10);
+		goto bail2;
+	}
+
+	// Ok, it's connect req for domain or IPv4
+	// Let's read dest address
+	if (bs[3] == 1) {
+		ver = 1;			// IPv4
+		c = 4;
+	} else if (bs[3] == 3) {
+		ver = 2;			// FQDN
+		r = read(cd, &c, 1);
+		if (r != 1)
+			goto bail2;
+	} else
+		goto bail2;
+
+	addr = (unsigned char *)new(c+10 + 1);
+	r = read(cd, addr, c);
+	if (r != c)
+		goto bail3;
+	addr[c] = 0;
+
+	// Convert the address to character string
+	if (ver == 1) {
+		sprintf(thost, "%d.%d.%d.%d", addr[0], addr[1], addr[2], addr[3]);
+	} else {
+		strlcpy(thost, (char *)addr, MINIBUF_SIZE);
+	}
+
+	// Read port number and convert to host byte order
+	r = read(cd, &port, 2);
+	if (r != 2)
+		goto bail3;
+	sprintf(tport, "%d", ntohs(port));
+	strlcat(thost, ":", MINIBUF_SIZE);
+	strlcat(thost, tport, MINIBUF_SIZE);
+
+	// Try to get the connection from proxy
+	sd = proxy_connect();
+	if (sd <= 0 || (i=make_connect(sd, thost))) {
+		bs[0] = 5;
+		bs[1] = 1;			// General failure
+		bs[2] = 0;
+		bs[3] = 1;			// Dummy IPv4
+		memset(bs+4, 0, 6);
+		write(cd, bs, 10);
+		goto bail3;
+	} else {
+		bs[0] = 5;
+		bs[1] = 0;			// Success
+		bs[2] = 0;
+		bs[3] = 1;			// Dummy IPv4
+		memset(bs+4, 0, 6);
+		write(cd, bs, 10);
+	}
+
+	tunnel(cd, sd);
+
+bail3:
+	free(addr);
+bail2:
+	free(auths);
+bail1:
+	free(thost);
+	free(tport);
+	free(bs);
+	close(cd);
+	if (sd)
+		close(sd);
 
 	return NULL;
 }
@@ -1911,6 +2133,7 @@ int main(int argc, char **argv) {
 	int tracefile = 0;
 	plist_t tunneld_list = NULL;
 	plist_t proxyd_list = NULL;
+	plist_t socksd_list = NULL;
 	plist_t rules = NULL;
 	config_t cf = NULL;
 	char *magic_detect = NULL;
@@ -1993,7 +2216,7 @@ int main(int argc, char **argv) {
 				/*
 				 * Create a listening socket for proxy function.
 				 */
-				listen_add(&proxyd_list, optarg, gateway);
+				listen_add("Proxy", &proxyd_list, optarg, gateway);
 				break;
 			case 'M':
 				magic_detect = strdup(optarg);
@@ -2201,7 +2424,15 @@ int main(int argc, char **argv) {
 		 * Bind the rest of proxy service ports.
 		 */
 		while ((tmp = config_pop(cf, "Listen"))) {
-			listen_add(&proxyd_list, tmp, gateway);
+			listen_add("Proxy", &proxyd_list, tmp, gateway);
+			free(tmp);
+		}
+
+		/*
+		 * Bind the rest of SOCKS5 service ports.
+		 */
+		while ((tmp = config_pop(cf, "SOCKS5"))) {
+			listen_add("SOCKS5 proxy", &socksd_list, tmp, gateway);
 			free(tmp);
 		}
 
@@ -2272,6 +2503,18 @@ int main(int argc, char **argv) {
 			scanner_plugin_maxsize = atoi(tmp);
 		}
 		free(tmp);
+
+		while ((tmp = config_pop(cf, "SOCKS5Access"))) {
+			head = strchr(tmp, ':');
+			if (!head) {
+				syslog(LOG_ERR, "Invalid username:password format for SOCKS5Access: %s\n", tmp);
+			} else {
+				head[0] = 0;
+				users_list = hlist_add(users_list, tmp, head+1, 1, 1);
+				printf("Adding SOCKS5 user %s, pass %s\n", tmp, head+1);
+			}
+		}
+					
 
 		/*
 		 * Add User-Agent matching patterns.
@@ -2621,6 +2864,15 @@ int main(int argc, char **argv) {
 		}
 
 		/*
+		 * Watch for SOCKS5 ports.
+		 */
+		t = socksd_list;
+		while (t) {
+			FD_SET(t->key, &set);
+			t = t->next;
+		}
+
+		/*
 		 * Watch for tunneled ports.
 		 */
 		t = tunneld_list;
@@ -2675,16 +2927,18 @@ int main(int argc, char **argv) {
 					pthread_attr_setguardsize(&pattr, 0);
 #endif
 
-					if (!plist_in(proxyd_list, i)) {
-						data = (struct thread_arg_s *)new(sizeof(struct thread_arg_s));
-						data->fd = cd;
-						data->target = plist_get(tunneld_list, i);
-						tid = pthread_create(&pthr, &pattr, autotunnel, (void *)data);
-					} else {
+					if (plist_in(proxyd_list, i)) {
 						if (!serialize)
 							tid = pthread_create(&pthr, &pattr, process, (void *)cd);
 						else
 							process((void *)cd);
+					} else if (plist_in(socksd_list, i)) {
+						tid = pthread_create(&pthr, &pattr, socks5, (void *)cd);
+					} else {
+						data = (struct thread_arg_s *)new(sizeof(struct thread_arg_s));
+						data->fd = cd;
+						data->target = plist_get(tunneld_list, i);
+						tid = pthread_create(&pthr, &pattr, autotunnel, (void *)data);
 					}
 
 					pthread_attr_destroy(&pattr);
@@ -2729,6 +2983,7 @@ int main(int argc, char **argv) {
 	plist_free(scanner_agent_list);
 	plist_free(tunneld_list);
 	plist_free(proxyd_list);
+	plist_free(socksd_list);
 	plist_free(rules);
 
 	if (strlen(pidfile))

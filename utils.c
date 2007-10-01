@@ -441,7 +441,7 @@ char *substr(const char *src, int pos, int len) {
  * for the colon delimiter. Might eventually become more
  * sophisticated. :)
  */
-inline int head_ok(const char *src) {
+int head_ok(const char *src) {
 	return strcspn(src, ":") != strlen(src);
 }
 
@@ -628,7 +628,7 @@ size_t strlcat(char *dst, const char *src, size_t siz) {
 /*
  * Shortcut for malloc/memset zero.
  */
-inline char *new(size_t size) {
+char *new(size_t size) {
 	char *tmp;
 
 	tmp = malloc(size);
@@ -661,7 +661,7 @@ char *uppercase(char *str) {
 	return str;
 }
 
-inline int unicode(char **dst, char *src) {
+int unicode(char **dst, char *src) {
 	char *ret;
 	int l, i;
 
