@@ -793,10 +793,13 @@ int tunnel(int cd, int sd) {
  * error if not NULL, so it can be forwarded to the client. Caller
  * must then free it!
  */
-int authenticate(int sd, rr_data_t data, char *user, char *passntlm2, char *passnt, char *passlm, char *domain, int silent) {
+int authenticate(int sd, rr_data_t data, char *user, char *passntlm2, char *passnt, char *passlm, char *domain, int silent, int *closed) {
 	char *tmp, *buf, *challenge;
 	rr_data_t auth;
 	int len, rc;
+
+	if (closed)
+		*closed = 0;
 
 	buf = new(BUFSIZE);
 
@@ -886,6 +889,15 @@ int authenticate(int sd, rr_data_t data, char *user, char *passntlm2, char *pass
 		goto bailout;
 	}
 
+	/*
+	 * Does proxy intend to close the connection? E.g. it didn't require auth
+	 * at all or there was some problem. If so, let caller know that it should
+	 * reconnect!
+	 */
+	if (closed && hlist_subcmp(auth->headers, "Proxy-Connection", "close")) {
+		*closed = 1;
+	}
+
 	rc = 1;
 
 bailout:
@@ -904,7 +916,7 @@ bailout:
  */
 int make_connect(int sd, const char *thost) {
 	rr_data_t data1, data2;
-	int ret;
+	int ret, closed;
 
 	if (!sd || !thost || !strlen(thost))
 		return -1;
@@ -921,9 +933,9 @@ int make_connect(int sd, const char *thost) {
 	if (debug)
 		printf("Starting authentication...\n");
 
-	ret = authenticate(sd, data1, user, passntlm2, passnt, passlm, domain, 0);
+	ret = authenticate(sd, data1, user, passntlm2, passnt, passlm, domain, 0, &closed);
 	if (ret && ret != 500) {
-		if (so_closed(sd)) {
+		if (closed || so_closed(sd)) {
 			close(sd);
 			sd = proxy_connect();
 			if (sd <= 0) {
@@ -1194,7 +1206,7 @@ int scanner_hook(rr_data_t *request, rr_data_t *response, int *cd, int *sd, long
 					nc = i;
 				} else {
 					nc = proxy_connect();
-					c = authenticate(nc, newreq, user, passntlm2, passnt, passlm, domain, 0);
+					c = authenticate(nc, newreq, user, passntlm2, passnt, passlm, domain, 0, NULL);
 					if (c > 0 && c != 500) {
 						if (debug)
 							printf("scanner_hook: Authentication OK, getting the file...\n");
@@ -1285,7 +1297,7 @@ int scanner_hook(rr_data_t *request, rr_data_t *response, int *cd, int *sd, long
  */
 void *process(void *client) {
 	int *rsocket[2], *wsocket[2];
-	int i, loop, bodylen, keep, chunked, plugin;
+	int i, loop, bodylen, keep, chunked, plugin, closed;
 	rr_data_t data[2], errdata;
 	hlist_t tl;
 	char *tmp, *buf, *pos, *dom;
@@ -1506,10 +1518,10 @@ void *process(void *client) {
 			 */
 			if (!loop && data[0]->req && !authok) {
 				errdata = NULL;
-				if (!(i = authenticate(*wsocket[0], data[0], puser, ppassntlm2, ppassnt, ppasslm, pdomain, 0)))
+				if (!(i = authenticate(*wsocket[0], data[0], puser, ppassntlm2, ppassnt, ppasslm, pdomain, 0, &closed)))
 					syslog(LOG_ERR, "Authentication requests failed. Will try without.\n");
 
-				if (!i || so_closed(sd)) {
+				if (!i || closed || so_closed(sd)) {
 					if (debug)
 						printf("Proxy closed connection. Reconnecting...\n");
 					close(sd);
@@ -1695,7 +1707,7 @@ bailout:
 }
 
 void *precache_thread(void *data) {
-	int i, sd;
+	int i, sd, closed;
 	rr_data_t data1, data2;
 	char *tmp;
 	int new = 0;
@@ -1713,8 +1725,8 @@ void *precache_thread(void *data) {
 			data1->url = strdup("http://www.google.com/");
 			data1->http = strdup("1");
 
-			i = authenticate(sd, data1, user, passntlm2, passnt, passlm, domain, 1);
-			if (i && i == 1 && !so_closed(sd) && headers_send(sd, data1) && headers_recv(sd, data2) && data2->code == 302) {
+			i = authenticate(sd, data1, user, passntlm2, passnt, passlm, domain, 1, &closed);
+			if (i && i == 1 && !closed && !so_closed(sd) && headers_send(sd, data1) && headers_recv(sd, data2) && data2->code == 302) {
 				tmp = hlist_get(data2->headers, "Content-Length");
 				if (tmp)
 					data_drop(sd, atoi(tmp));
@@ -1977,7 +1989,7 @@ bail1:
 #define MAGIC_TESTS	11
 
 void magic_auth_detect(const char *url) {
-	int i, nc, c, found = -1;
+	int i, nc, c, closed, found = -1;
 	rr_data_t req, res;
 	char *tmp, *pos, *host = NULL;
 
@@ -2043,8 +2055,8 @@ void magic_auth_detect(const char *url) {
 			return;
 		}
 
-		c = authenticate(nc, req, user, passntlm2, passnt, passlm, domain, 0);
-		if (c <= 0 || c == 500) {
+		c = authenticate(nc, req, user, passntlm2, passnt, passlm, domain, 0, &closed);
+		if (c <= 0 || c == 500 || closed) {
 			printf("Auth request ignored (HTTP code: %d)\n", c);
 			free_rr_data(res);
 			free_rr_data(req);
