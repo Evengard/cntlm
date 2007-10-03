@@ -233,6 +233,20 @@ When finished, settings for the most secure setup are printed. Although the dete
 how to use \fBAuth\fP, \fBFlags\fP and password-hash options, you have to configure at least your credentials
 and proxy address first. You can use \fB\-I\fP to enter your password interactively.
 
+.ne 10
+.TP
+.B \-O [<saddr>:]<port_number>\ \ \ \ (SOCKS5Proxy)
+Enable SOCKS5 proxy and make it listen on local port \fIport_number\fP (source IP spec is also possible, as
+with all options). By default, there will be no restrictions as to who can use this service. Some clients
+don't even support SOCKS5 authentication (e.g. almost all browsers). If you wish to enforce authentication,
+use \fB\-R\fP or its equivalent option, \fBSOCKS5User\fP. As with port tunneling, it is up to the parent proxy
+whether it will allow connection to any requested host:port. This feature can be used with \fBtsocks(1)\fP to
+make most TCP/IP applications go thru the proxy rather than directly (only outgoing connections will work,
+obviously). To make apps work without DNS server, it is important that they don't resolve themselves, but
+using SOCKS. E.g. Firefox has this option available through URI "about:config", key name
+\fBnetwork.proxy.socks_remote_dns\fP, which must be set to \fBtrue\fP.
+
+.ne 5
 .TP
 .B \-P <pidfile>
 Create a PID file \fIpidfile\fP upon startup. If the specified file exists, it is truncated and overwritten.
@@ -240,12 +254,19 @@ This option is intended for use with \fBstart\-stop\-daemon(8)\fP and other serv
 that the PID file is created AFTER the process drops its privileges and forks. When the daemon finishes
 cleanly, the file is removed.
 
+.ne 5
 .TP
 .B \-p <password>\ \ \ \ (Password, PassNT, ...)
 Proxy account password. \fBCntlm\fP deletes the password from the memory, to make it invisible in /proc or
 with inspection tools like \fBps(1)\fP, but the preferable way of specifying password is the configuration
 file. To that end, you can use \fBPassword\fP option (for plaintext, human readable format), or "encrypt" your
 password via \fB\-H\fP and then use \fBPassNTLMv2\fP, \fBPassNT\fP and/or \fBPassLM\fP.
+
+.ne 3
+.TP
+.B \-R <username>:<password>\ \ \ \ (SOCKS5User)
+If SOCKS5 proxy is enabled, this option can make it accessible only to those who have been authorized.
+It can be used several times, to create a whole list of accounts (allowed user:pass combinations).
 
 .TP
 .B \-S <max_size_in_kb>\ \ \ \ (ISAScannerSize)
@@ -409,6 +430,14 @@ Parent proxy, which requires authentication. The same as proxy on the command\-l
 once to specify unlimited number of proxies. Should one proxy fail, \fBcntlm\fP automatically moves on to the
 next one. The connect request fails only if the whole list of proxies is scanned and (for each request) and
 found to be invalid. Command\-line takes precedence over the configuration file.
+
+.TP
+.B SOCKS5Proxy [<saddr>:]<lport>
+Enable SOCKS5 proxy. See \fB-O\fP for more.
+
+.TP
+.B SOCKS5User <username>:<password>
+Create a new SOCKS5 proxy account. See \fB-R\fP for more.
 
 .TP
 .B NTLMToBasic yes|no

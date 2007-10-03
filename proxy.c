@@ -1810,7 +1810,9 @@ void *socks5(void *client) {
 	int sd = 0;
 	int open = !hlist_count(users_list);
 
-	// Check version, possibly fuck'em
+	/*
+	 * Check client's version, possibly fuck'em
+	 */
 	bs = (unsigned char *)new(10);
 	thost = new(MINIBUF_SIZE);
 	tport = new(MINIBUF_SIZE);
@@ -1818,24 +1820,33 @@ void *socks5(void *client) {
 	if (r != 2 || bs[0] != 5)
 		goto bail1;
 
-	// Read offered auth schemes
+	/*
+	 * Read offered auth schemes
+	 */
 	c = bs[1];
 	auths = (unsigned char *)new(c+1);
 	r = read(cd, auths, c);
 	if (r != c)
 		goto bail2;
 
-	// Are we wide open and client is OK with no auth?
+	/*
+	 * Are we wide open and client is OK with no auth?
+	 */
 	if (open) {
 		for (i = 0; i < c && (auths[i] || (found = 0)); ++i);
 	}
 
-	// If not, accept plain auth if offered
+	/*
+	 * If not, accept plain auth if offered
+	 */
 	if (found < 0) {
 		for (i = 0; i < c && (auths[i] != 2 || !(found = 2)); ++i);
 	}
 
-	// If not found fuck'em; if so, complete handshake
+	/*
+	 * If not open and no auth offered or open and auth requested, fuck'em
+	 * and complete the handshake
+	 */
 	if (found < 0) {
 		bs[0] = 5;
 		bs[1] = 0xFF;
@@ -1847,19 +1858,25 @@ void *socks5(void *client) {
 		write(cd, bs, 2);
 	}
 
-	// Auth negotiated?
+	/*
+	 * Plain auth negotiated?
+	 */
 	if (found != 0) {
-		// Check ver and read username len
+		/*
+		 * Check ver and read username len
+		 */
 		r = read(cd, bs, 2);
 		if (r != 2) {
 			bs[0] = 1;
-			bs[1] = 0xFF;		// Unsuccessful (not supported)
+			bs[1] = 0xFF;		/* Unsuccessful (not supported) */
 			write(cd, bs, 2);
 			goto bail2;
 		}
 		c = bs[1];
 
-		// Read username and pass len
+		/*
+		 * Read username and pass len
+		 */
 		uname = new(c+1);
 		r = read(cd, uname, c+1);
 		if (r != c+1) {
@@ -1870,7 +1887,9 @@ void *socks5(void *client) {
 		uname[c] = 0;
 		c = i;
 
-		// Read pass
+		/*
+		 * Read pass
+		 */
 		upass = new(c+1);
 		r = read(cd, upass, c);
 		if (r != c) {
@@ -1879,50 +1898,62 @@ void *socks5(void *client) {
 			goto bail2;
 		}
 		upass[c] = 0;
-		
-		// Check it
+
+		/*
+		 * Check credentials against the list
+		 */
 		tmp = hlist_get(users_list, uname);
 		if (!hlist_count(users_list) || (tmp && !strcmp(tmp, upass))) {
 			bs[0] = 1;
-			bs[1] = 0;		// Success
+			bs[1] = 0;		/* Success */
 		} else {
 			bs[0] = 1;
-			bs[1] = 0xFF;		// Failed
+			bs[1] = 0xFF;		/* Failed */
 		}
 
-		// Send response
+		/*
+		 * Send response
+		 */
 		write(cd, bs, 2);
 		free(upass);
 		free(uname);
 
-		// Fuck'em if auth failed
-		if (!bs[0])
+		/*
+		 * Fuck'em if auth failed
+		 */
+		if (bs[1])
 			goto bail2;
 	}
 
-	// Read request type
+	/*
+	 * Read request type
+	 */
 	r = read(cd, bs, 4);
 	if (r != 4)
 		goto bail2;
 
-	// Do we support it? If not, fuck'em
+	/*
+	 * Is it connect for supported address type (IPv4 or DNS)? If not, fuck'em
+	 */
 	if (bs[1] != 1 || (bs[3] != 1 && bs[3] != 3)) {
 		bs[0] = 5;
-		bs[1] = 2;			// Not allowed
+		bs[1] = 2;			/* Not allowed */
 		bs[2] = 0;
-		bs[3] = 1;			// Dummy IPv4
+		bs[3] = 1;			/* Dummy IPv4 */
 		memset(bs+4, 0, 6);
 		write(cd, bs, 10);
 		goto bail2;
 	}
 
-	// Ok, it's connect req for domain or IPv4
-	// Let's read dest address
+	/*
+	 * Ok, it's connect to a domain or IP
+	 * Let's read dest address
+	 */
 	if (bs[3] == 1) {
-		ver = 1;			// IPv4
+		ver = 1;			/* IPv4, we know the length */
 		c = 4;
 	} else if (bs[3] == 3) {
-		ver = 2;			// FQDN
+		ver = 2;			/* FQDN, get string length */
 		r = read(cd, &c, 1);
 		if (r != 1)
 			goto bail2;
@@ -1935,14 +1966,18 @@ void *socks5(void *client) {
 		goto bail3;
 	addr[c] = 0;
 
-	// Convert the address to character string
+	/*
+	 * Convert the address to character string
+	 */
 	if (ver == 1) {
-		sprintf(thost, "%d.%d.%d.%d", addr[0], addr[1], addr[2], addr[3]);
+		sprintf(thost, "%d.%d.%d.%d", addr[0], addr[1], addr[2], addr[3]);	/* It's in netword byte order */
 	} else {
 		strlcpy(thost, (char *)addr, MINIBUF_SIZE);
 	}
 
-	// Read port number and convert to host byte order
+	/*
+	 * Read port number and convert to host byte order int
+	 */
 	r = read(cd, &port, 2);
 	if (r != 2)
 		goto bail3;
@@ -1950,25 +1985,36 @@ void *socks5(void *client) {
 	strlcat(thost, ":", MINIBUF_SIZE);
 	strlcat(thost, tport, MINIBUF_SIZE);
 
-	// Try to get the connection from proxy
+	/*
+	 * Try connect to parent proxy
+	 */
 	sd = proxy_connect();
 	if (sd <= 0 || (i=make_connect(sd, thost))) {
+		/*
+		 * No such luck, report failure
+		 */
 		bs[0] = 5;
-		bs[1] = 1;			// General failure
+		bs[1] = 1;			/* General failure */
 		bs[2] = 0;
-		bs[3] = 1;			// Dummy IPv4
+		bs[3] = 1;			/* Dummy IPv4 */
 		memset(bs+4, 0, 6);
 		write(cd, bs, 10);
 		goto bail3;
 	} else {
+		/*
+		 * Proxy ok, auth worked
+		 */
 		bs[0] = 5;
-		bs[1] = 0;			// Success
+		bs[1] = 0;			/* Success */
 		bs[2] = 0;
-		bs[3] = 1;			// Dummy IPv4
+		bs[3] = 1;			/* Dummy IPv4 */
 		memset(bs+4, 0, 6);
 		write(cd, bs, 10);
 	}
 
+	/*
+	 * Let's give them bi-directional connection they asked for
+	 */
 	tunnel(cd, sd);
 
 bail3:
@@ -2169,7 +2215,7 @@ int main(int argc, char **argv) {
 	syslog(LOG_INFO, "Starting cntlm version " VERSION " for LITTLE endian\n");
 #endif
 
-	while ((i = getopt(argc, argv, ":-:a:c:d:fghIl:p:r:su:vw:A:BD:F:G:HL:M:P:S:T:U:")) != -1) {
+	while ((i = getopt(argc, argv, ":-:a:c:d:fghIl:p:r:su:vw:A:BD:F:G:HL:M:O:P:R:S:T:U:")) != -1) {
 		switch (i) {
 			case 'A':
 			case 'D':
@@ -2233,6 +2279,9 @@ int main(int argc, char **argv) {
 			case 'M':
 				magic_detect = strdup(optarg);
 				break;
+			case 'O':
+				listen_add("SOCKS5 proxy", &socksd_list, optarg, gateway);
+				break;
 			case 'P':
 				strlcpy(pidfile, optarg, MINIBUF_SIZE);
 				break;
@@ -2244,6 +2293,16 @@ int main(int argc, char **argv) {
 				strlcpy(password, optarg, MINIBUF_SIZE);
 				for (i = strlen(optarg)-1; i >= 0; --i)
 					optarg[i] = '*';
+				break;
+			case 'R':
+				tmp = strdup(optarg);
+				head = strchr(tmp, ':');
+				if (!head) {
+					fprintf(stderr, "Invalid username:password format for -R: %s\n", tmp);
+				} else {
+					head[0] = 0;
+					users_list = hlist_add(users_list, tmp, head+1, 1, 1);
+				}
 				break;
 			case 'r':
 				if (head_ok(optarg))
@@ -2345,6 +2404,8 @@ int main(int argc, char **argv) {
 				"\t    Main listening port for the NTLM proxy.\n");
 		fprintf(stderr, "\t-M  <testurl>\n"
 				"\t    Magic autodetection of proxy's NTLM dialect.\n");
+		fprintf(stderr, "\t-O  [<saddr>:]<lport>\n"
+				"\t    Enable SOCKS5 proxy and make it listen on the specified port (and address).\n");
 		fprintf(stderr, "\t-P  <pidfile>\n"
 				"\t    Create a PID file upon successful start.\n");
 		fprintf(stderr, "\t-p  <password>\n"
@@ -2443,7 +2504,7 @@ int main(int argc, char **argv) {
 		/*
 		 * Bind the rest of SOCKS5 service ports.
 		 */
-		while ((tmp = config_pop(cf, "SOCKS5"))) {
+		while ((tmp = config_pop(cf, "SOCKS5Proxy"))) {
 			listen_add("SOCKS5 proxy", &socksd_list, tmp, gateway);
 			free(tmp);
 		}
@@ -2516,14 +2577,13 @@ int main(int argc, char **argv) {
 		}
 		free(tmp);
 
-		while ((tmp = config_pop(cf, "SOCKS5Access"))) {
+		while ((tmp = config_pop(cf, "SOCKS5Users"))) {
 			head = strchr(tmp, ':');
 			if (!head) {
-				syslog(LOG_ERR, "Invalid username:password format for SOCKS5Access: %s\n", tmp);
+				syslog(LOG_ERR, "Invalid username:password format for SOCKS5User: %s\n", tmp);
 			} else {
 				head[0] = 0;
 				users_list = hlist_add(users_list, tmp, head+1, 1, 1);
-				printf("Adding SOCKS5 user %s, pass %s\n", tmp, head+1);
 			}
 		}
 					
@@ -2615,6 +2675,9 @@ int main(int argc, char **argv) {
 			myexit(1);
 		}
 	}
+
+	if (socksd_list && !users_list)
+		syslog(LOG_WARNING, "SOCKS5 proxy will NOT require any authentication\n");
 
 	if (!magic_detect)
 		syslog(LOG_INFO, "Using following NTLM hashes: NTLMv2(%d) NT(%d) LM(%d)\n", hashntlm2, hashnt, hashlm);
