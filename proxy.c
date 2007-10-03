@@ -894,7 +894,7 @@ int authenticate(int sd, rr_data_t data, char *user, char *passntlm2, char *pass
 	 * at all or there was some problem. If so, let caller know that it should
 	 * reconnect!
 	 */
-	if (closed && hlist_subcmp(auth->headers, "Proxy-Connection", "close")) {
+	if (closed && !hlist_subcmp(auth->headers, "Proxy-Connection", "keep-alive")) {
 		*closed = 1;
 	}
 
