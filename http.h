@@ -1,5 +1,5 @@
 /*
- * These are NTLM authentication routines for the main module of CNTLM
+ * HTTP handling routines and related socket stuff for CNTLM
  *
  * CNTLM is free software; you can redistribute it and/or modify it under the
  * terms of the GNU General Public License as published by the Free Software
@@ -19,19 +19,16 @@
  *
  */
 
-#ifndef _NTLM_H
-#define _NTLM_H
+#ifndef _HTTP_H
+#define _HTTP_H
 
-#include "xcrypt.h"
-#include "auth.h"
+#include "utils.h"
 
-#define NTLM_BUFSIZE		1024
-#define NTLM_CHALLENGE_MIN	24
+extern int headers_recv(int fd, rr_data_t data);
+extern int headers_send(int fd, rr_data_t data);
+extern int data_drop(int src, int size);
+extern int data_send(int dst, int src, int size);
+extern int chunked_data_send(int dst, int src);
+extern int tunnel(int cd, int sd);
 
-extern char *ntlm_hash_lm_password(char *password);
-extern char *ntlm_hash_nt_password(char *password);
-extern char *ntlm2_hash_password(char *username, char *domain, char *password);
-extern int ntlm_request(char **dst, struct auth_s *creds);
-extern int ntlm_response(char **dst, char *challenge, int challen, struct auth_s *creds);
-
-#endif /* _NTLM_H */
+#endif /* _HTTP_H */

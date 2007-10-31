@@ -6,12 +6,16 @@
 ./VERSION
 ./acl.c
 ./acl.h
+./auth.c
+./auth.h
 ./config.c
 ./config.h
 ./config/endian.c
 ./config/gethostname.c
 ./config/strdup.c
 ./configure
+./http.c
+./http.h
 ./ntlm.c
 ./ntlm.h
 ./pages.c

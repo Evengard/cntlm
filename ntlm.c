@@ -27,6 +27,7 @@
 #include "swap.h"
 #include "xcrypt.h"
 #include "utils.h"
+#include "auth.h"
 
 extern int debug;
 
@@ -202,30 +203,34 @@ char *ntlm2_hash_password(char *username, char *domain, char *password) {
 	return passnt2;
 }
 
-int ntlm_request(char **dst, char *hostname, char *domain, int ntlm2, int nt, int lm, uint32_t flags) {
+int ntlm_request(char **dst, struct auth_s *creds) {
 	char *buf, *tmp;
 	int dlen, hlen;
+	uint32_t flags = 0xb206;
 
-	dlen = strlen(domain);
-	hlen = strlen(hostname);
+	dlen = strlen(creds->domain);
+	hlen = strlen(creds->workstation);
 
-	if (!flags) {
-		if (ntlm2)
+	if (!creds->flags) {
+		if (creds->hashntlm2)
 			flags = 0xa208b205;
-		else if (nt == 2)
+		else if (creds->hashnt == 2)
 			flags = 0xa208b207;
-		else if (nt && lm)
+		else if (creds->hashnt && creds->hashlm)
 			flags = 0xb207;
-		else if (nt)
+		else if (creds->hashnt)
 			flags = 0xb205;
-		else if (lm)
+		else if (creds->hashlm)
 			flags = 0xb206;
-	}
+		else
+			return 0;
+	} else
+		flags = creds->flags;
 
 	if (debug) {
 		printf("NTLM Request:\n");
-		printf("\t   Domain: %s\n", domain);
-		printf("\t Hostname: %s\n", hostname);
+		printf("\t   Domain: %s\n", creds->domain);
+		printf("\t Hostname: %s\n", creds->workstation);
 		printf("\t    Flags: 0x%X\n", (int)flags);
 	}
 
@@ -240,11 +245,11 @@ int ntlm_request(char **dst, char *hostname, char *domain, int ntlm2, int nt, in
 	VAL(buf, uint16_t, 26) = U16LE(hlen);
 	VAL(buf, uint32_t, 28) = U32LE(32);
 
-	tmp = uppercase(strdup(hostname));
+	tmp = uppercase(strdup(creds->workstation));
 	memcpy(buf+32, tmp, hlen);
 	free(tmp);
 
-	tmp = uppercase(strdup(domain));
+	tmp = uppercase(strdup(creds->domain));
 	memcpy(buf+32+hlen, tmp, dlen);
 	free(tmp);
 
@@ -279,10 +284,9 @@ void dump(char *src, int len) {
 }
 */
 
-int ntlm_response(char **dst, char *challenge, int challen, char *username, char *passnt2, char *passnt, char *passlm, char *hostname, char *domain, int ntlm2, int nt, int lm) {
+int ntlm_response(char **dst, char *challenge, int challen, struct auth_s *creds) {
 	char *buf, *udomain, *uuser, *uhost, *tmp;
 	int dlen, ulen, hlen;
-	uint32_t flags;
 	uint16_t tpos, tlen, ttype = -1, tbofs = 0, tblen = 0;
 	char *lmhash = NULL, *nthash = NULL;
 	int lmlen = 0, ntlen = 0;
@@ -292,8 +296,7 @@ int ntlm_response(char **dst, char *challenge, int challen, char *username, char
 		tmp = printmem(MEM(challenge, char, lmlen), 8, 7);
 		printf("\tChallenge: %s (len: %d)\n", tmp, challen);
 		free(tmp);
-		flags = U32LE(VAL(challenge, uint32_t, 20));
-		printf("\t    Flags: 0x%X\n", (unsigned int)flags);
+		printf("\t    Flags: 0x%X\n", U32LE(VAL(challenge, uint32_t, 20)));
 	}
 
 	if (challen > 48) {
@@ -341,49 +344,49 @@ int ntlm_response(char **dst, char *challenge, int challen, char *username, char
 		}
 	}
 
-	if (ntlm2 && !tblen) {
+	if (creds->hashntlm2 && !tblen) {
 		return 0;
 	}
 
-	if (ntlm2) {
-		ntlm2_calc_resp(&nthash, &ntlen, &lmhash, &lmlen, username, domain, passnt2, challenge, tbofs, tblen);
+	if (creds->hashntlm2) {
+		ntlm2_calc_resp(&nthash, &ntlen, &lmhash, &lmlen, creds->user, creds->domain, creds->passntlm2, challenge, tbofs, tblen);
 	}
 
-	if (nt == 2) {
-		ntlm2sr_calc_rest(&nthash, &ntlen, &lmhash, &lmlen, passnt, challenge);
+	if (creds->hashnt == 2) {
+		ntlm2sr_calc_rest(&nthash, &ntlen, &lmhash, &lmlen, creds->passnt, challenge);
 	}
 
-	if (nt == 1) {
-		ntlen = ntlm_calc_resp(&nthash, passnt, MEM(challenge, char, 24));
+	if (creds->hashnt == 1) {
+		ntlen = ntlm_calc_resp(&nthash, creds->passnt, MEM(challenge, char, 24));
 	}
 
-	if (lm) {
-		lmlen = ntlm_calc_resp(&lmhash, passlm, MEM(challenge, char, 24));
+	if (creds->hashlm) {
+		lmlen = ntlm_calc_resp(&lmhash, creds->passlm, MEM(challenge, char, 24));
 	}
 
-	if (nt || ntlm2) {
-		tmp = uppercase(strdup(domain));
+	if (creds->hashnt || creds->hashntlm2) {
+		tmp = uppercase(strdup(creds->domain));
 		dlen = unicode(&udomain, tmp);
 		free(tmp);
-		ulen = unicode(&uuser, username);
-		tmp = uppercase(strdup(hostname));
+		ulen = unicode(&uuser, creds->user);
+		tmp = uppercase(strdup(creds->workstation));
 		hlen = unicode(&uhost, tmp);
 		free(tmp);
 	} else {
-		udomain = uppercase(strdup(domain));
-		uuser = uppercase(strdup(username));
-		uhost = uppercase(strdup(hostname));
+		udomain = uppercase(strdup(creds->domain));
+		uuser = uppercase(strdup(creds->user));
+		uhost = uppercase(strdup(creds->workstation));
 
-		dlen = strlen(domain);
-		ulen = strlen(username);
-		hlen = strlen(hostname);
+		dlen = strlen(creds->domain);
+		ulen = strlen(creds->user);
+		hlen = strlen(creds->workstation);
 	}
 
 	if (debug) {
 		printf("NTLM Response:\n");
-		printf("\t Hostname: '%s'\n", hostname);
-		printf("\t   Domain: '%s'\n", domain);
-		printf("\t Username: '%s'\n", username);
+		printf("\t Hostname: '%s'\n", creds->workstation);
+		printf("\t   Domain: '%s'\n", creds->domain);
+		printf("\t Username: '%s'\n", creds->user);
 		if (ntlen) {
 			tmp = printmem(nthash, ntlen, 7);
 			printf("\t Response: '%s' (%d)\n", tmp, ntlen);

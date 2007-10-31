@@ -244,7 +244,8 @@ whether it will allow connection to any requested host:port. This feature can be
 make most TCP/IP applications go thru the proxy rather than directly (only outgoing connections will work,
 obviously). To make apps work without DNS server, it is important that they don't resolve themselves, but
 using SOCKS. E.g. Firefox has this option available through URI "about:config", key name
-\fBnetwork.proxy.socks_remote_dns\fP, which must be set to \fBtrue\fP.
+\fBnetwork.proxy.socks_remote_dns\fP, which must be set to \fBtrue\fP. Proxy\-unaware \fBtsocks\fPified apps,
+will have to be configured using IP addresses to prevent them from DNS resolving.
 
 .ne 5
 .TP
