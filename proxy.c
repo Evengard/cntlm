@@ -957,8 +957,6 @@ void *proxy_thread(void *client) {
 				printf("Reading headers...\n");
 			}
 
-			if (precache) update_active(1);
-
 			if (!headers_recv(*rsocket[loop], data[loop])) {
 				close(sd);
 				free_rr_data(data[0]);
@@ -1009,7 +1007,6 @@ void *proxy_thread(void *client) {
 					close(sd);
 					free_rr_data(data[0]);
 					free_rr_data(data[1]);
-					if (precache) update_active(-1);
 					goto bailout;
 				} else {
 					dom = strchr(buf, '\\');
@@ -1116,7 +1113,6 @@ void *proxy_thread(void *client) {
 					if (sd <= 0) {
 						free_rr_data(data[0]);
 						free_rr_data(data[1]);
-						if (precache) update_active(-1);
 						goto bailout;
 					}
 				}
@@ -1175,7 +1171,6 @@ void *proxy_thread(void *client) {
 					close(sd);
 					free_rr_data(data[0]);
 					free_rr_data(data[1]);
-					if (precache) update_active(-1);
 					goto bailout;
 				}
 			}
@@ -1191,7 +1186,6 @@ void *proxy_thread(void *client) {
 				close(sd);
 				free_rr_data(data[0]);
 				free_rr_data(data[1]);
-				if (precache) update_active(-1);
 				goto bailout;
 			}
 			
@@ -1216,7 +1210,6 @@ void *proxy_thread(void *client) {
 							close(sd);
 							free_rr_data(data[0]);
 							free_rr_data(data[1]);
-							if (precache) update_active(-1);
 							goto bailout;
 						} else if (debug) {
 							printf("Chunked body sent.\n");
@@ -1231,7 +1224,6 @@ void *proxy_thread(void *client) {
 							close(sd);
 							free_rr_data(data[0]);
 							free_rr_data(data[1]);
-							if (precache) update_active(-1);
 							goto bailout;
 						} else if (debug) {
 							printf("Body sent.\n");
@@ -1239,8 +1231,6 @@ void *proxy_thread(void *client) {
 					}
 				} else if (debug)
 					printf("No body.\n");
-
-				if (precache) update_active(-1);
 
 				/*
 				 * Windows cannot detect remotely closed connection
