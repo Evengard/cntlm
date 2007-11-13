@@ -432,13 +432,17 @@ int authenticate(int sd, rr_data_t request, struct auth_s *creds, int *closed) {
 	free_rr_data(auth);
 	auth = new_rr_data();
 
-	if (debug)
+	if (debug) {
 		printf("Reading auth response...\n");
+	}
 
 	if (!headers_recv(sd, auth)) {
 		rc = 0;
 		goto bailout;
 	}
+
+	if (debug)
+		hlist_dump(auth->headers);
 
 	tmp = hlist_get(auth->headers, "Content-Length");
 	if (tmp && (len = atoi(tmp))) {
@@ -474,8 +478,6 @@ int authenticate(int sd, rr_data_t request, struct auth_s *creds, int *closed) {
 
 			free(challenge);
 		} else {
-			if (debug)
-				hlist_dump(auth->headers);
 			syslog(LOG_WARNING, "No Proxy-Authenticate received! NTLM not supported?\n");
 		}
 	} else if (auth->code >= 500 && auth->code <= 599) {
@@ -493,6 +495,8 @@ int authenticate(int sd, rr_data_t request, struct auth_s *creds, int *closed) {
 	 * reconnect!
 	 */
 	if (closed && !hlist_subcmp(auth->headers, "Proxy-Connection", "keep-alive")) {
+		if (debug)
+			printf("Proxy didn't return keep-alive. Rejecting our auth?\n");
 		*closed = 1;
 	}
 
