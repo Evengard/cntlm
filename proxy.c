@@ -1111,7 +1111,7 @@ void *proxy_thread(void *client) {
 
 				if (!i || closed || so_closed(sd)) {
 					if (debug)
-						printf("Proxy closed connection. Reconnecting...\n");
+						printf("Proxy closed connection (i=%d, closed=%d, so_closed=%d). Reconnecting...\n", i, closed, so_closed(sd));
 					close(sd);
 					sd = proxy_connect();
 					if (sd <= 0) {
