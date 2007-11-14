@@ -293,7 +293,7 @@ int ntlm_response(char **dst, char *challenge, int challen, struct auth_s *creds
 
 	if (debug) {
 		printf("NTLM Challenge:\n");
-		tmp = printmem(MEM(challenge, char, lmlen), 8, 7);
+		tmp = printmem(MEM(challenge, char, 24), 8, 7);
 		printf("\tChallenge: %s (len: %d)\n", tmp, challen);
 		free(tmp);
 		printf("\t    Flags: 0x%X\n", U32LE(VAL(challenge, uint32_t, 20)));

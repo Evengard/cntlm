@@ -2491,6 +2491,11 @@ int main(int argc, char **argv) {
 	signal(SIGTERM, &sighandler);
 	signal(SIGHUP, &sighandler);
 
+	/*
+	 * Initialize the random number generator
+	 */
+	srandom(time(NULL));
+
 	if (precache) {
 		pthread_attr_init(&pattr);
 		pthread_attr_setdetachstate(&pattr, PTHREAD_CREATE_DETACHED);
