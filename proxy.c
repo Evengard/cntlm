@@ -409,8 +409,7 @@ int authenticate(int sd, rr_data_t request, struct auth_s *creds, int *closed) {
 	auth = dup_rr_data(request);
 
 	/*
-	 * If the request is CONNECT, we keep it unmodified as there are no possible data
-	 * transfers until auth is fully negotiated. All other requests are changed to HEAD.
+	 * If the request is CONNECT, we have to keep it unmodified
 	 */
 	if (!CONNECT(request)) {
 		free(auth->method);
@@ -451,6 +450,9 @@ int authenticate(int sd, rr_data_t request, struct auth_s *creds, int *closed) {
 		data_drop(sd, len);
 	}
 
+	/*
+	 * Should auth continue?
+	 */
 	if (auth->code == 407) {
 		tmp = hlist_get(auth->headers, "Proxy-Authenticate");
 		if (tmp) {
@@ -481,12 +483,21 @@ int authenticate(int sd, rr_data_t request, struct auth_s *creds, int *closed) {
 			syslog(LOG_WARNING, "No Proxy-Authenticate received! NTLM not supported?\n");
 		}
 	} else if (auth->code >= 500 && auth->code <= 599) {
+		/*
+		 * Proxy didn't like the request, close connection and don't try again.
+		 */
 		syslog(LOG_WARNING, "The request was denied!\n");
 
 		close(sd);
 		rc = 500;
 
 		goto bailout;
+	} else {
+		/*
+		 * No auth was neccessary, let the caller make the request again.
+		 */
+		if (closed)
+			*closed = 1;
 	}
 
 	/*
@@ -494,9 +505,9 @@ int authenticate(int sd, rr_data_t request, struct auth_s *creds, int *closed) {
 	 * at all or there was some problem. If so, let caller know that it should
 	 * reconnect!
 	 */
-	if (closed && !hlist_subcmp(auth->headers, "Proxy-Connection", "keep-alive")) {
+	if (closed && !hlist_subcmp(auth->headers, "Proxy-Connection", "close")) {
 		if (debug)
-			printf("Proxy didn't return keep-alive. Rejecting our auth?\n");
+			printf("Proxy signals it's closing the connection.\n");
 		*closed = 1;
 	}
 
