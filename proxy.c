@@ -505,7 +505,7 @@ int authenticate(int sd, rr_data_t request, struct auth_s *creds, int *closed) {
 	 * at all or there was some problem. If so, let caller know that it should
 	 * reconnect!
 	 */
-	if (closed && !hlist_subcmp(auth->headers, "Proxy-Connection", "close")) {
+	if (closed && hlist_subcmp(auth->headers, "Proxy-Connection", "close")) {
 		if (debug)
 			printf("Proxy signals it's closing the connection.\n");
 		*closed = 1;
