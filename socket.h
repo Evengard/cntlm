@@ -23,6 +23,15 @@
 #define _SOCKET_H
 
 #include <netinet/in.h>
+#include <stdint.h>
+
+#if config_socklen_t != 1
+#define socklen_t uint32_t
+#endif
+
+#ifndef INADDR_LOOPBACK
+#define INADDR_LOOPBACK 0x7f000001
+#endif
 
 extern int so_resolv(struct in_addr *host, const char *name);
 extern int so_connect(struct in_addr host, int port);

@@ -45,7 +45,7 @@ int so_resolv(struct in_addr *host, const char *name) {
 	if (!resolv)
 		return 0;
 
-	memcpy(host, resolv->h_addr, resolv->h_length);
+	memcpy(host, resolv->h_addr_list[0], resolv->h_length);
 	return 1;
 }
 
