@@ -33,7 +33,10 @@ uninstall:
 	rm -f $(BINDIR)/$(NAME) $(MANDIR)/man1/$(NAME).1 2>/dev/null || true
 
 clean:
-	rm -f *.o tags cntlm pid massif* callgrind* 2>/dev/null
+	@rm -f *.o cntlm cntlm.exe configure-stamp build-stamp config/config.h 2>/dev/null
+	@rm -f cntlm-install win32/cyg* win32/cntlm* 2>/dev/null
+	@rm -f config/endian config/gethostname config/strdup config/socklen_t config/*.exe
+	@if [ -h Makefile ]; then rm -f Makefile; mv Makefile.gcc Makefile; fi
 
 proxy.o: proxy.c
 	if [ -z "$(SYSCONFDIR)" ]; then \

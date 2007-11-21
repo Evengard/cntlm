@@ -1,6 +1,50 @@
 #!/bin/sh
+#
+# Search for GCC or XL C/C++, former if both exist
+#
+# To add another compiler, just create Makefile.XXX and add XXX to $CCS
+#
+# To prevent ugly Makefile extensions, underscore and chars following it
+# in the name XXX are automatically removed before locating relevant
+# Makefile. This is why compiler "xlc_r" has automatic Makefile extension
+# just "xlc". This can be disabled if neccessary.
+#
 
-CC=gcc
+CCS="xlc_r gcc"
+
+for c in $CCS; do
+	if CCPATH=`which $c 2>&1`; then
+		CC="$c"
+		break
+	fi
+done
+
+if [ -z "$CC" ]; then
+	echo "Unable to find GNU GCC or IBM XL C/C++. Fix your PATH!"
+	exit 1
+else
+	echo "Using $CCPATH to compile Cntlm"
+	[ -h Makefile ] && rm -f Makefile 2>/dev/null
+	case "$CC" in
+		gcc)
+			# default Makefile is for GCC; just revert back to
+			# GCC if Makefile is linked to other compiler version
+			if [ ! -f Makefile ]; then
+				mv Makefile.gcc Makefile
+			fi
+			;;
+		*)
+			# backup default GCC Makefile and create a link to other
+			if [ -f Makefile ]; then
+				mv Makefile Makefile.gcc
+			fi
+
+			EXT=`echo "$CC" | sed 's/_.*//'`
+			ln -s Makefile.$EXT Makefile
+			;;
+	esac
+fi
+
 STAMP=configure-stamp
 CONFIG=config/config.h
 TESTS="endian strdup socklen_t gethostname"
@@ -12,7 +56,7 @@ rm -f $CONFIG
 for i in $TESTS; do
 	printf "Checking $i... "
 	printf "#define config_$i " >> $CONFIG
-	OUT=`gcc -Wall -pedantic -O3 -D_POSIX_C_SOURCE=199506L -D_ISOC99_SOURCE -D_REENTRANT -o config/$i config/$i.c 2>&1`
+	OUT=`$CC -D_POSIX_C_SOURCE=199506L -D_ISOC99_SOURCE -D_REENTRANT -o config/$i config/$i.c 2>&1`
 	rc=$?
 
 	if [ $rc -ne 0 ]; then # -o -n "$OUT" ]; then
