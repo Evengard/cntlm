@@ -530,6 +530,7 @@ bailout:
 int make_connect(int sd, const char *thost) {
 	rr_data_t data1, data2;
 	int ret, closed;
+	hlist_t tl;
 
 	if (!sd || !thost || !strlen(thost))
 		return -1;
@@ -540,8 +541,17 @@ int make_connect(int sd, const char *thost) {
 	data1->req = 1;
 	data1->method = strdup("CONNECT");
 	data1->url = strdup(thost);
-	data1->http = strdup("0");
+	data1->http = strdup("1");
 	data1->headers = hlist_mod(data1->headers, "Proxy-Connection", "Keep-Alive", 1);
+
+	/*
+	 * Header replacement
+	 */
+	tl = header_list;
+	while (tl) {
+		data1->headers = hlist_mod(data1->headers, tl->key, tl->value, 1);
+		tl = tl->next;
+	}
 
 	if (debug)
 		printf("Starting authentication...\n");
