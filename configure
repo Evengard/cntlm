@@ -12,6 +12,9 @@
 
 CCS="xlc_r gcc"
 
+#
+# Look for supported compilers
+#
 for c in $CCS; do
 	if CCPATH=`which $c 2>&1`; then
 		CC="$c"
@@ -19,6 +22,9 @@ for c in $CCS; do
 	fi
 done
 
+#
+# Make a link to a proper Makefile.*
+#
 if [ -z "$CC" ]; then
 	echo "Unable to find GNU GCC or IBM XL C/C++. Fix your PATH!"
 	exit 1

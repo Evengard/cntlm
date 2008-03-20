@@ -44,6 +44,13 @@
 #include <fnmatch.h>
 
 /*
+ * Solaris doesn't have LOG_PERROR
+ */
+#ifndef LOG_PERROR
+#define LOG_PERROR	LOG_CONS
+#endif
+
+/*
  * Some helping routines like linked list manipulation substr(), memory
  * allocation, NTLM authentication routines, etc.
  */
