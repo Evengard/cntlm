@@ -11,13 +11,14 @@ MANDIR=/usr/local/man
 # __BSD_VISIBLE is for FreeBSD AF_* constants
 # _ALL_SOURCE is for AIX 5.3 LOG_PERROR constant
 #
+NAME=cntlm
 CC=gcc
+VER=`cat VERSION`
 OBJS=utils.o ntlm.o xcrypt.o config.o socket.o acl.o auth.o http.o proxy.o 
 CFLAGS=$(FLAGS) -std=c99 -Wall -pedantic -O3 -D__BSD_VISIBLE -D_ALL_SOURCE -D_XOPEN_SOURCE=600 -D_POSIX_C_SOURCE=200112 -D_ISOC99_SOURCE -D_REENTRANT -DVERSION=\"`cat VERSION`\"
-LDFLAGS=-lpthread
-NAME=cntlm
-VER=`cat VERSION`
-DIR=`pwd`
+OS=$(shell uname -s)
+OSLDFLAGS=$(shell [ $(OS) = "SunOS" ] && echo "-lrt -lsocket -lnsl")
+LDFLAGS:=-lpthread $(OSLDFLAGS)
 
 $(NAME): configure-stamp $(OBJS)
 	@echo "Linking $@"
@@ -61,7 +62,7 @@ rpm:
 tgz:
 	mkdir -p tmp
 	rm -f tmp/$(NAME)-$(VER)
-	ln -s $(DIR) tmp/$(NAME)-$(VER)
+	ln -s $(PWD) tmp/$(NAME)-$(VER)
 	sed "s/^\./$(NAME)-$(VER)/" doc/files.txt | tar zchf $(NAME)-$(VER).tar.gz --no-recursion -C tmp -T -
 	rm tmp/$(NAME)-$(VER)
 	rmdir tmp 2>/dev/null || true

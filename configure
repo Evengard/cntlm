@@ -6,8 +6,8 @@
 #
 # To prevent ugly Makefile extensions, underscore and chars following it
 # in the name XXX are automatically removed before locating relevant
-# Makefile. This is why compiler "xlc_r" has automatic Makefile extension
-# just "xlc". This can be disabled if neccessary.
+# Makefile. This is why compiler "xlc_r" has Makefile extension "xlc".
+# This can be disabled if neccessary.
 #
 
 CCS="xlc_r gcc"
@@ -16,7 +16,7 @@ CCS="xlc_r gcc"
 # Look for supported compilers
 #
 for c in $CCS; do
-	if CCPATH=`which $c 2>&1`; then
+	if CCPATH=`which $c 2>&1` && [ `expr substr "$CCPATH" 1 1` = "/" ]; then
 		CC="$c"
 		break
 	fi
