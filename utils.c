@@ -87,6 +87,8 @@ plist_t plist_del(plist_t list, unsigned long key) {
 	if (t) {
 		plist_t tmp = t->next;
 
+		if (t->aux)
+			free(t->aux);
 		free(t);
 		if (ot == NULL)
 			return tmp;
@@ -145,6 +147,8 @@ char *plist_get(plist_t list, int key) {
  * Scan the list for an open descriptor (socket), possibly
  * discarding all closed ones on the way. Return the first
  * match.
+ *
+ * Use this method only for lists of descriptors!
  *
  * In conjunction with plist_add, the list behaves as a FIFO.
  * This feature is used for rotating cached connections in the
@@ -223,15 +227,15 @@ plist_t plist_free(plist_t list) {
  * bugs throughout the code and tens of free's in the main
  * module.
  */
-hlist_t hlist_add(hlist_t list, char *key, char *value, int allockey, int allocvalue) {
+hlist_t hlist_add(hlist_t list, char *key, char *value, hlist_add_t allockey, hlist_add_t allocvalue) {
 	hlist_t tmp, t = list;
 
 	if (key == NULL || value == NULL)
 		return list;
 
 	tmp = malloc(sizeof(struct hlist_s));
-	tmp->key = (allockey ? strdup(key) : key);
-	tmp->value = (allocvalue ? strdup(value) : value);
+	tmp->key = (allockey == HLIST_ALLOC ? strdup(key) : key);
+	tmp->value = (allocvalue == HLIST_ALLOC ? strdup(value) : value);
 	tmp->next = NULL;
 
 	if (list == NULL)

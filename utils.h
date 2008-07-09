@@ -50,6 +50,11 @@ struct plist_s {
 	struct plist_s *next;
 };
 
+typedef enum {
+	HLIST_NOALLOC = 0,
+	HLIST_ALLOC
+} hlist_add_t;
+
 /*
  * Request/response data structure. Complete and parsed req/res is
  * kept in this. See below for (de)allocation routines.
@@ -83,7 +88,7 @@ extern int plist_pop(plist_t *list);
 extern int plist_count(plist_t list);
 extern plist_t plist_free(plist_t list);
 
-extern hlist_t hlist_add(hlist_t list, char *key, char *value, int allockey, int allocvalue);
+extern hlist_t hlist_add(hlist_t list, char *key, char *value, hlist_add_t allockey, hlist_add_t allocvalue);
 extern hlist_t hlist_dup(hlist_t list);
 extern hlist_t hlist_del(hlist_t list, const char *key);
 extern hlist_t hlist_mod(hlist_t list, char *key, char *value, int add);

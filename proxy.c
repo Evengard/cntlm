@@ -136,6 +136,7 @@ typedef struct {
 static hlist_t header_list = NULL;			/* proxy_thread() */
 static hlist_t users_list = NULL;			/* socks5_thread() */
 static plist_t scanner_agent_list = NULL;		/* scanner_hook() */
+static plist_t noproxy_list = NULL;			/* proxy_thread() */
 
 /*
  * General signal handler. If in debug mode, quit immediately.
@@ -230,7 +231,6 @@ int proxy_connect(void) {
 		pthread_mutex_unlock(&connection_mtx);
 	}
 		
-
 	return i;
 }
 
@@ -383,6 +383,23 @@ void tunnel_add(plist_t *list, char *spec, int gateway) {
 	}
 
 	free(spec);
+}
+
+/*
+ * Add no-proxy hostname/IP
+ */
+plist_t noproxy_add(plist_t list, char *spec) {
+	char *tok, *save;
+
+	tok = strtok_r(spec, ", ", &save);
+	while ( tok != NULL ) {
+		if (debug)
+			printf("Adding no-proxy for: '%s'\n", tok);
+		list = plist_add(list, 0, strdup(tok));
+		tok = strtok_r(NULL, ", ", &save);
+	}
+
+	return list;
 }
 
 /*
@@ -1683,9 +1700,9 @@ void magic_auth_detect(const char *url) {
 		req->method = strdup("GET");
 		req->url = strdup(url);
 		req->http = strdup("1");
-		req->headers = hlist_add(req->headers, "Proxy-Connection", "Keep-Alive", 1, 1);
+		req->headers = hlist_add(req->headers, "Proxy-Connection", "Keep-Alive", HLIST_ALLOC, HLIST_ALLOC);
 		if (host)
-			req->headers = hlist_add(req->headers, "Host", host, 1, 1);
+			req->headers = hlist_add(req->headers, "Host", host, HLIST_ALLOC, HLIST_ALLOC);
 
 		creds->hashnt = prefs[i][0];
 		creds->hashlm = prefs[i][1];
@@ -1821,7 +1838,7 @@ int main(int argc, char **argv) {
 	syslog(LOG_INFO, "Starting cntlm version " VERSION " for LITTLE endian\n");
 #endif
 
-	while ((i = getopt(argc, argv, ":-:a:c:d:fghIl:p:r:su:vw:A:BD:F:G:HL:M:O:P:R:S:T:U:")) != -1) {
+	while ((i = getopt(argc, argv, ":-:a:c:d:fghIl:p:r:su:vw:A:BD:F:G:HL:M:N:O:P:R:S:T:U:")) != -1) {
 		switch (i) {
 			case 'A':
 			case 'D':
@@ -1885,6 +1902,10 @@ int main(int argc, char **argv) {
 			case 'M':
 				magic_detect = strdup(optarg);
 				break;
+			case 'N':
+				noproxy_list = noproxy_add(noproxy_list, tmp=strdup(optarg));
+				free(tmp);
+				break;
 			case 'O':
 				listen_add("SOCKS5 proxy", &socksd_list, optarg, gateway);
 				break;
@@ -1907,12 +1928,12 @@ int main(int argc, char **argv) {
 					fprintf(stderr, "Invalid username:password format for -R: %s\n", tmp);
 				} else {
 					head[0] = 0;
-					users_list = hlist_add(users_list, tmp, head+1, 1, 1);
+					users_list = hlist_add(users_list, tmp, head+1, HLIST_ALLOC, HLIST_ALLOC);
 				}
 				break;
 			case 'r':
 				if (head_ok(optarg))
-					header_list = hlist_add(header_list, head_name(optarg), head_value(optarg), 0, 0);
+					header_list = hlist_add(header_list, head_name(optarg), head_value(optarg), HLIST_NOALLOC, HLIST_NOALLOC);
 				break;
 			case 'S':
 				scanner_plugin = 1;
@@ -2010,6 +2031,8 @@ int main(int argc, char **argv) {
 				"\t    Main listening port for the NTLM proxy.\n");
 		fprintf(stderr, "\t-M  <testurl>\n"
 				"\t    Magic autodetection of proxy's NTLM dialect.\n");
+		fprintf(stderr, "\t-N  <hostname1>[,<hostname2>,<IP1> ...]\n"
+				"\t    Use direct connections for these addresses - not parent proxy. NTLM WWW authentication supported for these.\n");
 		fprintf(stderr, "\t-O  [<saddr>:]<lport>\n"
 				"\t    Enable SOCKS5 proxy and make it listen on the specified port (and address).\n");
 		fprintf(stderr, "\t-P  <pidfile>\n"
@@ -2123,7 +2146,7 @@ int main(int argc, char **argv) {
 			if (head_ok(tmp)) {
 				head = head_name(tmp);
 				if (!hlist_in(header_list, head))
-					header_list = hlist_add(header_list, head_name(tmp), head_value(tmp), 0, 0);
+					header_list = hlist_add(header_list, head_name(tmp), head_value(tmp), HLIST_NOALLOC, HLIST_NOALLOC);
 				free(head);
 			} else
 				syslog(LOG_ERR, "Invalid header format: %s\n", tmp);
@@ -2183,13 +2206,20 @@ int main(int argc, char **argv) {
 		}
 		free(tmp);
 
+		while ((tmp = config_pop(cf, "NoProxyFor"))) {
+			if (strlen(tmp)) {
+				noproxy_list = noproxy_add(noproxy_list, tmp);
+			}
+			free(tmp);
+		}
+
 		while ((tmp = config_pop(cf, "SOCKS5Users"))) {
 			head = strchr(tmp, ':');
 			if (!head) {
 				syslog(LOG_ERR, "Invalid username:password format for SOCKS5User: %s\n", tmp);
 			} else {
 				head[0] = 0;
-				users_list = hlist_add(users_list, tmp, head+1, 1, 1);
+				users_list = hlist_add(users_list, tmp, head+1, HLIST_ALLOC, HLIST_ALLOC);
 			}
 		}
 					
