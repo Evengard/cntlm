@@ -964,7 +964,7 @@ void *proxy_thread(void *client) {
 	char *tmp, *buf, *pos, *dom;
 	struct auth_s *tcreds;						/* Per-thread credentials; for NTLM-to-basic */
 
-	int cd = (int)client;
+	int cd = (unsigned int)client;
 	int authok = 0;
 	int noauth = 0;
 	int sd = 0;
@@ -1324,7 +1324,7 @@ shortcut:
 
 		free_rr_data(data[0]);
 		free_rr_data(data[1]);
-	} while (!so_closed(sd) && !so_closed(cd) && !serialize && !noauth && (keep || so_dataready(cd)));
+	} while (!so_closed(sd) && !so_closed(cd) && !serialize && !noauth && !ntlmbasic && (keep || so_dataready(cd)));
 
 bailout:
 	if (debug)
@@ -1447,7 +1447,7 @@ void *tunnel_thread(void *client) {
 }
 
 void *socks5_thread(void *client) {
-	int cd = (int)client;
+	int cd = (unsigned int)client;
 	char *tmp, *thost, *tport, *uname, *upass;
 	unsigned char *bs, *auths, *addr;
 	unsigned short port;
@@ -2691,11 +2691,11 @@ int main(int argc, char **argv) {
 
 					if (plist_in(proxyd_list, i)) {
 						if (!serialize)
-							tid = pthread_create(&pthr, &pattr, proxy_thread, (void *)cd);
+							tid = pthread_create(&pthr, &pattr, proxy_thread, (void *)(unsigned int)cd);
 						else
-							proxy_thread((void *)cd);
+							proxy_thread((void *)(unsigned int)cd);
 					} else if (plist_in(socksd_list, i)) {
-						tid = pthread_create(&pthr, &pattr, socks5_thread, (void *)cd);
+						tid = pthread_create(&pthr, &pattr, socks5_thread, (void *)(unsigned int)cd);
 					} else {
 						data = (struct thread_arg_s *)new(sizeof(struct thread_arg_s));
 						data->fd = cd;
