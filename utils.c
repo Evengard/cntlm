@@ -445,14 +445,14 @@ char *substr(const char *src, int pos, int len) {
  * for the colon delimiter. Might eventually become more
  * sophisticated. :)
  */
-int head_ok(const char *src) {
+int is_http_header(const char *src) {
 	return strcspn(src, ":") != strlen(src);
 }
 
 /*
  * Extract the header name from the source.
  */
-char *head_name(const char *src) {
+char *get_http_header_name(const char *src) {
 	int i;
 
 	i = strcspn(src, ":");
@@ -465,7 +465,7 @@ char *head_name(const char *src) {
 /*
  * Extract the header value from the source.
  */
-char *head_value(const char *src) {
+char *get_http_header_value(const char *src) {
 	char *sub;
 
 	if ((sub = strchr(src, ':'))) {
@@ -525,6 +525,32 @@ rr_data_t dup_rr_data(rr_data_t data) {
 }
 
 /*
+ * Reset, freeing if neccessary
+ */
+rr_data_t reset_rr_data(rr_data_t data) {
+	if (data == NULL)
+		return NULL;
+
+	data->req = 0;
+	data->code = 0;
+	data->skip_http = 0;
+
+	if (data->headers) hlist_free(data->headers);
+	if (data->method) free(data->method);
+	if (data->url) free(data->url);
+	if (data->http) free(data->http);
+	if (data->msg) free(data->msg);
+
+	data->headers = NULL;
+	data->method = NULL;
+	data->url = NULL;
+	data->http = NULL;
+	data->msg = NULL;
+
+	return data;
+}
+
+/*
  * Free rr_data_t structure. We also take care of freeing
  * the memory of its members.
  */
@@ -562,10 +588,13 @@ char *strdup(const char *src) {
 	size_t len;
 	char *tmp;
 
+	if (!src)
+		return NULL;
+
 	len = strlen(src)+1;
-	tmp = malloc(len);
-	memcpy(tmp, src, len);
-	
+	tmp = calloc(1, len);
+	memcpy(tmp, src, len-1);
+
 	return tmp;
 }
 #endif

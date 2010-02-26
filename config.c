@@ -45,9 +45,11 @@ config_t config_open(const char *fname) {
 	ret->options = NULL;
 
 	while (!feof(fp)) {
-		fgets(buf, BUFSIZE, fp);
-		len = MIN(BUFSIZE, strlen(buf));
+		buf = fgets(buf, BUFSIZE, fp);
+		if (!buf)
+			break;
 
+		len = MIN(BUFSIZE, strlen(buf));
 		if (!len || feof(fp))
 			continue;
 

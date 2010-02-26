@@ -69,8 +69,10 @@ int so_connect(struct in_addr host, int port) {
 	saddr.sin_port = htons(port);
 	saddr.sin_addr = host;
 
-	if (connect(fd, (struct sockaddr *)&saddr, sizeof(saddr)) < 0)
+	if (connect(fd, (struct sockaddr *)&saddr, sizeof(saddr)) < 0) {
+		close(fd);
 		return -1;
+	}
 
 	return fd;
 }
@@ -99,11 +101,14 @@ int so_listen(int port, struct in_addr source) {
 
 	if (bind(fd, (struct sockaddr *)&saddr, sizeof(saddr))) {
 		syslog(LOG_ERR, "Cannot bind port %d: %s!\n", port, strerror(errno));
+		close(fd);
 		return -1;
 	}
 
-	if (listen(fd, 5))
+	if (listen(fd, 5)) {
+		close(fd);
 		return -1;
+	}
 
 	return fd;
 }

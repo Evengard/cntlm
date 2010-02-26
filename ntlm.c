@@ -73,7 +73,7 @@ static void ntlm2_calc_resp(char **nthash, int *ntlen, char **lmhash, int *lmlen
 	VAL(nonce, uint64_t, 0) = ((uint64_t)random() << 32) | random();
 	tw = ((uint64_t)time(NULL) + 11644473600LLU) * 10000000LLU;
 
-	if (0 && debug) {
+	if (debug) {
 		tmp = printmem(nonce, 8, 7);
 		printf("NTLMv2:\n\t    Nonce: %s\n\tTimestamp: %lld\n", tmp, tw);
 		free(tmp);

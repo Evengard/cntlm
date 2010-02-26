@@ -79,9 +79,10 @@
 /*
  * A couple of shortcuts for if statements
  */
-#define CONNECT(data)	(data && data->req && !strcasecmp("CONNECT", data->method))
-#define HEAD(data)	(data && data->req && !strcasecmp("HEAD", data->method))
-#define GET(data)	(data && data->req && !strcasecmp("GET", data->method))
+#define CONNECT(data)	((data) && (data)->req && !strcasecmp("CONNECT", (data)->method))
+#define HEAD(data)	((data) && (data)->req && !strcasecmp("HEAD", (data)->method))
+#define GET(data)	((data) && (data)->req && !strcasecmp("GET", (data)->method))
+#define STATUS_OK(data)	((data) && (data)->req && (data)->code < 400)
 
 /*
  * Global "read-only" data initialized in main(). Comments list funcs. which use
@@ -414,8 +415,11 @@ plist_t noproxy_add(plist_t list, char *spec) {
  * If the proxy closes the connection for some reason, we notify our
  * caller by setting closed to 1. Otherwise, it is set to 0.
  * If closed == NULL, we do not signal anything.
+ *
+ * Caller must init & free "response" (if interested)
+ *
  */
-int authenticate(int sd, rr_data_t request, struct auth_s *creds, int *closed) {
+int authenticate(int sd, rr_data_t request, rr_data_t response, struct auth_s *creds, int *closed) {
 	char *tmp, *buf, *challenge;
 	rr_data_t auth;
 	int len, rc;
@@ -429,7 +433,7 @@ int authenticate(int sd, rr_data_t request, struct auth_s *creds, int *closed) {
 	len = ntlm_request(&tmp, creds);
 	to_base64(MEM(buf, unsigned char, 5), MEM(tmp, unsigned char, 0), len, BUFSIZE-5);
 	free(tmp);
-	
+
 	auth = dup_rr_data(request);
 
 	/*
@@ -452,13 +456,19 @@ int authenticate(int sd, rr_data_t request, struct auth_s *creds, int *closed) {
 		goto bailout;
 	}
 
-	free_rr_data(auth);
-	auth = new_rr_data();
-
 	if (debug) {
 		printf("Reading auth response...\n");
 	}
 
+	/*
+	 * Return response if requested
+	 */
+	if (response) {
+		free_rr_data(auth);
+		auth = response;
+	}
+
+	reset_rr_data(auth);
 	if (!headers_recv(sd, auth)) {
 		rc = 0;
 		goto bailout;
@@ -467,17 +477,17 @@ int authenticate(int sd, rr_data_t request, struct auth_s *creds, int *closed) {
 	if (debug)
 		hlist_dump(auth->headers);
 
-	tmp = hlist_get(auth->headers, "Content-Length");
-	if (tmp && (len = atoi(tmp))) {
-		if (debug)
-			printf("Got %d too many bytes.\n", len);
-		data_drop(sd, len);
-	}
-
 	/*
 	 * Should auth continue?
 	 */
 	if (auth->code == 407) {
+		tmp = hlist_get(auth->headers, "Content-Length");
+		if (tmp && (len = atoi(tmp))) {
+			if (debug)
+				printf("Got %d too many bytes.\n", len);
+			data_drop(sd, len);
+		}
+
 		tmp = hlist_get(auth->headers, "Proxy-Authenticate");
 		if (tmp) {
 			challenge = new(strlen(tmp));
@@ -511,16 +521,15 @@ int authenticate(int sd, rr_data_t request, struct auth_s *creds, int *closed) {
 		 * Proxy didn't like the request, close connection and don't try again.
 		 */
 		syslog(LOG_WARNING, "The request was denied!\n");
-
-		close(sd);
+		//close(sd);
 		rc = 500;
-
 		goto bailout;
 	} else {
 		/*
 		 * No auth was neccessary, let the caller make the request again.
+		 * Unless he wants the response+data, then let him finish the processing.
 		 */
-		if (closed)
+		if (closed && !response)
 			*closed = 1;
 	}
 
@@ -528,8 +537,10 @@ int authenticate(int sd, rr_data_t request, struct auth_s *creds, int *closed) {
 	 * Does proxy intend to close the connection? E.g. it didn't require auth
 	 * at all or there was some problem. If so, let caller know that it should
 	 * reconnect!
+	 *
+	 * Unless caller wants the response+data, then let him finish the processing.
 	 */
-	if (closed && hlist_subcmp(auth->headers, "Proxy-Connection", "close")) {
+	if (closed && !response && hlist_subcmp(auth->headers, "Proxy-Connection", "close")) {
 		if (debug)
 			printf("Proxy signals it's closing the connection.\n");
 		*closed = 1;
@@ -538,7 +549,8 @@ int authenticate(int sd, rr_data_t request, struct auth_s *creds, int *closed) {
 	rc = 1;
 
 bailout:
-	free_rr_data(auth);
+	if (!response)
+		free_rr_data(auth);
 	free(buf);
 
 	return rc;
@@ -580,7 +592,7 @@ int make_connect(int sd, const char *thost) {
 	if (debug)
 		printf("Starting authentication...\n");
 
-	ret = authenticate(sd, data1, creds, &closed);
+	ret = authenticate(sd, data1, NULL, creds, &closed);
 	if (ret && ret != 500) {
 		if (closed || so_closed(sd)) {
 			close(sd);
@@ -690,7 +702,7 @@ int has_body(rr_data_t request, rr_data_t response) {
 
 int scanner_hook(rr_data_t *request, rr_data_t *response, int *cd, int *sd, long maxKBs) {
 	char *buf, *line, *pos, *tmp, *pat, *post, *isaid, *uurl;
-	int bsize, lsize, size, len, i, nc;
+	int bsize, lsize, size, len, i, w, nc;
 	rr_data_t newreq, newres;
 	plist_t list;
 	int ok = 1;
@@ -786,7 +798,7 @@ int scanner_hook(rr_data_t *request, rr_data_t *response, int *cd, int *sd, long
 						headers_initiated = 1;
 						tmp = new(MINIBUF_SIZE);
 						snprintf(tmp, MINIBUF_SIZE, "HTTP/1.%s 200 OK\r\n", (*request)->http);
-						write(*cd, tmp, strlen(tmp));
+						w = write(*cd, tmp, strlen(tmp));
 						free(tmp);
 					}
 
@@ -803,7 +815,7 @@ int scanner_hook(rr_data_t *request, rr_data_t *response, int *cd, int *sd, long
 						tmp = new(MINIBUF_SIZE);
 						progress = atol(line+12);
 						snprintf(tmp, MINIBUF_SIZE, "ISA-Scanner: %ld of %ld\r\n", progress, filesize);
-						write(*cd, tmp, strlen(tmp));
+						w = write(*cd, tmp, strlen(tmp));
 						free(tmp);
 					}
 
@@ -853,13 +865,14 @@ int scanner_hook(rr_data_t *request, rr_data_t *response, int *cd, int *sd, long
 					nc = i;
 				} else {
 					nc = proxy_connect();
-					c = authenticate(nc, newreq, creds, NULL);
+					c = authenticate(nc, newreq, NULL, creds, NULL);
 					if (c > 0 && c != 500) {
 						if (debug)
 							printf("scanner_hook: Authentication OK, getting the file...\n");
 					} else {
 						if (debug)
 							printf("scanner_hook: Authentication failed\n");
+						close(nc);
 						nc = 0;
 					}
 				}
@@ -889,6 +902,7 @@ int scanner_hook(rr_data_t *request, rr_data_t *response, int *cd, int *sd, long
 					 */
 					newres->skip_http = headers_initiated;
 					*response = dup_rr_data(newres);
+					close(*sd);
 					*sd = nc;
 
 					len = 0;
@@ -944,7 +958,7 @@ int scanner_hook(rr_data_t *request, rr_data_t *response, int *cd, int *sd, long
  */
 void *proxy_thread(void *client) {
 	int *rsocket[2], *wsocket[2];
-	int i, loop, bodylen, keep, chunked, plugin, closed;
+	int i, w, loop, bodylen, keep, chunked, plugin, closed;
 	rr_data_t data[2], errdata;
 	hlist_t tl;
 	char *tmp, *buf, *pos, *dom;
@@ -952,6 +966,7 @@ void *proxy_thread(void *client) {
 
 	int cd = (int)client;
 	int authok = 0;
+	int noauth = 0;
 	int sd = 0;
 
 	if (debug)
@@ -1002,7 +1017,7 @@ void *proxy_thread(void *client) {
 
 		for (loop = 0; loop < 2; loop++) {
 			if (debug) {
-				printf("\n******* Round %d C: %d, S: %d *******!\n", loop+1, cd, sd);
+				printf("\n******* Round %d C: %d, S: %d (auth=%d) *******!\n", loop+1, cd, sd, authok);
 				printf("Reading headers...\n");
 			}
 
@@ -1013,10 +1028,11 @@ void *proxy_thread(void *client) {
 				goto bailout;
 			}
 
-			chunked = 0;
-
 			if (debug)
 				hlist_dump(data[loop]->headers);
+
+shortcut:
+			chunked = 0;
 
 			/*
 			 * NTLM-to-Basic implementation
@@ -1045,7 +1061,7 @@ void *proxy_thread(void *client) {
 						printf("NTLM-to-basic: Sending the client auth request.\n");
 
 					tmp = gen_auth_page(data[loop]->http);
-					write(cd, tmp, strlen(tmp));
+					w = write(cd, tmp, strlen(tmp));
 					free(tmp);
 
 					if (buf) {
@@ -1151,8 +1167,18 @@ void *proxy_thread(void *client) {
 			 */
 			if (!loop && data[0]->req && !authok) {
 				errdata = NULL;
-				if (!(i = authenticate(*wsocket[0], data[0], tcreds, &closed)))
+				i = authenticate(*wsocket[0], data[0], data[1], tcreds, &closed);
+				if (!i)
 					syslog(LOG_ERR, "Authentication requests failed. Will try without.\n");
+
+				if (i && data[1]->code != 407) {
+					if (debug)
+						printf("Proxy auth not wanted! Just forwarding.\n");
+					noauth = 1;
+					loop = 1;
+					goto shortcut;
+				}
+				reset_rr_data(data[1]);
 
 				if (!i || closed || so_closed(sd)) {
 					if (debug)
@@ -1168,11 +1194,11 @@ void *proxy_thread(void *client) {
 			}
 
 			/*
-			 * Was the request first and did we authenticated with proxy?
+			 * Was the request first and did we authenticate with proxy?
 			 * Remember not to authenticate this connection any more, should
 			 * it be reused for future client requests.
 			 */
-			if (loop && !authok && data[1]->code != 407)
+			if (loop && !authok && STATUS_OK(data[1]))
 				authok = 1;
 
 			/*
@@ -1298,16 +1324,16 @@ void *proxy_thread(void *client) {
 
 		free_rr_data(data[0]);
 		free_rr_data(data[1]);
-	} while (!so_closed(sd) && !so_closed(cd) && !serialize && (keep || so_dataready(cd)));
+	} while (!so_closed(sd) && !so_closed(cd) && !serialize && !noauth && (keep || so_dataready(cd)));
 
 bailout:
-	free_auth(tcreds);
-
 	if (debug)
 		printf("\nThread finished.\n");
 
+	free_auth(tcreds);
 	close(cd);
-	if (!so_closed(sd) && authok) {
+
+	if (!so_closed(sd) && authok && !noauth) {
 		if (debug)
 			printf("Storing the connection for reuse (%d:%d).\n", cd, sd);
 		pthread_mutex_lock(&connection_mtx);
@@ -1347,7 +1373,7 @@ void *precache_thread(void *data) {
 			data1->url = strdup("http://www.google.com/");
 			data1->http = strdup("1");
 
-			i = authenticate(sd, data1, creds, &closed);
+			i = authenticate(sd, data1, NULL, creds, &closed);
 			if (i && i == 1 && !closed && !so_closed(sd) && headers_send(sd, data1) && headers_recv(sd, data2) && data2->code == 302) {
 				tmp = hlist_get(data2->headers, "Content-Length");
 				if (tmp)
@@ -1425,7 +1451,7 @@ void *socks5_thread(void *client) {
 	char *tmp, *thost, *tport, *uname, *upass;
 	unsigned char *bs, *auths, *addr;
 	unsigned short port;
-	int ver, r, c, i;
+	int ver, r, c, i, w;
 
 	int found = -1;
 	int sd = 0;
@@ -1471,12 +1497,12 @@ void *socks5_thread(void *client) {
 	if (found < 0) {
 		bs[0] = 5;
 		bs[1] = 0xFF;
-		write(cd, bs, 2);
+		w = write(cd, bs, 2);
 		goto bail2;
 	} else {
 		bs[0] = 5;
 		bs[1] = found;
-		write(cd, bs, 2);
+		w = write(cd, bs, 2);
 	}
 
 	/*
@@ -1490,7 +1516,7 @@ void *socks5_thread(void *client) {
 		if (r != 2) {
 			bs[0] = 1;
 			bs[1] = 0xFF;		/* Unsuccessful (not supported) */
-			write(cd, bs, 2);
+			w = write(cd, bs, 2);
 			goto bail2;
 		}
 		c = bs[1];
@@ -1535,7 +1561,7 @@ void *socks5_thread(void *client) {
 		/*
 		 * Send response
 		 */
-		write(cd, bs, 2);
+		w = write(cd, bs, 2);
 		free(upass);
 		free(uname);
 
@@ -1562,7 +1588,7 @@ void *socks5_thread(void *client) {
 		bs[2] = 0;
 		bs[3] = 1;			/* Dummy IPv4 */
 		memset(bs+4, 0, 6);
-		write(cd, bs, 10);
+		w = write(cd, bs, 10);
 		goto bail2;
 	}
 
@@ -1619,7 +1645,7 @@ void *socks5_thread(void *client) {
 		bs[2] = 0;
 		bs[3] = 1;			/* Dummy IPv4 */
 		memset(bs+4, 0, 6);
-		write(cd, bs, 10);
+		w = write(cd, bs, 10);
 		goto bail3;
 	} else {
 		/*
@@ -1630,7 +1656,7 @@ void *socks5_thread(void *client) {
 		bs[2] = 0;
 		bs[3] = 1;			/* Dummy IPv4 */
 		memset(bs+4, 0, 6);
-		write(cd, bs, 10);
+		w = write(cd, bs, 10);
 	}
 
 	/*
@@ -1722,7 +1748,7 @@ void magic_auth_detect(const char *url) {
 			return;
 		}
 
-		c = authenticate(nc, req, creds, &closed);
+		c = authenticate(nc, req, NULL, creds, &closed);
 		if (c <= 0 || c == 500 || closed) {
 			printf("Auth request ignored (HTTP code: %d)\n", c);
 			free_rr_data(res);
@@ -1783,9 +1809,9 @@ void magic_auth_detect(const char *url) {
 
 void carp(const char *msg, int console) {
 	if (console)
-		printf(msg);
+		printf("%s", msg);
 	else
-		syslog(LOG_ERR, msg);
+		syslog(LOG_ERR, "%s", msg);
 	
 	myexit(1);
 }
@@ -1798,7 +1824,7 @@ int main(int argc, char **argv) {
 	pthread_attr_t pattr;
 	pthread_t pthr;
 	hlist_t list;
-	int i;
+	int i, w;
 
 	int cd = 0;
 	int help = 0;
@@ -1932,8 +1958,8 @@ int main(int argc, char **argv) {
 				}
 				break;
 			case 'r':
-				if (head_ok(optarg))
-					header_list = hlist_add(header_list, head_name(optarg), head_value(optarg), HLIST_NOALLOC, HLIST_NOALLOC);
+				if (is_http_header(optarg))
+					header_list = hlist_add(header_list, get_http_header_name(optarg), get_http_header_value(optarg), HLIST_NOALLOC, HLIST_NOALLOC);
 				break;
 			case 'S':
 				scanner_plugin = 1;
@@ -2031,8 +2057,8 @@ int main(int argc, char **argv) {
 				"\t    Main listening port for the NTLM proxy.\n");
 		fprintf(stderr, "\t-M  <testurl>\n"
 				"\t    Magic autodetection of proxy's NTLM dialect.\n");
-		fprintf(stderr, "\t-N  <hostname1>[,<hostname2>,<IP1> ...]\n"
-				"\t    Use direct connections for these addresses - not parent proxy. NTLM WWW authentication supported for these.\n");
+		//fprintf(stderr, "\t-N  <hostname1>[,<hostname2>,<IP1> ...]\n"
+		//		"\t    Use direct connections for these addresses - not parent proxy. NTLM WWW authentication supported for these.\n");
 		fprintf(stderr, "\t-O  [<saddr>:]<lport>\n"
 				"\t    Enable SOCKS5 proxy and make it listen on the specified port (and address).\n");
 		fprintf(stderr, "\t-P  <pidfile>\n"
@@ -2143,10 +2169,10 @@ int main(int argc, char **argv) {
 		 * Command line has higher priority.
 		 */
 		while ((tmp = config_pop(cf, "Header"))) {
-			if (head_ok(tmp)) {
-				head = head_name(tmp);
+			if (is_http_header(tmp)) {
+				head = get_http_header_name(tmp);
 				if (!hlist_in(header_list, head))
-					header_list = hlist_add(header_list, head_name(tmp), head_value(tmp), HLIST_NOALLOC, HLIST_NOALLOC);
+					header_list = hlist_add(header_list, head, get_http_header_value(tmp), HLIST_ALLOC, HLIST_NOALLOC);
 				free(head);
 			} else
 				syslog(LOG_ERR, "Invalid header format: %s\n", tmp);
@@ -2332,7 +2358,7 @@ int main(int argc, char **argv) {
 		termnew = termold;
 		termnew.c_lflag &= ~(ISIG | ECHO);
 		tcsetattr(0, TCSADRAIN, &termnew);
-		fgets(cpassword, MINIBUF_SIZE, stdin);
+		tmp = fgets(cpassword, MINIBUF_SIZE, stdin);
 		tcsetattr(0, TCSADRAIN, &termold);
 		i = strlen(cpassword)-1;
 		trimr(cpassword);
@@ -2464,7 +2490,7 @@ int main(int argc, char **argv) {
 
 		setsid();
 		umask(0);
-		chdir("/");
+		w = chdir("/");
 		i = open("/dev/null", O_RDWR);
 		if (i >= 0) {
 			dup2(i, 0);
@@ -2534,7 +2560,7 @@ int main(int argc, char **argv) {
 
 		tmp = new(50);
 		snprintf(tmp, 50, "%d\n", getpid());
-		write(cd, tmp, strlen(tmp));
+		w = write(cd, tmp, strlen(tmp));
 		free(tmp);
 		close(cd);
 	}
@@ -2645,7 +2671,7 @@ int main(int argc, char **argv) {
 					if (acl_check(rules, caddr.sin_addr) != ACL_ALLOW) {
 						syslog(LOG_WARNING, "Connection denied for %s:%d\n", inet_ntoa(caddr.sin_addr), ntohs(caddr.sin_port));
 						tmp = gen_denied_page(inet_ntoa(caddr.sin_addr));
-						write(cd, tmp, strlen(tmp));
+						w = write(cd, tmp, strlen(tmp));
 						free(tmp);
 						close(cd);
 						continue;

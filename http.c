@@ -130,8 +130,8 @@ int headers_recv(int fd, rr_data_t data) {
 	do {
 		i = so_recvln(fd, &buf, &bsize);
 		trimr(buf);
-		if (i > 0 && head_ok(buf)) {
-			data->headers = hlist_add(data->headers, head_name(buf), head_value(buf), 0, 0);
+		if (i > 0 && is_http_header(buf)) {
+			data->headers = hlist_add(data->headers, get_http_header_name(buf), get_http_header_value(buf), 0, 0);
 		}
 	} while (strlen(buf) != 0 && i > 0);
 
@@ -308,7 +308,7 @@ int data_send(int dst, int src, int size) {
 int chunked_data_send(int dst, int src) {
 	char *buf;
 	int bsize;
-	int i, csize;
+	int i, w, csize;
 
 	char *err = NULL;
 
@@ -353,7 +353,7 @@ int chunked_data_send(int dst, int src) {
 		if (debug && !csize)
 			printf("last chunk: %d\n", csize);
 
-		write(dst, buf, strlen(buf));
+		i = write(dst, buf, strlen(buf));
 		if (csize)
 			if (!data_send(dst, src, csize+2)) {
 				if (debug)
@@ -371,7 +371,7 @@ int chunked_data_send(int dst, int src) {
 		if (debug)
 			printf("Trailer header(i=%d): %s\n", i, buf);
 		if (i > 0)
-			write(dst, buf, strlen(buf));
+			w = write(dst, buf, strlen(buf));
 	} while (i > 0 && buf[0] != '\r' && buf[0] != '\n');
 
 	free(buf);
