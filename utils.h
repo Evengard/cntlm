@@ -77,6 +77,7 @@ struct rr_data_s {
 struct thread_arg_s {
 	int fd;
 	char *target;
+	struct sockaddr_in addr;
 };
 
 extern plist_t plist_add(plist_t list, unsigned long key, char *aux);

@@ -956,7 +956,7 @@ int scanner_hook(rr_data_t *request, rr_data_t *response, int *cd, int *sd, long
  * back to client. We loop here to allow proxy keep-alive connections)
  * until the proxy closes.
  */
-void *proxy_thread(void *client) {
+void *proxy_thread(void *cdata) {
 	int *rsocket[2], *wsocket[2];
 	int i, w, loop, bodylen, keep, chunked, plugin, closed;
 	rr_data_t data[2], errdata;
@@ -964,10 +964,13 @@ void *proxy_thread(void *client) {
 	char *tmp, *buf, *pos, *dom;
 	struct auth_s *tcreds;						/* Per-thread credentials; for NTLM-to-basic */
 
-	int cd = (unsigned int)client;
 	int authok = 0;
 	int noauth = 0;
 	int sd = 0;
+
+	int cd = ((struct thread_arg_s *)cdata)->fd;
+	struct sockaddr_in caddr = ((struct thread_arg_s *)cdata)->addr;
+	free(cdata);
 
 	if (debug)
 		printf("Thread processing...\n");
@@ -1030,6 +1033,9 @@ void *proxy_thread(void *client) {
 
 			if (debug)
 				hlist_dump(data[loop]->headers);
+
+			if (!loop && data[0]->req)
+				syslog(LOG_DEBUG, "%s %s %s", inet_ntoa(caddr.sin_addr), data[0]->method, data[0]->url);
 
 shortcut:
 			chunked = 0;
@@ -1413,13 +1419,15 @@ void *precache_thread(void *data) {
  * "corkscrew" which after all require us for authentication and tunneling
  *  their HTTP CONNECT in the end.
  */
-void *tunnel_thread(void *client) {
-	int cd = ((struct thread_arg_s *)client)->fd;
-	char *thost = ((struct thread_arg_s *)client)->target;
+void *tunnel_thread(void *data) {
 	int sd;
 
+	int cd = ((struct thread_arg_s *)data)->fd;
+	char *thost = ((struct thread_arg_s *)data)->target;
+	struct sockaddr_in caddr = ((struct thread_arg_s *)data)->addr;
+	free(data);
+
 	sd = proxy_connect();
-	free(client);
 
 	if (sd <= 0) {
 		close(cd);
@@ -1428,6 +1436,7 @@ void *tunnel_thread(void *client) {
 
 	if (debug)
 		printf("Tunneling to %s for client %d...\n", thost, cd);
+	syslog(LOG_DEBUG, "%s TUNNEL %s", inet_ntoa(caddr.sin_addr), thost);
 
 	if (!make_connect(sd, thost)) {
 		tunnel(cd, sd);
@@ -1446,8 +1455,7 @@ void *tunnel_thread(void *client) {
 	return NULL;
 }
 
-void *socks5_thread(void *client) {
-	int cd = (unsigned int)client;
+void *socks5_thread(void *data) {
 	char *tmp, *thost, *tport, *uname, *upass;
 	unsigned char *bs, *auths, *addr;
 	unsigned short port;
@@ -1456,6 +1464,10 @@ void *socks5_thread(void *client) {
 	int found = -1;
 	int sd = 0;
 	int open = !hlist_count(users_list);
+
+	int cd = ((struct thread_arg_s *)data)->fd;
+	struct sockaddr_in caddr = ((struct thread_arg_s *)data)->addr;
+	free(data);
 
 	/*
 	 * Check client's version, possibly fuck'em
@@ -1658,6 +1670,8 @@ void *socks5_thread(void *client) {
 		memset(bs+4, 0, 6);
 		w = write(cd, bs, 10);
 	}
+
+	syslog(LOG_DEBUG, "%s SOCKS %s", inet_ntoa(caddr.sin_addr), thost);
 
 	/*
 	 * Let's give them bi-directional connection they asked for
@@ -2680,8 +2694,8 @@ int main(int argc, char **argv) {
 					/*
 					 * Log peer IP if it's not localhost
 					 */
-					if (debug || (gateway && caddr.sin_addr.s_addr != htonl(INADDR_LOOPBACK)))
-						syslog(LOG_INFO, "Connection accepted from %s:%d\n", inet_ntoa(caddr.sin_addr), ntohs(caddr.sin_port));
+					//if (debug || (gateway && caddr.sin_addr.s_addr != htonl(INADDR_LOOPBACK)))
+					//	syslog(LOG_INFO, "Connection accepted from %s:%d\n", inet_ntoa(caddr.sin_addr), ntohs(caddr.sin_port));
 
 					pthread_attr_init(&pattr);
 					pthread_attr_setstacksize(&pattr, STACK_SIZE);
@@ -2690,15 +2704,22 @@ int main(int argc, char **argv) {
 #endif
 
 					if (plist_in(proxyd_list, i)) {
+						data = (struct thread_arg_s *)new(sizeof(struct thread_arg_s));
+						data->fd = cd;
+						data->addr = caddr;
 						if (!serialize)
-							tid = pthread_create(&pthr, &pattr, proxy_thread, (void *)(unsigned int)cd);
+							tid = pthread_create(&pthr, &pattr, proxy_thread, (void *)data);
 						else
-							proxy_thread((void *)(unsigned int)cd);
+							proxy_thread((void *)data);
 					} else if (plist_in(socksd_list, i)) {
-						tid = pthread_create(&pthr, &pattr, socks5_thread, (void *)(unsigned int)cd);
+						data = (struct thread_arg_s *)new(sizeof(struct thread_arg_s));
+						data->fd = cd;
+						data->addr = caddr;
+						tid = pthread_create(&pthr, &pattr, socks5_thread, (void *)data);
 					} else {
 						data = (struct thread_arg_s *)new(sizeof(struct thread_arg_s));
 						data->fd = cd;
+						data->addr = caddr;
 						data->target = plist_get(tunneld_list, i);
 						tid = pthread_create(&pthr, &pattr, tunnel_thread, (void *)data);
 					}
