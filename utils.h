@@ -23,6 +23,7 @@
 #define _UTILS_H
 
 #include <pthread.h>
+#include <netinet/in.h>
 #include "config/config.h"
 
 #define BUFSIZE			1024
@@ -65,10 +66,12 @@ struct rr_data_s {
 	hlist_t headers;
 	int code;
 	int skip_http;
+	int body_len;
 	char *method;
 	char *url;
 	char *http;
 	char *msg;
+	char *body;
 };
 
 /*

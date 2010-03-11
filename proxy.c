@@ -422,10 +422,12 @@ plist_t noproxy_add(plist_t list, char *spec) {
 int authenticate(int sd, rr_data_t request, rr_data_t response, struct auth_s *creds, int *closed) {
 	char *tmp, *buf, *challenge;
 	rr_data_t auth;
-	int len, rc;
+	int len, rc, pretend407 = 0;
 
 	if (closed)
 		*closed = 0;
+
+	auth = dup_rr_data(request);
 
 	buf = new(BUFSIZE);
 
@@ -434,17 +436,43 @@ int authenticate(int sd, rr_data_t request, rr_data_t response, struct auth_s *c
 	to_base64(MEM(buf, unsigned char, 5), MEM(tmp, unsigned char, 0), len, BUFSIZE-5);
 	free(tmp);
 
-	auth = dup_rr_data(request);
+	auth->headers = hlist_mod(auth->headers, "Proxy-Authorization", buf, 1);
 
 	/*
 	 * If the request is CONNECT, we have to keep it unmodified
+	 *
+	 * DISABLED: if request succeeds without auth, we just forward it
+	 * so we can't really change the request.
+	 *
+	 * We still make the request twice in case the client is sending a body
+	 * or is using chunked encoding. Otherwise we'd have to chache the whole 
+	 * body in the memory. Making the request twice is better (first being
+	 * just a probe without body).
 	 */
+	/*
 	if (!CONNECT(request)) {
 		free(auth->method);
 		auth->method = strdup("GET");
 	}
-	auth->headers = hlist_mod(auth->headers, "Proxy-Authorization", buf, 1);
+	*/
+
+	tmp = hlist_get(auth->headers, "Content-Length");
+	if ((tmp && atoi(tmp) > 0) || hlist_get(auth->headers, "Transfer-Encoding")) {
+		/*
+		 * There's a body - make this request just a probe. Do not send any body.
+		 * If no auth is requested, we just forward reply to client to avoid
+		 * another duplicate request in our caller (which traditionally finishes
+		 * the 2nd part of NTLM handshake). Without auth, there's no need for the
+		 * final request. However, if client has a body, we make this request without
+		 * it and let caller do the request in full. If we did it here, we'd have to
+		 * cache the body in memory (even chunked) and carry it around. Not practical.
+		 */
+		if (debug)
+			printf("Will send just a probe request.\n");
+		pretend407 = 1;
+	}
 	auth->headers = hlist_del(auth->headers, "Content-Length");
+	auth->headers = hlist_del(auth->headers, "Transfer-Encoding");
 
 	if (debug) {
 		printf("\nSending auth request...\n");
@@ -456,9 +484,8 @@ int authenticate(int sd, rr_data_t request, rr_data_t response, struct auth_s *c
 		goto bailout;
 	}
 
-	if (debug) {
+	if (debug)
 		printf("Reading auth response...\n");
-	}
 
 	/*
 	 * Return response if requested
@@ -490,8 +517,8 @@ int authenticate(int sd, rr_data_t request, rr_data_t response, struct auth_s *c
 
 		tmp = hlist_get(auth->headers, "Proxy-Authenticate");
 		if (tmp) {
-			challenge = new(strlen(tmp));
-			len = from_base64(challenge, tmp+5);
+			challenge = new(strlen(tmp) + 5 + 1);
+			len = from_base64(challenge, tmp + 5);
 			if (len > NTLM_CHALLENGE_MIN) {
 				len = ntlm_response(&tmp, challenge, len, creds);
 				if (len > 0) {
@@ -529,6 +556,15 @@ int authenticate(int sd, rr_data_t request, rr_data_t response, struct auth_s *c
 		 * No auth was neccessary, let the caller make the request again.
 		 * Unless he wants the response+data, then let him finish the processing.
 		 */
+		if (pretend407) {
+			if (debug)
+				printf("Forcing new request.\n");
+			if (response)
+				response->code = 407;				// See explanation above
+			if (closed)
+				*closed = 1;
+		}
+
 		if (closed && !response)
 			*closed = 1;
 	}
@@ -1179,7 +1215,7 @@ shortcut:
 
 				if (i && data[1]->code != 407) {
 					if (debug)
-						printf("Proxy auth not wanted! Just forwarding.\n");
+						printf("Proxy auth not requested - just forwarding.\n");
 					noauth = 1;
 					loop = 1;
 					goto shortcut;
@@ -1188,7 +1224,7 @@ shortcut:
 
 				if (!i || closed || so_closed(sd)) {
 					if (debug)
-						printf("Proxy closed connection (i=%d, closed=%d, so_closed=%d). Reconnecting...\n", i, closed, so_closed(sd));
+						printf("Proxy closed connection (i=%d, closed=%d, so_closed=%d). Reconnecting.\n", i, closed, so_closed(sd));
 					close(sd);
 					sd = proxy_connect();
 					if (sd <= 0) {

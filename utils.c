@@ -488,11 +488,13 @@ rr_data_t new_rr_data(void) {
 	data->req = 0;
 	data->code = 0;
 	data->skip_http = 0;
+	data->body_len = 0;
 	data->headers = NULL;
 	data->method = NULL;
 	data->url = NULL;
 	data->http = NULL;
 	data->msg = NULL;
+	data->body = NULL;
 
 	return data;
 }
@@ -510,6 +512,8 @@ rr_data_t dup_rr_data(rr_data_t data) {
 	tmp->req = data->req;
 	tmp->code = data->code;
 	tmp->skip_http = data->skip_http;
+	tmp->body_len = data->body_len;
+
 	if (data->headers)
 		tmp->headers = hlist_dup(data->headers);
 	if (data->method)
@@ -520,6 +524,10 @@ rr_data_t dup_rr_data(rr_data_t data) {
 		tmp->http = strdup(data->http);
 	if (data->msg)
 		tmp->msg = strdup(data->msg);
+	if (data->body && data->body_len > 0) {
+		tmp->body = new(data->body_len);
+		memcpy(tmp->body, data->body, data->body_len);
+	}
 	
 	return tmp;
 }
@@ -534,18 +542,21 @@ rr_data_t reset_rr_data(rr_data_t data) {
 	data->req = 0;
 	data->code = 0;
 	data->skip_http = 0;
+	data->body_len = 0;
 
 	if (data->headers) hlist_free(data->headers);
 	if (data->method) free(data->method);
 	if (data->url) free(data->url);
 	if (data->http) free(data->http);
 	if (data->msg) free(data->msg);
+	if (data->body) free(data->body);
 
 	data->headers = NULL;
 	data->method = NULL;
 	data->url = NULL;
 	data->http = NULL;
 	data->msg = NULL;
+	data->body = NULL;
 
 	return data;
 }
@@ -563,6 +574,7 @@ void free_rr_data(rr_data_t data) {
 	if (data->url) free(data->url);
 	if (data->http) free(data->http);
 	if (data->msg) free(data->msg);
+	if (data->body) free(data->body);
 	free(data);
 }
 
