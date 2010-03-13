@@ -23,7 +23,7 @@
 #include "string.h"
 #include "stdio.h"
 
-char *gen_auth_page(char *http) {
+char *gen_407_page(char *http) {
 	char *tmp;
 
 	tmp = new(BUFSIZE);
@@ -32,7 +32,7 @@ char *gen_auth_page(char *http) {
 	strcat(tmp, "Content-Type: text/html\r\n\r\n");
 	strcat(tmp, "<html><body><h1>Authentication error</h1><p><a href='http://cntlm.sf.net/'>Cntlm</a> "
 		"proxy has NTLM-to-basic feature enabled. You have to enter correct credentials to continue "
-		"(try Ctrl-R or F5).</p></body></html>");
+		"(refresh with Ctrl-R or F5).</p></body></html>");
 
 	return tmp;
 }

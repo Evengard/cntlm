@@ -33,6 +33,21 @@
 #define MIN(a, b)		((a) < (b) ? (a) : (b))
 
 /*
+ * Solaris doesn't have LOG_PERROR
+ */
+#ifndef LOG_PERROR
+#define LOG_PERROR	LOG_CONS
+#endif
+
+/*
+ * A couple of shortcuts for if statements
+ */
+#define CONNECT(data)	((data) && (data)->req && !strcasecmp("CONNECT", (data)->method))
+#define HEAD(data)	((data) && (data)->req && !strcasecmp("HEAD", (data)->method))
+#define GET(data)	((data) && (data)->req && !strcasecmp("GET", (data)->method))
+#define STATUS_OK(data)	((data) && (data)->req && (data)->code < 400)
+
+/*
  * Two single-linked list types. First is for storing headers,
  * second keeps a list of finished threads or cached connections.
  * Each has a different set of manipulation routines.
