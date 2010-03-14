@@ -30,13 +30,10 @@ extern int debug;
 
 extern struct auth_s *creds;			/* global NTLM credentials */
 
-extern int ntlmbasic;				/* proxy_thread() */
+extern int ntlmbasic;				/* forward_request() */
 extern int serialize;
 extern int scanner_plugin;
 extern long scanner_plugin_maxsize;
-
-extern int active_conns;
-extern pthread_mutex_t active_mtx;
 
 extern plist_t threads_list;
 extern pthread_mutex_t threads_mtx;
@@ -44,17 +41,16 @@ extern pthread_mutex_t threads_mtx;
 extern plist_t connection_list;
 extern pthread_mutex_t connection_mtx;
 
+extern int parent_count;
 extern plist_t parent_list;
+
 typedef struct {
 	struct in_addr host;
 	int port;
 } proxy_t;
 
-extern int parent_count;
-extern int parent_curr;
-extern pthread_mutex_t parent_mtx;
 
-extern hlist_t header_list;			/* proxy_thread() */
+extern hlist_t header_list;			/* forward_request() */
 extern hlist_t users_list;			/* socks5_thread() */
 extern plist_t scanner_agent_list;		/* scanner_hook() */
 extern plist_t noproxy_list;			/* proxy_thread() */ 

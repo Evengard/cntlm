@@ -17,6 +17,9 @@
  *
  */
 
+#ifndef _SCANNER_H
+#define _SCANNER_H
+
 #include "utils.h"
 
 /*
@@ -34,5 +37,5 @@
 #define SAMPLE		4096
 
 int scanner_hook(rr_data_t *request, rr_data_t *response, int *cd, int *sd, long maxKBs);
-int has_body(rr_data_t request, rr_data_t response);
 
+#endif /* _SCANNER_H */

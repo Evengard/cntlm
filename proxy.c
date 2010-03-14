@@ -55,11 +55,10 @@
 #include "acl.h"
 #include "auth.h"
 #include "http.h"
-#include "forward.h"
 #include "globals.h"
 #include "pages.h"
-
-#define DEFAULT_PORT	"3128"
+#include "forward.h"				/* code serving via parent proxy */
+#include "direct.h"				/* code serving directly without proxy */
 
 #define STACK_SIZE	sizeof(void *)*8*1024
 
@@ -68,46 +67,40 @@
  * them. Having these global avoids the need to pass them to each thread and
  * from there again a few times to inner calls.
  */
-int debug = 0;						/* all debug printf's and possibly external modules */
+int debug = 0;					/* all debug printf's and possibly external modules */
 
 struct auth_s *creds = NULL;			/* throughout the whole module */
 
 int quit = 0;					/* sighandler() */
-int ntlmbasic = 0;				/* proxy_thread() */
+int ntlmbasic = 0;				/* forward_request() */
 int serialize = 0;
 int scanner_plugin = 0;
 long scanner_plugin_maxsize = 0;
 
-int active_conns = 0;
-pthread_mutex_t active_mtx = PTHREAD_MUTEX_INITIALIZER;
-
 /*
- * List of finished threads. Each thread proxy_thread() adds itself to it when
+ * List of finished threads. Each forward_request() thread adds itself to it when
  * finished. Main regularly joins and removes all tid's in there.
  */
 plist_t threads_list = NULL;
 pthread_mutex_t threads_mtx = PTHREAD_MUTEX_INITIALIZER;
 
 /*
- * List of cached connections. Accessed by each thread proxy_thread().
+ * List of cached connections. Accessed by each thread forward_request().
  */
 plist_t connection_list = NULL;
 pthread_mutex_t connection_mtx = PTHREAD_MUTEX_INITIALIZER;
-
-plist_t parent_list = NULL;
 
 /*
  * List of available proxies and current proxy id for proxy_connect().
  */
 int parent_count = 0;
-int parent_curr = 0;
-pthread_mutex_t parent_mtx = PTHREAD_MUTEX_INITIALIZER;
+plist_t parent_list = NULL;
 
 /*
  * List of custom header substitutions, SOCKS5 proxy users and 
  * UserAgents for the scanner plugin.
  */
-hlist_t header_list = NULL;			/* proxy_thread() */
+hlist_t header_list = NULL;			/* forward_request() */
 hlist_t users_list = NULL;			/* socks5_thread() */
 plist_t scanner_agent_list = NULL;		/* scanner_hook() */
 plist_t noproxy_list = NULL;			/* proxy_thread() */
@@ -130,28 +123,6 @@ void myexit(int rc) {
 		fprintf(stderr, "Exitting with error. Check daemon logs or run with -v.\n");
 	
 	exit(rc);
-}
-
-/*
- * Keep count of active connections (trasferring data)
- */
-void update_active(int i) {
-	pthread_mutex_lock(&active_mtx);
-	active_conns += i;
-	pthread_mutex_unlock(&active_mtx);
-}
-
-/*
- * Return count of active connections (trasferring data)
- */
-int check_active(void) {
-	int r;
-
-	pthread_mutex_lock(&active_mtx);
-	r = active_conns;
-	pthread_mutex_unlock(&active_mtx);
-
-	return r;
 }
 
 /*
@@ -329,6 +300,11 @@ void carp(const char *msg, int console) {
 		syslog(LOG_ERR, "%s", msg);
 	
 	myexit(1);
+}
+
+void *proxy_thread(void *cdata) {
+	forward_request(cdata);
+	return NULL;
 }
 
 int main(int argc, char **argv) {
@@ -573,8 +549,8 @@ int main(int argc, char **argv) {
 				"\t    Main listening port for the NTLM proxy.\n");
 		fprintf(stderr, "\t-M  <testurl>\n"
 				"\t    Magic autodetection of proxy's NTLM dialect.\n");
-		//fprintf(stderr, "\t-N  <hostname_wildcard_match>\n"
-		//		"\t    Use direct connections for these addresses. (e.g. '*.intranet.local')\n");
+		fprintf(stderr, "\t-N  <hostname_wildcard_match>\n"
+				"\t    Use direct connections for these addresses. (e.g. '*.intranet.local')\n");
 		fprintf(stderr, "\t-O  [<saddr>:]<lport>\n"
 				"\t    Enable SOCKS5 proxy and make it listen on the specified port (and address).\n");
 		fprintf(stderr, "\t-P  <pidfile>\n"
@@ -1155,8 +1131,12 @@ int main(int argc, char **argv) {
 		 * Wait here for data (connection request) on any of the listening 
 		 * sockets. When ready, establish the connection. For the main
 		 * port, a new proxy_thread() thread is spawned to service the HTTP
-		 * request. For tunneled ports, tunnel_thread() thread is created.
-		 * 
+		 * request. For tunneled ports, tunnel_thread() thread is created
+		 * and for SOCKS port, socks5_thread() is created.
+		 *
+		 * All threads are defined in forward.c, except for local proxy_thread()
+		 * which routes the request as forwarded or direct, depending on the
+		 * URL host name and NoProxy settings.
 		 */
 		cd = select(FD_SETSIZE, &set, NULL, NULL, &tv);
 		if (cd > 0) {

@@ -40,130 +40,56 @@
 
 #define MAGIC_TESTS	11
 
-void magic_auth_detect(const char *url) {
-	int i, nc, c, closed, found = -1;
-	rr_data_t req, res;
-	char *tmp, *pos, *host = NULL;
+int parent_curr = 0;
+pthread_mutex_t parent_mtx = PTHREAD_MUTEX_INITIALIZER;
 
-	char *authstr[5] = { "NTLMv2", "NTLM2SR", "NT", "NTLM", "LM" };
-	int prefs[MAGIC_TESTS][5] = {
-		/* NT, LM, NTLMv2, Flags, Auth param equiv. */
-		{ 0, 0, 1, 0, 0 },
-		{ 0, 0, 1, 0xa208b207, 0 },
-		{ 0, 0, 1, 0xa2088207, 0 },
-		{ 2, 0, 0, 0, 1 },
-		{ 2, 0, 0, 0x88207, 1 },
-		{ 1, 0, 0, 0, 2 },
-		{ 1, 0, 0, 0x8205, 2 },
-		{ 1, 1, 0, 0, 3 },
-		{ 1, 1, 0, 0x8207, 3 },
-		{ 0, 1, 0, 0, 4 },
-		{ 0, 1, 0, 0x8206, 4 }
-	};
+/*
+ * Return 0 if no body, -1 if until EOF, number if size known
+ */
+int has_body(rr_data_t request, rr_data_t response) {
+	rr_data_t current;
+	int length, nobody;
+	char *tmp;
 
-	debug = 0;
+	/*
+	 * Checking complete req+res conversation or just the
+	 * first part when there's no response yet?
+	 */
+	current = (response->http ? response : request);
 
-	if (!creds->passnt || !creds->passlm || !creds->passntlm2) {
-		printf("Cannot detect NTLM dialect - password or its hashes must be defined, try -I\n");
-		exit(1);
-	}
-
-	pos = strstr(url, "://");
-	if (pos) {
-		tmp = strchr(pos+3, '/');
-		host = substr(pos+3, 0, tmp ? tmp-pos-3 : 0);
+	/*
+	 * HTTP body length decisions. There MUST NOT be any body from 
+	 * server if the request was HEAD or reply is 1xx, 204 or 304.
+	 * No body can be in GET request if direction is from client.
+	 */
+	if (current == response) {
+		nobody = (HEAD(request) ||
+			(response->code >= 100 && response->code < 200) ||
+			response->code == 204 ||
+			response->code == 304);
 	} else {
-		fprintf(stderr, "Invalid URL (%s)\n", url);
-		return;
+		nobody = GET(request) || HEAD(request);
 	}
 
-	for (i = 0; i < MAGIC_TESTS; ++i) {
-		res = new_rr_data();
-		req = new_rr_data();
-
-		req->req = 1;
-		req->method = strdup("GET");
-		req->url = strdup(url);
-		req->http = strdup("1");
-		req->headers = hlist_add(req->headers, "Proxy-Connection", "Keep-Alive", HLIST_ALLOC, HLIST_ALLOC);
-		if (host)
-			req->headers = hlist_add(req->headers, "Host", host, HLIST_ALLOC, HLIST_ALLOC);
-
-		creds->hashnt = prefs[i][0];
-		creds->hashlm = prefs[i][1];
-		creds->hashntlm2 = prefs[i][2];
-		creds->flags = prefs[i][3];
-
-		printf("Config profile %2d/%d... ", i+1, MAGIC_TESTS);
-
-		nc = proxy_connect();
-		if (nc <= 0) {
-			printf("\nConnection to proxy failed, bailing out\n");
-			free_rr_data(res);
-			free_rr_data(req);
-			close(nc);
-			if (host)
-				free(host);
-			return;
-		}
-
-		c = proxy_authenticate(nc, req, NULL, creds, &closed);
-		if (c <= 0 || c == 500 || closed) {
-			printf("Auth request ignored (HTTP code: %d)\n", c);
-			free_rr_data(res);
-			free_rr_data(req);
-			close(nc);
-			continue;
-		}
-
-		if (!headers_send(nc, req) || !headers_recv(nc, res)) {
-			printf("Connection closed\n");
-		} else {
-			if (res->code == 407) {
-				printf("Credentials rejected\n");
-			} else {
-				printf("OK (HTTP code: %d)\n", res->code);
-				if (found < 0) {
-					found = i;
-					/*
-					 * Following only for prod. version
-					 */
-					free_rr_data(res);
-					free_rr_data(req);
-					close(nc);
-					break;
-				}
-			}
-		}
-
-		free_rr_data(res);
-		free_rr_data(req);
-		close(nc);
-	}
-
-	if (found > -1) {
-		printf("----------------------------[ Profile %2d ]------\n", found);
-		printf("Auth            %s\n", authstr[prefs[found][4]]);
-		if (prefs[found][3])
-			printf("Flags           0x%x\n", prefs[found][3]);
-		if (prefs[found][0]) {
-			printf("PassNT          %s\n", tmp=printmem(creds->passnt, 16, 8));
-			free(tmp);
-		}
-		if (prefs[found][1]) {
-			printf("PassLM          %s\n", tmp=printmem(creds->passlm, 16, 8));
-			free(tmp);
-		}
-		if (prefs[found][2]) {
-			printf("PassNTLMv2      %s\n", tmp=printmem(creds->passntlm2, 16, 8));
-			free(tmp);
-		}
-		printf("------------------------------------------------\n");
+	/*
+	 * Otherwise consult Content-Length. If present, we forward exaclty
+	 * that many bytes.
+	 *
+	 * If not present, but there is Transfer-Encoding or Content-Type
+	 * (or a request to close connection, that is, end of data is signaled
+	 * by remote close), we will forward until EOF.
+	 *
+	 * No C-L, no T-E, no C-T == no body.
+	 */
+	tmp = hlist_get(current->headers, "Content-Length");
+	if (!nobody && tmp == NULL && (hlist_in(current->headers, "Content-Type")
+			|| hlist_in(current->headers, "Transfer-Encoding")
+			|| (response->code == 200))) {
+		length = -1;
 	} else
-		printf("You have used wrong credentials, bad URL or your proxy is quite insane,\nin which case try submitting a Support Request.\n");
+		length = (tmp == NULL || nobody ? 0 : atol(tmp));
 
-	if (host)
-		free(host);
+	return length;
 }
 
 /*
@@ -302,7 +228,7 @@ int proxy_authenticate(int sd, rr_data_t request, rr_data_t response, struct aut
 	}
 
 	if (debug)
-		printf("Reading auth response...\n");
+		printf("\nReading auth response...\n");
 
 	/*
 	 * Return response if requested
@@ -410,108 +336,13 @@ bailout:
 }
 
 /*
- * Auth connection "sd" and try to return negotiated CONNECT
- * connection to a remote host:port (thost).
- *
- * Return 0 for success, -1 for proxy negotiation error and
- * -HTTP_CODE in case the request failed.
- */
-int prepare_http_connect(int sd, const char *thost) {
-	rr_data_t data1, data2;
-	int ret, closed;
-	hlist_t tl;
-
-	if (!sd || !thost || !strlen(thost))
-		return -1;
-
-	data1 = new_rr_data();
-	data2 = new_rr_data();
-
-	data1->req = 1;
-	data1->method = strdup("CONNECT");
-	data1->url = strdup(thost);
-	data1->http = strdup("1");
-	data1->headers = hlist_mod(data1->headers, "Proxy-Connection", "Keep-Alive", 1);
-
-	/*
-	 * Header replacement
-	 */
-	tl = header_list;
-	while (tl) {
-		data1->headers = hlist_mod(data1->headers, tl->key, tl->value, 1);
-		tl = tl->next;
-	}
-
-	if (debug)
-		printf("Starting authentication...\n");
-
-	ret = proxy_authenticate(sd, data1, NULL, creds, &closed);
-	if (ret && ret != 500) {
-		if (closed || so_closed(sd)) {
-			close(sd);
-			sd = proxy_connect();
-			if (sd <= 0) {
-				ret = -1;
-				goto bailout;
-			}
-		}
-
-		if (debug) {
-			printf("Sending real request:\n");
-			hlist_dump(data1->headers);
-		}
-
-		if (headers_send(sd, data1)) {
-			if (debug)
-				printf("Reading real response:\n");
-
-			if (headers_recv(sd, data2)) {
-				if (debug)
-					hlist_dump(data2->headers);
-				if (data2->code == 200) {
-					if (debug)
-						printf("Ok CONNECT response. Tunneling...\n");
-					ret = 0;
-					goto bailout;
-				} else if (data2->code == 407) {
-					syslog(LOG_ERR, "Authentication for tunnel %s failed!\n", thost);
-				} else {
-					syslog(LOG_ERR, "Request for CONNECT denied!\n");
-				}
-				ret = -data2->code;
-			} else { 
-				if (debug)
-					printf("Reading response failed!\n");
-				ret = -1;
-			}
-		} else {
-			if (debug)
-				printf("Sending request failed!\n");
-			ret = -1;
-		}
-	} else {
-		if (ret == 500)
-			syslog(LOG_ERR, "Tunneling to %s not allowed!\n", thost);
-		else
-			syslog(LOG_ERR, "Authentication requests failed!\n");
-		ret = -500;
-	}
-
-bailout:
-	free_rr_data(data1);
-	free_rr_data(data2);
-
-	return ret;
-}
-
-/*
  * Thread starts here. Connect to the proxy, clear "already authenticated" flag.
  *
  * Then process the client request, authentication and proxy reply
  * back to client. We loop here to allow proxy keep-alive connections)
  * until the proxy closes.
  */
-void *proxy_thread(void *cdata) {
+void forward_request(void *cdata) {
 	int *rsocket[2], *wsocket[2];
 	int i, w, loop, bodylen, keep, chunked, plugin, closed;
 	rr_data_t data[2], errdata;
@@ -575,7 +406,7 @@ void *proxy_thread(void *cdata) {
 
 		for (loop = 0; loop < 2; loop++) {
 			if (debug) {
-				printf("\n******* Round %d C: %d, S: %d (auth=%d) *******!\n", loop+1, cd, sd, authok);
+				printf("\n******* Round %d C: %d, S: %d (authok=%d, noauth=%d) *******!\n", loop+1, cd, sd, authok, noauth);
 				printf("Reading headers...\n");
 			}
 
@@ -729,19 +560,8 @@ shortcut:
 			if (loop == 0 && data[0]->req && !authok) {
 				errdata = NULL;
 				i = proxy_authenticate(*wsocket[0], data[0], data[1], tcreds, &closed);
-				if (!i)
-					syslog(LOG_ERR, "Authentication requests failed. Will try without.\n");
 
-				if (i && data[1]->code != 407) {
-					if (debug)
-						printf("Proxy auth not requested - just forwarding.\n");
-					noauth = 1;
-					loop = 1;
-					goto shortcut;
-				}
-				reset_rr_data(data[1]);
-
-				if (!i || closed || so_closed(sd)) {
+				if (closed || so_closed(sd)) {
 					if (debug)
 						printf("Proxy closed connection (i=%d, closed=%d, so_closed=%d). Reconnecting.\n", i, closed, so_closed(sd));
 					close(sd);
@@ -751,7 +571,18 @@ shortcut:
 						free_rr_data(data[1]);
 						goto bailout;
 					}
-				}
+				} else if (i) {
+					if (data[1]->code != 407) {
+						if (debug)
+							printf("Proxy auth not requested - just forwarding.\n");
+						noauth = 1;
+						loop = 1;
+						goto shortcut;
+					}
+				} else
+					syslog(LOG_ERR, "Authentication requests failed. Will try without.\n");
+
+				reset_rr_data(data[1]);
 			}
 
 			/*
@@ -911,8 +742,101 @@ bailout:
 		threads_list = plist_add(threads_list, (unsigned long)pthread_self(), NULL);
 		pthread_mutex_unlock(&threads_mtx);
 	}
+}
 
-	return NULL;
+/*
+ * Auth connection "sd" and try to return negotiated CONNECT
+ * connection to a remote host:port (thost).
+ *
+ * Return 0 for success, -1 for proxy negotiation error and
+ * -HTTP_CODE in case the request failed.
+ */
+int prepare_http_connect(int sd, const char *thost) {
+	rr_data_t data1, data2;
+	int ret, closed;
+	hlist_t tl;
+
+	if (!sd || !thost || !strlen(thost))
+		return -1;
+
+	data1 = new_rr_data();
+	data2 = new_rr_data();
+
+	data1->req = 1;
+	data1->method = strdup("CONNECT");
+	data1->url = strdup(thost);
+	data1->http = strdup("1");
+	data1->headers = hlist_mod(data1->headers, "Proxy-Connection", "Keep-Alive", 1);
+
+	/*
+	 * Header replacement
+	 */
+	tl = header_list;
+	while (tl) {
+		data1->headers = hlist_mod(data1->headers, tl->key, tl->value, 1);
+		tl = tl->next;
+	}
+
+	if (debug)
+		printf("Starting authentication...\n");
+
+	ret = proxy_authenticate(sd, data1, NULL, creds, &closed);
+	if (ret && ret != 500) {
+		if (closed || so_closed(sd)) {
+			close(sd);
+			sd = proxy_connect();
+			if (sd <= 0) {
+				ret = -1;
+				goto bailout;
+			}
+		}
+
+		if (debug) {
+			printf("Sending real request:\n");
+			hlist_dump(data1->headers);
+		}
+
+		if (headers_send(sd, data1)) {
+			if (debug)
+				printf("\nReading real response:\n");
+
+			if (headers_recv(sd, data2)) {
+				if (debug)
+					hlist_dump(data2->headers);
+				if (data2->code == 200) {
+					if (debug)
+						printf("Ok CONNECT response. Tunneling...\n");
+					ret = 0;
+					goto bailout;
+				} else if (data2->code == 407) {
+					syslog(LOG_ERR, "Authentication for tunnel %s failed!\n", thost);
+				} else {
+					syslog(LOG_ERR, "Request for CONNECT denied!\n");
+				}
+				ret = -data2->code;
+			} else { 
+				if (debug)
+					printf("Reading response failed!\n");
+				ret = -1;
+			}
+		} else {
+			if (debug)
+				printf("Sending request failed!\n");
+			ret = -1;
+		}
+	} else {
+		if (ret == 500)
+			syslog(LOG_ERR, "Tunneling to %s not allowed!\n", thost);
+		else
+			syslog(LOG_ERR, "Authentication requests failed!\n");
+		ret = -500;
+	}
+
+bailout:
+	free_rr_data(data1);
+	free_rr_data(data2);
+
+	return ret;
 }
 
 /*
@@ -1197,5 +1121,131 @@ bail1:
 		close(sd);
 
 	return NULL;
+}
+
+void magic_auth_detect(const char *url) {
+	int i, nc, c, closed, found = -1;
+	rr_data_t req, res;
+	char *tmp, *pos, *host = NULL;
+
+	char *authstr[5] = { "NTLMv2", "NTLM2SR", "NT", "NTLM", "LM" };
+	int prefs[MAGIC_TESTS][5] = {
+		/* NT, LM, NTLMv2, Flags, Auth param equiv. */
+		{ 0, 0, 1, 0, 0 },
+		{ 0, 0, 1, 0xa208b207, 0 },
+		{ 0, 0, 1, 0xa2088207, 0 },
+		{ 2, 0, 0, 0, 1 },
+		{ 2, 0, 0, 0x88207, 1 },
+		{ 1, 0, 0, 0, 2 },
+		{ 1, 0, 0, 0x8205, 2 },
+		{ 1, 1, 0, 0, 3 },
+		{ 1, 1, 0, 0x8207, 3 },
+		{ 0, 1, 0, 0, 4 },
+		{ 0, 1, 0, 0x8206, 4 }
+	};
+
+	debug = 0;
+
+	if (!creds->passnt || !creds->passlm || !creds->passntlm2) {
+		printf("Cannot detect NTLM dialect - password or its hashes must be defined, try -I\n");
+		exit(1);
+	}
+
+	pos = strstr(url, "://");
+	if (pos) {
+		tmp = strchr(pos+3, '/');
+		host = substr(pos+3, 0, tmp ? tmp-pos-3 : 0);
+	} else {
+		fprintf(stderr, "Invalid URL (%s)\n", url);
+		return;
+	}
+
+	for (i = 0; i < MAGIC_TESTS; ++i) {
+		res = new_rr_data();
+		req = new_rr_data();
+
+		req->req = 1;
+		req->method = strdup("GET");
+		req->url = strdup(url);
+		req->http = strdup("1");
+		req->headers = hlist_add(req->headers, "Proxy-Connection", "Keep-Alive", HLIST_ALLOC, HLIST_ALLOC);
+		if (host)
+			req->headers = hlist_add(req->headers, "Host", host, HLIST_ALLOC, HLIST_ALLOC);
+
+		creds->hashnt = prefs[i][0];
+		creds->hashlm = prefs[i][1];
+		creds->hashntlm2 = prefs[i][2];
+		creds->flags = prefs[i][3];
+
+		printf("Config profile %2d/%d... ", i+1, MAGIC_TESTS);
+
+		nc = proxy_connect();
+		if (nc <= 0) {
+			printf("\nConnection to proxy failed, bailing out\n");
+			free_rr_data(res);
+			free_rr_data(req);
+			close(nc);
+			if (host)
+				free(host);
+			return;
+		}
+
+		c = proxy_authenticate(nc, req, NULL, creds, &closed);
+		if (c <= 0 || c == 500 || closed) {
+			printf("Auth request ignored (HTTP code: %d)\n", c);
+			free_rr_data(res);
+			free_rr_data(req);
+			close(nc);
+			continue;
+		}
+
+		if (!headers_send(nc, req) || !headers_recv(nc, res)) {
+			printf("Connection closed\n");
+		} else {
+			if (res->code == 407) {
+				printf("Credentials rejected\n");
+			} else {
+				printf("OK (HTTP code: %d)\n", res->code);
+				if (found < 0) {
+					found = i;
+					/*
+					 * Following only for prod. version
+					 */
+					free_rr_data(res);
+					free_rr_data(req);
+					close(nc);
+					break;
+				}
+			}
+		}
+
+		free_rr_data(res);
+		free_rr_data(req);
+		close(nc);
+	}
+
+	if (found > -1) {
+		printf("----------------------------[ Profile %2d ]------\n", found);
+		printf("Auth            %s\n", authstr[prefs[found][4]]);
+		if (prefs[found][3])
+			printf("Flags           0x%x\n", prefs[found][3]);
+		if (prefs[found][0]) {
+			printf("PassNT          %s\n", tmp=printmem(creds->passnt, 16, 8));
+			free(tmp);
+		}
+		if (prefs[found][1]) {
+			printf("PassLM          %s\n", tmp=printmem(creds->passlm, 16, 8));
+			free(tmp);
+		}
+		if (prefs[found][2]) {
+			printf("PassNTLMv2      %s\n", tmp=printmem(creds->passntlm2, 16, 8));
+			free(tmp);
+		}
+		printf("------------------------------------------------\n");
+	} else
+		printf("You have used wrong credentials, bad URL or your proxy is quite insane,\nin which case try submitting a Support Request.\n");
+
+	if (host)
+		free(host);
 }
 

@@ -33,55 +33,6 @@
 #include "forward.h"
 #include "scanner.h"
 
-/*
- * Return 0 if no body, -1 if until EOF, number if size known
- */
-int has_body(rr_data_t request, rr_data_t response) {
-	rr_data_t current;
-	int length, nobody;
-	char *tmp;
-
-	/*
-	 * Checking complete req+res conversation or just the
-	 * first part when there's no response yet?
-	 */
-	current = (response->http ? response : request);
-
-	/*
-	 * HTTP body length decisions. There MUST NOT be any body from 
-	 * server if the request was HEAD or reply is 1xx, 204 or 304.
-	 * No body can be in GET request if direction is from client.
-	 */
-	if (current == response) {
-		nobody = (HEAD(request) ||
-			(response->code >= 100 && response->code < 200) ||
-			response->code == 204 ||
-			response->code == 304);
-	} else {
-		nobody = GET(request) || HEAD(request);
-	}
-
-	/*
-	 * Otherwise consult Content-Length. If present, we forward exaclty
-	 * that many bytes.
-	 *
-	 * If not present, but there is Transfer-Encoding or Content-Type
-	 * (or a request to close connection, that is, end of data is signaled
-	 * by remote close), we will forward until EOF.
-	 *
-	 * No C-L, no T-E, no C-T == no body.
-	 */
-	tmp = hlist_get(current->headers, "Content-Length");
-	if (!nobody && tmp == NULL && (hlist_in(current->headers, "Content-Type")
-			|| hlist_in(current->headers, "Transfer-Encoding")
-			|| (response->code == 200))) {
-		length = -1;
-	} else
-		length = (tmp == NULL || nobody ? 0 : atol(tmp));
-
-	return length;
-}
-
 int scanner_hook(rr_data_t *request, rr_data_t *response, int *cd, int *sd, long maxKBs) {
 	char *buf, *line, *pos, *tmp, *pat, *post, *isaid, *uurl;
 	int bsize, lsize, size, len, i, w, nc;
