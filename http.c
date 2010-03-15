@@ -37,6 +37,44 @@
 extern int debug;
 
 /*
+ * Ture if src is a header. This is just a basic check
+ * for the colon delimiter. Might eventually become more
+ * sophisticated. :)
+ */
+int is_http_header(const char *src) {
+	return strcspn(src, ":") != strlen(src);
+}
+
+/*
+ * Extract the header name from the source.
+ */
+char *get_http_header_name(const char *src) {
+	int i;
+
+	i = strcspn(src, ":");
+	if (i != strlen(src))
+		return substr(src, 0, i);
+	else
+		return NULL;
+}
+
+/*
+ * Extract the header value from the source.
+ */
+char *get_http_header_value(const char *src) {
+	char *sub;
+
+	if ((sub = strchr(src, ':'))) {
+		sub++;
+		while (*sub == ' ')
+			sub++;
+
+		return strdup(sub);
+	} else
+		return NULL;
+}
+
+/*
  * Receive HTTP request/response from the given socket. Fill in pre-allocated
  * rr_data_t structure.
  * Returns: 1 if OK, 0 in case of socket EOF or other error
@@ -45,6 +83,7 @@ int headers_recv(int fd, rr_data_t data) {
 	char *tok, *s3 = 0;
 	int len;
 	char *buf;
+	char *orig = NULL;
 	char *ccode = NULL;
 	char *host = NULL;
 	int i, bsize;
@@ -64,10 +103,12 @@ int headers_recv(int fd, rr_data_t data) {
 	 * Are we reading HTTP request (from client) or response (from server)?
 	 */
 	trimr(buf);
+	orig = strdup(buf);
 	len = strlen(buf);
 	tok = strtok_r(buf, " ", &s3);
 	if (!strncasecmp(buf, "HTTP/", 5) && tok) {
 		data->req = 0;
+		data->empty = 0;
 		data->http = NULL;
 		data->msg = NULL;
 
@@ -91,11 +132,13 @@ int headers_recv(int fd, rr_data_t data) {
 			i = -1;
 			goto bailout;
 		}
-	} else if (tok) {
+	} else if (strstr(orig, " HTTP/") && tok) {
 		data->req = 1;
+		data->empty = 0;
 		data->method = NULL;
 		data->url = NULL;
 		data->http = NULL;
+		data->hostname = NULL;
 
 		data->method = strdup(tok);
 
@@ -112,14 +155,17 @@ int headers_recv(int fd, rr_data_t data) {
 			goto bailout;
 		}
 
-		tok = strstr(data->url, "://");
-		if (tok) {
-			s3 = strchr(tok+3, '/');
-			host = substr(tok+3, 0, s3 ? s3-tok-3 : 0);
+		if ((tok = strstr(data->url, "://"))) {
+			tok += 3;
+		} else {
+			tok = data->url;
 		}
+
+		s3 = strchr(tok, '/');
+		host = substr(tok, 0, s3 ? s3-tok : strlen(tok));
 	} else {
 		if (debug)
-			printf("headers_recv: Unknown header (%s).\n", buf);
+			printf("headers_recv: Unknown header (%s).\n", orig);
 		i = -1;
 		goto bailout;
 	}
@@ -131,14 +177,35 @@ int headers_recv(int fd, rr_data_t data) {
 		i = so_recvln(fd, &buf, &bsize);
 		trimr(buf);
 		if (i > 0 && is_http_header(buf)) {
-			data->headers = hlist_add(data->headers, get_http_header_name(buf), get_http_header_value(buf), 0, 0);
+			data->headers = hlist_add(data->headers, get_http_header_name(buf), get_http_header_value(buf), HLIST_NOALLOC, HLIST_NOALLOC);
 		}
 	} while (strlen(buf) != 0 && i > 0);
 
-	if (host && !hlist_in(data->headers, "Host"))
-		data->headers = hlist_add(data->headers, "Host", host, 1, 1);
+	/*
+	 * Fix requests, make sure the Host: header is present
+	 */
+	if ((tok = hlist_get(data->headers, "Host"))) {
+		data->hostname = strdup(tok);
+	} else if (host) {
+		data->hostname = strdup(host);
+		data->headers = hlist_add(data->headers, "Host", host, HLIST_ALLOC, HLIST_ALLOC);
+	}
+
+	/*
+	 * Remove port number from internal host name variable
+	 */
+	if (data->hostname && (tok = strchr(data->hostname, ':'))) {
+		*tok = 0;
+		data->port = atoi(tok+1);
+	} else if (data->url) {
+		if (!strncasecmp(data->url, "https", 5))
+			data->port = 443;
+		else
+			data->port = 80;
+	}
 
 bailout:
+	if (orig) free(orig);
 	if (ccode) free(ccode);
 	if (host) free(host);
 	free(buf);

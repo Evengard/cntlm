@@ -256,7 +256,7 @@ hlist_t hlist_dup(hlist_t list) {
 	hlist_t tmp = NULL, t = list;
 
 	while (t) {
-		tmp = hlist_add(tmp, t->key, t->value, 1, 1);
+		tmp = hlist_add(tmp, t->key, t->value, HLIST_ALLOC, HLIST_ALLOC);
 		t = t->next;
 	}
 
@@ -313,7 +313,7 @@ hlist_t hlist_mod(hlist_t list, char *key, char *value, int add) {
 		free(t->value);
 		t->value = strdup(value);
 	} else if (add) {
-		list = hlist_add(list, key, value, 1, 1);
+		list = hlist_add(list, key, value, HLIST_ALLOC, HLIST_ALLOC);
 	}
 
 	return list;
@@ -441,44 +441,6 @@ char *substr(const char *src, int pos, int len) {
 }
 
 /*
- * Ture if src is a header. This is just a basic check
- * for the colon delimiter. Might eventually become more
- * sophisticated. :)
- */
-int is_http_header(const char *src) {
-	return strcspn(src, ":") != strlen(src);
-}
-
-/*
- * Extract the header name from the source.
- */
-char *get_http_header_name(const char *src) {
-	int i;
-
-	i = strcspn(src, ":");
-	if (i != strlen(src))
-		return substr(src, 0, i);
-	else
-		return NULL;
-}
-
-/*
- * Extract the header value from the source.
- */
-char *get_http_header_value(const char *src) {
-	char *sub;
-
-	if ((sub = strchr(src, ':'))) {
-		sub++;
-		while (*sub == ' ')
-			sub++;
-
-		return strdup(sub);
-	} else
-		return NULL;
-}
-
-/*
  * Allocate memory and initialize a new rr_data_t structure.
  */
 rr_data_t new_rr_data(void) {
@@ -489,9 +451,12 @@ rr_data_t new_rr_data(void) {
 	data->code = 0;
 	data->skip_http = 0;
 	data->body_len = 0;
+	data->empty = 1;
+	data->port = 0;
 	data->headers = NULL;
 	data->method = NULL;
 	data->url = NULL;
+	data->hostname = NULL;
 	data->http = NULL;
 	data->msg = NULL;
 	data->body = NULL;
@@ -513,6 +478,8 @@ rr_data_t dup_rr_data(rr_data_t data) {
 	tmp->code = data->code;
 	tmp->skip_http = data->skip_http;
 	tmp->body_len = data->body_len;
+	tmp->empty = data->empty;
+	tmp->port = data->port;
 
 	if (data->headers)
 		tmp->headers = hlist_dup(data->headers);
@@ -520,6 +487,8 @@ rr_data_t dup_rr_data(rr_data_t data) {
 		tmp->method = strdup(data->method);
 	if (data->url)
 		tmp->url = strdup(data->url);
+	if (data->hostname)
+		tmp->hostname = strdup(data->hostname);
 	if (data->http)
 		tmp->http = strdup(data->http);
 	if (data->msg)
@@ -543,10 +512,13 @@ rr_data_t reset_rr_data(rr_data_t data) {
 	data->code = 0;
 	data->skip_http = 0;
 	data->body_len = 0;
+	data->empty = 1;
+	data->port = 0;
 
 	if (data->headers) hlist_free(data->headers);
 	if (data->method) free(data->method);
 	if (data->url) free(data->url);
+	if (data->hostname) free(data->hostname);
 	if (data->http) free(data->http);
 	if (data->msg) free(data->msg);
 	if (data->body) free(data->body);
@@ -554,6 +526,7 @@ rr_data_t reset_rr_data(rr_data_t data) {
 	data->headers = NULL;
 	data->method = NULL;
 	data->url = NULL;
+	data->hostname = NULL;
 	data->http = NULL;
 	data->msg = NULL;
 	data->body = NULL;
@@ -572,6 +545,7 @@ void free_rr_data(rr_data_t data) {
 	if (data->headers) hlist_free(data->headers);
 	if (data->method) free(data->method);
 	if (data->url) free(data->url);
+	if (data->hostname) free(data->hostname);
 	if (data->http) free(data->http);
 	if (data->msg) free(data->msg);
 	if (data->body) free(data->body);

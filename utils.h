@@ -45,7 +45,7 @@
 #define CONNECT(data)	((data) && (data)->req && !strcasecmp("CONNECT", (data)->method))
 #define HEAD(data)	((data) && (data)->req && !strcasecmp("HEAD", (data)->method))
 #define GET(data)	((data) && (data)->req && !strcasecmp("GET", (data)->method))
-#define STATUS_OK(data)	((data) && (data)->req && (data)->code < 400)
+#define STATUS_OK(data)	((data) && (data)->code < 400)
 
 /*
  * Two single-linked list types. First is for storing headers,
@@ -82,8 +82,11 @@ struct rr_data_s {
 	int code;
 	int skip_http;
 	int body_len;
+	int empty;
+	int port;
 	char *method;
 	char *url;
+	char *hostname;
 	char *http;
 	char *msg;
 	char *body;
@@ -124,9 +127,6 @@ extern size_t strlcat(char *dst, const char *src, size_t siz);
 extern char *trimr(char *buf);
 extern char *lowercase(char *str);
 extern char *uppercase(char *str);
-extern int is_http_header(const char *src);
-extern char *get_http_header_name(const char *src);
-extern char *get_http_header_value(const char *src);
 extern int unicode(char **dst, char *src);
 extern char *new(size_t size);
 extern char *urlencode(const char *str);

@@ -33,7 +33,7 @@
 config_t config_open(const char *fname) {
 	config_t ret;
 	FILE *fp;
-	char *buf, *key, *value;
+	char *buf, *tmp, *key, *value;
 	int i, j, len;
 
 	fp = fopen(fname, "r");
@@ -45,8 +45,8 @@ config_t config_open(const char *fname) {
 	ret->options = NULL;
 
 	while (!feof(fp)) {
-		buf = fgets(buf, BUFSIZE, fp);
-		if (!buf)
+		tmp = fgets(buf, BUFSIZE, fp);
+		if (!tmp)
 			break;
 
 		len = MIN(BUFSIZE, strlen(buf));
@@ -81,7 +81,7 @@ config_t config_open(const char *fname) {
 			value[i] = 0;
 
 		trimr(value);
-		ret->options = hlist_add(ret->options, key, value, 0, 0);
+		ret->options = hlist_add(ret->options, key, value, HLIST_NOALLOC, HLIST_NOALLOC);
 	}
 
 	free(buf);

@@ -24,6 +24,9 @@
 
 #include "utils.h"
 
+extern int is_http_header(const char *src);
+extern char *get_http_header_name(const char *src);
+extern char *get_http_header_value(const char *src);
 extern int headers_recv(int fd, rr_data_t data);
 extern int headers_send(int fd, rr_data_t data);
 extern int data_drop(int src, int size);

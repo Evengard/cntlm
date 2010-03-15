@@ -303,7 +303,33 @@ void carp(const char *msg, int console) {
 }
 
 void *proxy_thread(void *cdata) {
-	forward_request(cdata);
+	rr_data_t request;
+	int keep_alive;				/* Proxy-Connection */
+
+	int cd = ((struct thread_arg_s *)cdata)->fd;
+
+	do {
+		keep_alive = 0;
+
+		printf("\n******* Round 1 C: %d *******\n", cd);
+		printf("Reading headers...\n");
+
+		request = new_rr_data();
+		if (!headers_recv(cd, request)) {
+			free_rr_data(request);
+			break;
+		}
+
+		keep_alive = hlist_subcmp(request->headers, "Proxy-Connection", "keep-alive");
+		printf("Hostname: %s:%d\n", request->hostname, request->port);
+		forward_request(cdata, request);
+
+		free_rr_data(request);
+	} while (keep_alive && !serialize);
+
+	free(cdata);
+	close(cd);
+
 	return NULL;
 }
 

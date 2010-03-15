@@ -147,19 +147,19 @@ int proxy_connect(void) {
 }
 
 /*
- * Duplicate client request headers, change requested method to HEAD
- * (so we avoid any body transfers during NTLM negotiation), and add
- * proxy authentication request headers.
- *
- * Read the reply, if it contains NTLM challenge, generate final
+ * Send request, read reply, if it contains NTLM challenge, generate final
  * NTLM auth message and insert it into the original client header,
  * which is then processed by caller himself.
+ *
+ * If response is present, we fill in proxy's reply. Caller can tell
+ * if auth was required or not. If not, caller has the full reply to
+ * just forward to client.
  *
  * If the proxy closes the connection for some reason, we notify our
  * caller by setting closed to 1. Otherwise, it is set to 0.
  * If closed == NULL, we do not signal anything.
  *
- * Caller must init & free "response" (if interested)
+ * Caller must init & free "request" and "response" (if interested)
  *
  */
 int proxy_authenticate(int sd, rr_data_t request, rr_data_t response, struct auth_s *creds, int *closed) {
@@ -180,24 +180,6 @@ int proxy_authenticate(int sd, rr_data_t request, rr_data_t response, struct aut
 	free(tmp);
 
 	auth->headers = hlist_mod(auth->headers, "Proxy-Authorization", buf, 1);
-
-	/*
-	 * - If the request is CONNECT, we have to keep it unmodified -
-	 *
-	 * DISABLED because if request succeeds without auth, we just forward it
-	 * so we can't really change the request.
-	 *
-	 * We still make the request twice in case the client is sending a body
-	 * or is using chunked encoding. Otherwise we'd have to chache the whole 
-	 * body in the memory. Making the request twice is better (first being
-	 * just a probe without body).
-	 */
-	/*
-	if (!CONNECT(request)) {
-		free(auth->method);
-		auth->method = strdup("GET");
-	}
-	*/
 
 	tmp = hlist_get(auth->headers, "Content-Length");
 	if ((tmp && atoi(tmp) > 0) || hlist_get(auth->headers, "Transfer-Encoding")) {
@@ -231,7 +213,8 @@ int proxy_authenticate(int sd, rr_data_t request, rr_data_t response, struct aut
 		printf("\nReading auth response...\n");
 
 	/*
-	 * Return response if requested
+	 * Return response if requested. "auth" is used to get it,
+	 * so make it point to the caller's structure.
 	 */
 	if (response) {
 		free_rr_data(auth);
@@ -288,26 +271,27 @@ int proxy_authenticate(int sd, rr_data_t request, rr_data_t response, struct aut
 		}
 	} else if (auth->code >= 500 && auth->code <= 599) {
 		/*
-		 * Proxy didn't like the request, close connection and don't try again.
+		 * Proxy didn't like the request, report not to try again.
 		 */
 		syslog(LOG_WARNING, "The request was denied!\n");
-		//close(sd);
 		rc = 500;
 		goto bailout;
 	} else {
-		/*
-		 * No auth was neccessary, let the caller make the request again.
-		 * Unless he wants the response+data, then let him finish the processing.
-		 */
+		// Tahle vetev fakt potreba?? FIXME
 		if (pretend407) {
 			if (debug)
-				printf("Forcing new request.\n");
+				printf("Client has a body - forcing new request.\n");
 			if (response)
 				response->code = 407;				// See explanation above
 			if (closed)
 				*closed = 1;
 		}
 
+		/*
+		 * No auth was neccessary, let the caller close proxy connection and
+		 * make the request again - unless he wants the response, then let him 
+		 * finish the processing.
+		 */
 		if (closed && !response)
 			*closed = 1;
 	}
@@ -336,27 +320,53 @@ bailout:
 }
 
 /*
- * Thread starts here. Connect to the proxy, clear "already authenticated" flag.
+ * Forwarding thread. Connect to the proxy, process auth then request.
  *
- * Then process the client request, authentication and proxy reply
- * back to client. We loop here to allow proxy keep-alive connections)
- * until the proxy closes.
+ * First read request, then call proxy_authenticate() which will send
+ * the request. If proxy returns 407, it will compute NTLM reply and
+ * return authenticated request to us. If proxy returns full response
+ * (no auth needed), it returns the full reply. Then we just forward 
+ * the reply to client OR make the request again with properly auth'd
+ * headers provided by proxy_authenticate().
+ *
+ * We loop while we see Connection: keep-alive, thus making sure clients
+ * can have uninterrupted conversations with a web server. Proxy-Connection
+ * is not our concern, it's handled in the caller, proxy_thread(). If it's
+ * present, however, we cache the auth'd proxy connection for reuse.
+ *
+ * Some proxies return Connection: keep-alive even when not requested and
+ * would make us loop indefinitely. Because of that, we remember which server
+ * we're talking to and if that changes, we return the request to be processed
+ * by our caller. FIXME
+ *
+ * Caller decides which URL's to forward and which to process directly, that's
+ * also why we return the request if the server name changes.
+ *
+ * We return NULL when we're finished or a pointer to another request.
+ * Returned request means server name has changed and needs to be checked
+ * agains NoProxy exceptions.
+ *
+ * cdata is NOT freed
+ * request is NOT freed
  */
-void forward_request(void *cdata) {
-	int *rsocket[2], *wsocket[2];
-	int i, w, loop, bodylen, keep, chunked, plugin, closed;
-	rr_data_t data[2], errdata;
-	hlist_t tl;
+rr_data_t forward_request(void *cdata, rr_data_t request) {
+	int i, w, loop, bodylen, chunked, plugin, closed;
 	char *tmp, *buf, *pos, *dom;
-	struct auth_s *tcreds;						/* Per-thread credentials; for NTLM-to-basic */
+	struct auth_s *tcreds = NULL;						/* Per-thread credentials */
+	int *rsocket[2], *wsocket[2];
+	rr_data_t data[2];
+	hlist_t tl;
 
+	int proxy_alive = 0;
+	int connect_alive = 0;
 	int authok = 0;
 	int noauth = 0;
+	int auth_tries = 0;
+	int was_cached = 0;
 	int sd = 0;
 
 	int cd = ((struct thread_arg_s *)cdata)->fd;
 	struct sockaddr_in caddr = ((struct thread_arg_s *)cdata)->addr;
-	free(cdata);
 
 	if (debug)
 		printf("Thread processing...\n");
@@ -371,53 +381,92 @@ void forward_request(void *cdata) {
 			printf("Found autenticated connection %d!\n", i);
 		sd = i;
 		authok = 1;
+		was_cached = 1;
 	}
 
+	/*
+	 * No cached connection?
+	 */
 	if (!sd)
 		sd = proxy_connect();
-
-	if (!ntlmbasic) {
-		tcreds = dup_auth(creds, 1);
-	} else {
-		tcreds = dup_auth(creds, 0);
-	}
 
 	if (sd <= 0)
 		goto bailout;
 
+	/*
+	 * Now save NTLM credentials for purposes of this thread.
+	 *
+	 * If NTLM-to-Basic, don't do a full copy, leave out user name
+	 * and hashes - they will be supplied by the client via Basic auth.
+	 *
+	 * Otherwise, make a complete copy, that's what we'll be using.
+	 */
+	if (ntlmbasic) {
+		tcreds = dup_auth(creds, 0);
+	} else {
+		tcreds = dup_auth(creds, 1);
+	}
+
 	do {
 		/*
 		 * data[0] is for the first loop pass
-		 *   - we read the request headers from the client
+		 *   - first do {} loop iteration uses request passed from caller,
+		 *     in subsequent iterations we read the request headers from the client
 		 *   - if not already done, we try to authenticate the connection
 		 *   - we send the request headers to the proxy with HTTP body, if present
 		 *
 		 * data[1] is for the second pass
 		 *   - read proxy response
 		 *   - forward it to the client with HTTP body, if present
+		 *
+		 * There are two goto's - they help to keep the code in one place :)
+		 *   - auth_retry: jump here from second iter. of inner loop, when we detect
+		 *     that auth failed. "request" is set to the original request and by jumping
+		 *     here, we effectively re-try the attempt. This is just in case we're using
+		 *     a cached connection - it must have timed out.
+		 *   - shortcut: jump there from first iter. of inner loop, when we detect
+		 *     that auth isn't required by proxy. We do loop++, make the jump and
+		 *     the reply to our auth attempt (containing valid response) is sent to
+		 *     client without us repeating the request.
+		 *
+		 *  Both goto's can be done via "break", but this is more obvious hopefully.
 		 */
-		data[0] = new_rr_data();
+
+		auth_tries = 0;
+
+auth_retry:
+		if (request) {
+			if (auth_tries)
+				data[0] = request;				// Got from inside the loop = retry (must free ourselves)
+			else
+				data[0] = dup_rr_data(request);			// Got from caller (make a dup, caller will free)
+			request = NULL;						// Next time, just alloc empty structure
+		} else {
+			data[0] = new_rr_data();
+		}
 		data[1] = new_rr_data();
 
 		rsocket[0] = wsocket[1] = &cd;
 		rsocket[1] = wsocket[0] = &sd;
 
-		keep = 0;
+		proxy_alive = 0;
+		connect_alive = 0;
 
 		for (loop = 0; loop < 2; loop++) {
-			if (debug) {
-				printf("\n******* Round %d C: %d, S: %d (authok=%d, noauth=%d) *******!\n", loop+1, cd, sd, authok, noauth);
-				printf("Reading headers...\n");
+			if (data[loop]->empty) {				// Isn't this the first loop with request supplied by caller?
+				if (debug) {
+					printf("\n******* Round %d C: %d, S: %d (authok=%d, noauth=%d) *******\n", loop+1, cd, sd, authok, noauth);
+					printf("Reading headers...\n");
+				}
+				if (!headers_recv(*rsocket[loop], data[loop])) {
+					close(sd);
+					free_rr_data(data[0]);
+					free_rr_data(data[1]);
+					goto bailout;
+				}
 			}
 
-			if (!headers_recv(*rsocket[loop], data[loop])) {
-				close(sd);
-				free_rr_data(data[0]);
-				free_rr_data(data[1]);
-				goto bailout;
-			}
-
-			if (debug)
+			if (debug && !auth_tries)
 				hlist_dump(data[loop]->headers);
 
 			if (loop == 0 && data[0]->req)
@@ -502,39 +551,49 @@ shortcut:
 			}
 
 			/*
-			} else if (loop == 1 && data[loop]->code == 407) {
+			 * Is final reply from proxy still 407 denied? If this is a chached
+			 * connection, make a new connection and try to auth one more time.
+			 * It must have timed out (because it was auth'd already).
+			 *
+			 * Let's jump to auth_retry: and pass the original request as if we were
+			 * just called with a new "request".  Remember that this is a second try
+			 * (auth_tries++) and if we get here again without success, return error
+			 * to the client.
+			 *
+			 */
+			if (loop == 1 && data[loop]->code == 407 && was_cached && !auth_tries) {
 				if (debug)
-					printf("NTLM-to-basic: Given credentials failed for proxy access.\n");
-
-				if (!ntlmbasic)
-					forced_basic = 1;
-
-				tmp = gen_407_page(data[loop]->http);
-				write(cd, tmp, strlen(tmp));
-				free(tmp);
+					printf("Cached connection timed out - retrying.\n");
 
 				close(sd);
+				sd = proxy_connect();
+				was_cached = 0;
+				if (sd <= 0) {
+					free_rr_data(data[0]);
+					free_rr_data(data[1]);
+					goto bailout;
+				}
+
+				request = dup_rr_data(data[0]);
+				auth_tries++;
 				free_rr_data(data[0]);
 				free_rr_data(data[1]);
-				goto bailout;
+				goto auth_retry;
 			}
-			*/
 
 			/*
-			 * Try to request keep-alive for every connection, but first remember if client
-			 * really asked for it. If not, disconnect from him after the request and keep
-			 * the authenticated connection in a pool.
+			 * Try to request keep-alive for every connection, but first remember if
+			 * client really asked for it. If not, disconnect from him after the request
+			 * and keep the authenticated connection in a pool.
 			 *
 			 * This way, proxy doesn't (or rather shouldn't) close our connection after
-			 * completing the request. We store this connection and when the client is done
-			 * and disconnects, we have an authenticated connection ready for future clients.
+			 * completing the request. We store this connection and when the client is
+			 * done and disconnects, we have an authenticated connection ready for
+			 * future clients.
 			 *
 			 * The connection pool is shared among all threads, allowing maximum reuse.
 			 */
 			if (loop == 0 && data[loop]->req) {
-				if (hlist_subcmp(data[loop]->headers, "Proxy-Connection", "keep-alive"))
-					keep = 1;
-
 				/*
 				 * Header replacement implementation
 				 */
@@ -548,17 +607,14 @@ shortcut:
 				 * Also remove runaway P-A from the client (e.g. Basic from N-t-B), which might 
 				 * cause some ISAs to deny us, even if the connection is already auth'd.
 				 */
-				data[loop]->headers = hlist_mod(data[loop]->headers, "Proxy-Connection", "Keep-Alive", 1);
-				if (!CONNECT(data[loop]))
-					data[loop]->headers = hlist_mod(data[loop]->headers, "Connection", "Keep-Alive", 1);
+				data[loop]->headers = hlist_mod(data[loop]->headers, "Proxy-Connection", "keep-alive", 1);
 				data[loop]->headers = hlist_del(data[loop]->headers, "Proxy-Authorization");
 			}
 
 			/*
 			 * Got request from client and connection is not yet authenticated?
 			 */
-			if (loop == 0 && data[0]->req && !authok) {
-				errdata = NULL;
+			if (loop == 0 && data[0]->req && !authok && !noauth) {
 				i = proxy_authenticate(*wsocket[0], data[0], data[1], tcreds, &closed);
 
 				if (closed || so_closed(sd)) {
@@ -566,6 +622,7 @@ shortcut:
 						printf("Proxy closed connection (i=%d, closed=%d, so_closed=%d). Reconnecting.\n", i, closed, so_closed(sd));
 					close(sd);
 					sd = proxy_connect();
+					was_cached = 0;
 					if (sd <= 0) {
 						free_rr_data(data[0]);
 						free_rr_data(data[1]);
@@ -580,17 +637,16 @@ shortcut:
 						goto shortcut;
 					}
 				} else
-					syslog(LOG_ERR, "Authentication requests failed. Will try without.\n");
+					syslog(LOG_ERR, "Authentication failed. Proceeding anyway.\n");
 
 				reset_rr_data(data[1]);
 			}
 
 			/*
 			 * Was the request first and did we authenticate with proxy?
-			 * Remember not to authenticate this connection any more, should
-			 * it be reused for future client requests.
+			 * Remember not to authenticate this connection any more.
 			 */
-			if (loop == 1 && !authok && STATUS_OK(data[1]))
+			if (loop == 1 && !noauth && STATUS_OK(data[1]))
 				authok = 1;
 
 			/*
@@ -623,11 +679,18 @@ shortcut:
 				}
 
 				/*
-				if (loop == 1 && serialize) {
-					hlist_mod(data[loop]->headers, "Proxy-Connection", "close", 1);
-					hlist_mod(data[loop]->headers, "Connection", "close", 1);
+				 * Check if we should loop for another request.
+				 * Required for keep-alive connections, client might
+				 * really need a non-interrupted conversation.
+				 *
+				 * We check only server reply for keep-alive, because client
+				 * may want it, but it's not gonna happen unless server agrees.
+				 */
+				if (loop == 1) {
+					connect_alive = hlist_subcmp(data[loop]->headers, "Connection", "keep-alive");
+					if (!connect_alive)
+						hlist_mod(data[loop]->headers, "Connection", "close", 1);
 				}
-				*/
 
 				/*
 				 * Forward client's headers to the proxy and vice versa; proxy_authenticate()
@@ -699,33 +762,36 @@ shortcut:
 				} else if (debug)
 					printf("No body.\n");
 
-				/*
-				 * Windows cannot detect remotely closed connection
-				 * as accurately as UNIX. We look if the proxy explicitly
-				 * tells us that it's closing the connection and if so,
-				 * we accept it as a fact.
-				 */
-				if (hlist_subcmp(data[loop]->headers, "Proxy-Connection", "close")) {
-					if (debug)
-						printf("PROXY CLOSED CONNECTION\n");
-					close(sd);
-				}
+			}
 
+			/*
+			 * Proxy-Connection: keep-alive is taken care of in our caller as I said,
+			 * but we do return when we see proxy is closing. Next headers_recv() would
+			 * fail and we'd exit anyway, this just seems cleaner.
+			 */
+			if (loop == 1) {
+				proxy_alive = hlist_subcmp(data[loop]->headers, "Proxy-Connection", "keep-alive");
+				if (!proxy_alive && debug)
+					printf("PROXY CLOSING CONNECTION\n");
 			}
 		}
 
 		free_rr_data(data[0]);
 		free_rr_data(data[1]);
-	} while (!so_closed(sd) && !so_closed(cd) && !serialize && !noauth && !ntlmbasic && (keep || so_dataready(cd)));
+
+	/*
+	 * Checking connect_alive && proxy_alive is sufficient,
+	 * so_closed() just eliminates loops that we know would fail.
+	 */
+	} while (connect_alive && proxy_alive && !so_closed(sd) && !so_closed(cd) && !serialize);
 
 bailout:
 	if (debug)
 		printf("\nThread finished.\n");
 
 	free_auth(tcreds);
-	close(cd);
 
-	if (!so_closed(sd) && authok && !noauth) {
+	if (proxy_alive && authok && !ntlmbasic && !so_closed(sd)) {
 		if (debug)
 			printf("Storing the connection for reuse (%d:%d).\n", cd, sd);
 		pthread_mutex_lock(&connection_mtx);
@@ -742,6 +808,8 @@ bailout:
 		threads_list = plist_add(threads_list, (unsigned long)pthread_self(), NULL);
 		pthread_mutex_unlock(&threads_mtx);
 	}
+
+	return NULL;
 }
 
 /*
@@ -766,7 +834,7 @@ int prepare_http_connect(int sd, const char *thost) {
 	data1->method = strdup("CONNECT");
 	data1->url = strdup(thost);
 	data1->http = strdup("1");
-	data1->headers = hlist_mod(data1->headers, "Proxy-Connection", "Keep-Alive", 1);
+	data1->headers = hlist_mod(data1->headers, "Proxy-Connection", "keep-alive", 1);
 
 	/*
 	 * Header replacement
@@ -1168,7 +1236,7 @@ void magic_auth_detect(const char *url) {
 		req->method = strdup("GET");
 		req->url = strdup(url);
 		req->http = strdup("1");
-		req->headers = hlist_add(req->headers, "Proxy-Connection", "Keep-Alive", HLIST_ALLOC, HLIST_ALLOC);
+		req->headers = hlist_add(req->headers, "Proxy-Connection", "keep-alive", HLIST_ALLOC, HLIST_ALLOC);
 		if (host)
 			req->headers = hlist_add(req->headers, "Host", host, HLIST_ALLOC, HLIST_ALLOC);
 

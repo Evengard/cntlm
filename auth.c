@@ -30,9 +30,9 @@ struct auth_s *new_auth(void) {
 	struct auth_s *tmp;
 
 	tmp = (struct auth_s *)new(sizeof(struct auth_s));
-	tmp->user = new(MINIBUF_SIZE);
-	tmp->domain = new(MINIBUF_SIZE);
-	tmp->workstation = new(MINIBUF_SIZE);
+	tmp->user = NULL;
+	tmp->domain = NULL;
+	tmp->workstation = NULL;
 	tmp->passntlm2 = 0;
 	tmp->passnt = 0;
 	tmp->passlm = 0;
