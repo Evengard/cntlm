@@ -303,16 +303,19 @@ void carp(const char *msg, int console) {
 }
 
 void *proxy_thread(void *cdata) {
-	rr_data_t request;
-	int keep_alive;				/* Proxy-Connection */
+	rr_data_t request, ret;
+	plist_t list;
+	int direct, keep_alive;				/* Proxy-Connection */
 
 	int cd = ((struct thread_arg_s *)cdata)->fd;
 
 	do {
+		ret = NULL;
 		keep_alive = 0;
+		direct = 0;
 
 		printf("\n******* Round 1 C: %d *******\n", cd);
-		printf("Reading headers...\n");
+		printf("Reading headers (%d)...\n", cd);
 
 		request = new_rr_data();
 		if (!headers_recv(cd, request)) {
@@ -320,12 +323,51 @@ void *proxy_thread(void *cdata) {
 			break;
 		}
 
-		keep_alive = hlist_subcmp(request->headers, "Proxy-Connection", "keep-alive");
-		printf("Hostname: %s:%d\n", request->hostname, request->port);
-		forward_request(cdata, request);
+		do {
+			/*
+			 * Are we being returned a request by forward_request or direct_request?
+			 */
+			if (ret) {
+				free_rr_data(request);
+				request = ret;
+			}
+
+			list = noproxy_list;
+			while (list) {
+				if (list->aux && strlen(list->aux) && fnmatch(list->aux, request->hostname, 0) == 0) {
+					printf("MATCH: %s (%s)\n", request->hostname, list->aux);
+					direct = 1;
+					break;
+				}
+				list = list->next;
+			}
+
+			keep_alive = hlist_subcmp(request->headers, "Proxy-Connection", "keep-alive");
+
+			if (direct)
+				ret = direct_request(cdata, request);
+			else
+				ret = forward_request(cdata, request);
+
+			if (debug)
+				printf("proxy_thread: request rc = %x\n", (int)ret);
+		} while (ret != NULL && ret != (void *)-1);
 
 		free_rr_data(request);
-	} while (keep_alive && !serialize);
+	/*
+	 * If client asked for proxy keep-alive, loop unless the last server response
+	 * requested (Proxy-)Connection: close.
+	 */
+	} while (keep_alive && ret != (void *)-1 && !serialize);
+
+	/*
+	 * Add ourselves to the "threads to join" list.
+	 */
+	if (!serialize) {
+		pthread_mutex_lock(&threads_mtx);
+		threads_list = plist_add(threads_list, (unsigned long)pthread_self(), NULL);
+		pthread_mutex_unlock(&threads_mtx);
+	}
 
 	free(cdata);
 	close(cd);
@@ -538,7 +580,7 @@ int main(int argc, char **argv) {
 	 * Help requested?
 	 */
 	if (help) {
-		printf("CNTLM - Accelerating NTLM Authentication Proxy version " VERSION "\nCopyright (c) 2oo7 David Kubicek\n\n"
+		printf("CNTLM - Accelerating NTLM Authentication Proxy version " VERSION "\nCopyright (c) 2oo7-2o1o David Kubicek\n\n"
 			"This program comes with NO WARRANTY, to the extent permitted by law. You\n"
 			"may redistribute copies of it under the terms of the GNU GPL Version 2 or\n"
 			"newer. For more information about these matters, see the file LICENSE.\n"
@@ -575,8 +617,8 @@ int main(int argc, char **argv) {
 				"\t    Main listening port for the NTLM proxy.\n");
 		fprintf(stderr, "\t-M  <testurl>\n"
 				"\t    Magic autodetection of proxy's NTLM dialect.\n");
-		fprintf(stderr, "\t-N  <hostname_wildcard_match>\n"
-				"\t    Use direct connections for these addresses. (e.g. '*.intranet.local')\n");
+		fprintf(stderr, "\t-N  \"<hostname_wildcard1>[, <hostname_wildcardN>\"\n"
+				"\t    Process these URL's as a stand-alone proxy - directly. (e.g. '*.intranet.local')\n");
 		fprintf(stderr, "\t-O  [<saddr>:]<lport>\n"
 				"\t    Enable SOCKS5 proxy and make it listen on the specified port (and address).\n");
 		fprintf(stderr, "\t-P  <pidfile>\n"
@@ -1265,6 +1307,7 @@ bailout:
 
 	hlist_free(header_list);
 	plist_free(scanner_agent_list);
+	plist_free(noproxy_list);
 	plist_free(tunneld_list);
 	plist_free(proxyd_list);
 	plist_free(socksd_list);

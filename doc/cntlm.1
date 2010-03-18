@@ -13,33 +13,36 @@
 (\fIhost1..N\fP and \fIport1..N\fP) and opens a listening socket, forwarding each request to the parent proxy
 (moving in a circular list if the active parent stops working). Along the way, a connection to the parent is
 created anew and authenticated or, if available, previously cached connection is reused to achieve higher
-efficiency and faster responses.  When the chain is set up, \fBcntlm\fP should be used as a proxy in your
-applications. \fBCntlm\fP also integrates transparent TCP/IP port forwarding (tunneling) through the parent
-(incl. authentication). Each tunnel opens a new listening socket on the defined local port and forwards all
-connections to the given host:port behind the secondary proxy.  Manual page explains how to setup \fBcntlm\fP
-properly using configuration file or command-line arguments.
+efficiency and faster responses. Another option is to have \fBcntlm\fP authenticate your local web connections
+without a parent proxy. It can work in a stand-alone mode, just like Squid or ISA. By default, all requests
+are forwarded to parent proxies, but the user can set a "no-proxy" list, URL matching wild-card patterns, that
+decide between direct and forwarded approach. \fBCntlm\fP can also recognize when all your corporate proxies
+are unavailable and switch to stand-alone mode automatically (and then back again). Aside from \fIWWW\fP and
+\fIPROXY\fP authentication, \fBcntlm\fP provides a useful feature enabling users migrate their laptops between work
+and home without changing proxy settings in their applications (using \fBcntlm\fP all the time).
 
 .PP
-\fBCntlm\fP works similarly to NTLMAPS, plus full NTLM support, a bucket of new features and none of its
-shortcomings and inefficiencies. It adds support for real keep-alive (on both sides) and it caches all
-authenticated connections for reuse in subsequent requests. It can be restarted without TIME_WAIT delay, uses
-just a fraction of memory compared to NTLMAPS and by orders of magnitude less CPU. Each thread is completely
-independent and one cannot block another. \fBCntlm\fP has many security/privacy features like \fBNTLMv2\fP
-support and password protection - it is possible to substitute password hashes (which can be obtained
-using\ \fB-H\fP) for the actual password or to enter the password interactively. If plaintext password is
-used, it is automatically hashed during the startup and all its traces are removed from the process memory.
+When configuration is set up, \fBcntlm\fP should be used as a proxy for your applications. \fBCntlm\fP also
+integrates transparent TCP/IP port forwarding (tunneling) through the parent (incl. authentication). Each
+tunnel opens a new listening socket on users machine and and forwards all connections to the target host:port
+behind the parent proxy. Manual page explains how to setup \fBcntlm\fP properly using configuration file or
+command-line arguments.
 
 .PP
-In addition to lower usage of system resources, \fBcntlm\fP achieves higher throughput on a given link. By
+Core \fBcntlm\fP function had been similar to the late NTLMAPS, but today, \fBcntlm\fP has evolved way beyond
+anything any other application of this type can offer. The feature list below speaks for itself.  \fBCntlm\fP
+has many security/privacy features like \fBNTLMv2\fP support and password protection - it is possible to
+substitute password hashes (which can be obtained using\ \fB-H\fP) for the actual password or to enter the
+password interactively. If plaintext password is used, it is automatically hashed during the startup and all
+traces of it are removed from the process memory.
+
+.PP
+In addition to minimal use of system resources, \fBcntlm\fP achieves higher throughput on a given link. By
 caching authenticated connections, it acts as an HTTP accelerator; This way, the 5-way auth handshake for
-each connection is transparently eliminated, providing direct access most of the time. NTLMAPS doesn't
-authenticate in parallel with the request - instead, it first connects, sends a probe and disconnects. No
-sooner than that it connects again and initiates NTLM handshake. \fBCntlm\fP also doesn't read the whole
-request including HTTP body into memory, in fact, no traffic is generated except for the exchange of headers
-until the client <-> server connection is fully negotiated. Only then are the request and response bodies
-forwarded, directly between client and server sockets. This way, \fBcntlm\fP avoids most of the TCP/IP
-overhead of similar proxies. Along with the fact that \fBcntlm\fP is written in optimized C, it achieves up to
-fifteen times faster responses. The slower the line, the more impact \fBcntlm\fP has on download speeds.
+each connection is transparently eliminated, providing direct access most of the time. \fBCntlm\fP never
+caches the request body in memory, in fact, no traffic is generated except for the exchange of headers
+until the client <-> server connection is fully negotiated. Only then real data transfer takes place.
+\fBCntlm\fP is written in optimized C and easily achieves fifteen times faster responses than others.
 
 .PP
 An example of \fBcntlm\fP compared to NTLMAPS under the same conditions: \fBcntlm\fP gave avg 76 kB/s with
@@ -59,8 +62,8 @@ consumption (several complex sites, 50 paralell connections/threads; values are 
 .PP
 Inherent part of the development is profiling and memory management screening using Valgrind. The source
 distribution contains a file called \fIvalgrind.txt\fP, where you can see the report confirming zero leaks, no
-access to unallocated memory, no usage of uninitialized data - all tracked down to each CPU instruction
-emulated in Valgrind's virtual CPU during a typical production lifetime of the proxy.
+access to unallocated memory, no usage of uninitialized data - all traced down to each instruction emulated in
+Valgrind's virtual CPU during a typical production lifetime of the proxy.
 
 .SH OPTIONS
 Most options can be pre-set in a configuration file. Specifying an option more than once is not an error, but
@@ -232,6 +235,13 @@ proxy. Probe requests are made for the specified \fItesturl\fP, with the stronge
 When finished, settings for the most secure setup are printed. Although the detection will tell you which and
 how to use \fBAuth\fP, \fBFlags\fP and password-hash options, you have to configure at least your credentials
 and proxy address first. You can use \fB-I\fP to enter your password interactively.
+
+.ne 5
+.TP
+.B -N <pattern1>[,<patternN]\ \ \ \ (NoProxy)
+Avoid parent proxy for these host names. All matching URL's will be proxied \fIdirectly\fP by \fBcntlm\fP as a
+stand-alone proxy. \fBCntlm\fP supports WWW authentication in this mode, thus allowing you to access local
+intranet sites with corporate NTLM authentication. Hopefully, you won't need that virtualized MSIE any more. :)
 
 .ne 10
 .TP
@@ -433,6 +443,13 @@ next one. The connect request fails only if the whole list of proxies is scanned
 found to be invalid. Command-line takes precedence over the configuration file.
 
 .TP
+.B NoProxy pattern1, pattern2, ...
+Avoid parent proxy for these host names. All matching URL's will be proxied \fIdirectly\fP by \fBcntlm\fP as a
+stand-alone proxy. \fBCntlm\fP supports WWW authentication in this mode, thus allowing you to access local
+intranet sites with corporate NTLM authentication. Hopefully, you won't need that virtualized MSIE any more. :)
+See \fB-N\fP for more.
+
+.TP
 .B SOCKS5Proxy [<saddr>:]<lport>
 Enable SOCKS5 proxy. See \fB-O\fP for more.
 
@@ -471,31 +488,20 @@ package, 2) traditional "make; make install" and 3) Windows installer being:
 .fi
 
 .SH PORTING
-\fBCntlm\fP has been successfully compiled and tested on both little and big endian machines (Linux/i386 and
-AIX/PowerPC). For compilation details, see README in the source distribution. Porting to any POSIX conforming
-OS shouldn't be more than a matter of the Makefile rearrangement. \fBCntlm\fP uses strictly POSIX.1-2001
-interfaces with ISO C99 libc (\fBsnprintf(3)\fP), it is also compliant with SUSv3. Since version 0.33,
-\fBcntlm\fP supports Windows using POSIX emulation layer Cygwin.
+\fBCntlm\fP is being used on many platforms, little and big endian machines, so users should not have any
+problems with compilation. Nowadays, \fBcntlm\fP is a standard tool in most Linux distributions and there are
+various repositories for other UNIX-like systems. Personally, I release Debian Linux (deb), RedHat Linux (rpm)
+and Windows (exe) binaries, but most people get \fBcntlm\fP from their OS distributor.
 
-.SH TODO
-In the much needed NTLM-proxy departement, \fBcntlm\fP aims to be a drop-in replacement for NTLMAPS. But
-please note that NTLM WWW auth (that is auth to HTTP servers), when it is running without any parent proxy as
-a standalone proxy server in itself, won't probaly be implemented ever. Even though the tasks share common
-NTLM authentication, they are different things. Also, I've never seen any access-protected HTTP server
-requiring solely NTLM without any alternative. Such a narrow-spectrum tool can be written in Perl in a few
-minutes. I strive to keep the code of \fBcntlm\fP simple and efficient.
+.ne 2
+For compilation details, see README in the source distribution. Porting to any POSIX conforming OS shouldn't
+be more than a matter of the Makefile rearrangement. \fBCntlm\fP uses strictly POSIX.1-2001 interfaces with
+ISO C99 libc and is compliant with SUSv3. Since version 0.33, \fBcntlm\fP supports Windows using POSIX
+emulation layer Cygwin.
 
 .SH BUGS
-This software is still BETA, so there are probably many bugs for you to uncloak even though I'm testing every
-new piece of code AMAP and use \fBcntlm\fP daily.  I'll be happy to fix all of them, but if you can manage,
-patches would be better. ;)
-
 \fBTo report a bug\fP, enable the debug output, save it to a file and submit on-line along with a detailed
-description of the problem and how to reproduce it. The link can be found on the homepage.
-
-To generate the debug tracefile correctly, first run \fBcntlm\fP from the shell (command line) and make sure
-you can reproduce the bug. When you will have verfied that, stop \fBcntlm\fP (hit Ctrl-C) and insert the
-following parameters at the beginning of the command line, preserving their order.  Example:
+description of the problem and how to reproduce it. Visit the home page for more.
 .nf
 .ft C
 

@@ -31,7 +31,7 @@
 #define blank(c)	((c) == ' ' || (c) == '\t' || (c) == '\r' || (c) == '\n')
 
 config_t config_open(const char *fname) {
-	config_t ret;
+	config_t rc;
 	FILE *fp;
 	char *buf, *tmp, *key, *value;
 	int i, j, len;
@@ -41,8 +41,8 @@ config_t config_open(const char *fname) {
 		return NULL;
 	
 	buf = new(BUFSIZE);
-	ret = (config_t)new(sizeof(struct config_s));
-	ret->options = NULL;
+	rc = (config_t)new(sizeof(struct config_s));
+	rc->options = NULL;
 
 	while (!feof(fp)) {
 		tmp = fgets(buf, BUFSIZE, fp);
@@ -81,13 +81,13 @@ config_t config_open(const char *fname) {
 			value[i] = 0;
 
 		trimr(value);
-		ret->options = hlist_add(ret->options, key, value, HLIST_NOALLOC, HLIST_NOALLOC);
+		rc->options = hlist_add(rc->options, key, value, HLIST_NOALLOC, HLIST_NOALLOC);
 	}
 
 	free(buf);
 	fclose(fp);
 
-	return ret;
+	return rc;
 }
 
 void config_set(config_t cf, char *option, char *value) {

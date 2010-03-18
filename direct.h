@@ -17,10 +17,9 @@
  *
  */
 
-#include "utils.h"
-#include "string.h"
-#include "stdio.h"
+#ifndef _DIRECT_H
+#define _DIRECT_H
 
-extern char *gen_407_page(const char *http);
-extern char *gen_denied_page(const char *ip);
-extern char *gen_502_page(const char *http, const char *msg);
+extern rr_data_t direct_request(void *cdata, rr_data_t request);
+
+#endif /* _DIRECT_H */

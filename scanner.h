@@ -36,6 +36,6 @@
  */
 #define SAMPLE		4096
 
-int scanner_hook(rr_data_t *request, rr_data_t *response, int *cd, int *sd, long maxKBs);
+int scanner_hook(rr_data_t request, rr_data_t response, int cd, int *sd, long maxKBs);
 
 #endif /* _SCANNER_H */

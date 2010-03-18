@@ -23,9 +23,8 @@
 #include "utils.h"
 #include "auth.h"
 
-int has_body(rr_data_t request, rr_data_t response);
 int proxy_connect(void);
-int proxy_authenticate(int sd, rr_data_t request, rr_data_t response, struct auth_s *creds, int *closed);
+int proxy_authenticate(int sd, rr_data_t request, rr_data_t response, struct auth_s *creds);
 void *tunnel_thread(void *data);
 void *socks5_thread(void *data);
 rr_data_t forward_request(void *cdata, rr_data_t request);

@@ -40,14 +40,6 @@
 #endif
 
 /*
- * A couple of shortcuts for if statements
- */
-#define CONNECT(data)	((data) && (data)->req && !strcasecmp("CONNECT", (data)->method))
-#define HEAD(data)	((data) && (data)->req && !strcasecmp("HEAD", (data)->method))
-#define GET(data)	((data) && (data)->req && !strcasecmp("GET", (data)->method))
-#define STATUS_OK(data)	((data) && (data)->code < 400)
-
-/*
  * Two single-linked list types. First is for storing headers,
  * second keeps a list of finished threads or cached connections.
  * Each has a different set of manipulation routines.
@@ -86,10 +78,12 @@ struct rr_data_s {
 	int port;
 	char *method;
 	char *url;
+	char *rel_url;
 	char *hostname;
 	char *http;
 	char *msg;
 	char *body;
+	char *errmsg;
 };
 
 /*
@@ -118,6 +112,7 @@ extern int hlist_in(hlist_t list, const char *key);
 extern int hlist_count(hlist_t list);
 extern char *hlist_get(hlist_t list, const char *key);
 extern int hlist_subcmp(hlist_t list, const char *key, const char *substr);
+extern int hlist_subcmp_all(hlist_t list, const char *key, const char *substr);
 extern hlist_t hlist_free(hlist_t list);
 extern void hlist_dump(hlist_t list);
 
@@ -132,6 +127,7 @@ extern char *new(size_t size);
 extern char *urlencode(const char *str);
 
 extern rr_data_t new_rr_data(void);
+extern rr_data_t copy_rr_data(rr_data_t dst, rr_data_t src);
 extern rr_data_t dup_rr_data(rr_data_t data);
 extern rr_data_t reset_rr_data(rr_data_t data);
 extern void free_rr_data(rr_data_t data);

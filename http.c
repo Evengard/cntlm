@@ -31,6 +31,7 @@
 
 #include "utils.h"
 #include "socket.h"
+#include "http.h"
 
 #define BLOCK		2048
 
@@ -80,19 +81,18 @@ char *get_http_header_value(const char *src) {
  * Returns: 1 if OK, 0 in case of socket EOF or other error
  */
 int headers_recv(int fd, rr_data_t data) {
-	char *tok, *s3 = 0;
+	int i, bsize;
 	int len;
 	char *buf;
+	char *tok, *s3 = 0;
 	char *orig = NULL;
 	char *ccode = NULL;
 	char *host = NULL;
-	int i, bsize;
 
 	bsize = BUFSIZE;
 	buf = new(bsize);
 
 	i = so_recvln(fd, &buf, &bsize);
-
 	if (i <= 0)
 		goto bailout;
 
@@ -129,7 +129,7 @@ int headers_recv(int fd, rr_data_t data) {
 			data->msg = strdup("");
 
 		if (!ccode || strlen(ccode) != 3 || (data->code = atoi(ccode)) == 0 || !data->http) {
-			i = -1;
+			i = -2;
 			goto bailout;
 		}
 	} else if (strstr(orig, " HTTP/") && tok) {
@@ -137,6 +137,7 @@ int headers_recv(int fd, rr_data_t data) {
 		data->empty = 0;
 		data->method = NULL;
 		data->url = NULL;
+		data->rel_url = NULL;
 		data->http = NULL;
 		data->hostname = NULL;
 
@@ -151,7 +152,7 @@ int headers_recv(int fd, rr_data_t data) {
 			data->http = substr(tok, 7, 1);
 
 		if (!data->url || !data->http) {
-			i = -1;
+			i = -3;
 			goto bailout;
 		}
 
@@ -162,11 +163,18 @@ int headers_recv(int fd, rr_data_t data) {
 		}
 
 		s3 = strchr(tok, '/');
-		host = substr(tok, 0, s3 ? s3-tok : strlen(tok));
+		if (s3) {
+			host = substr(tok, 0, s3-tok);
+			data->rel_url = strdup(s3);
+		} else {
+			host = substr(tok, 0, strlen(tok));
+			data->rel_url = strdup("/");
+		}
+
 	} else {
 		if (debug)
 			printf("headers_recv: Unknown header (%s).\n", orig);
-		i = -1;
+		i = -4;
 		goto bailout;
 	}
 
@@ -181,27 +189,38 @@ int headers_recv(int fd, rr_data_t data) {
 		}
 	} while (strlen(buf) != 0 && i > 0);
 
-	/*
-	 * Fix requests, make sure the Host: header is present
-	 */
-	if ((tok = hlist_get(data->headers, "Host"))) {
-		data->hostname = strdup(tok);
-	} else if (host) {
-		data->hostname = strdup(host);
-		data->headers = hlist_add(data->headers, "Host", host, HLIST_ALLOC, HLIST_ALLOC);
-	}
+	if (data->req) {
+		/*
+		 * Fix requests, make sure the Host: header is present
+		 */
+		if (host && strlen(host)) {
+			data->hostname = strdup(host);
+			if (!hlist_get(data->headers, "Host"))
+				data->headers = hlist_add(data->headers, "Host", host, HLIST_ALLOC, HLIST_ALLOC);
+		} else {
+			if (debug)
+				printf("headers_recv: no host name (%s)\n", orig);
+			i = -6;
+			goto bailout;
+		}
 
-	/*
-	 * Remove port number from internal host name variable
-	 */
-	if (data->hostname && (tok = strchr(data->hostname, ':'))) {
-		*tok = 0;
-		data->port = atoi(tok+1);
-	} else if (data->url) {
-		if (!strncasecmp(data->url, "https", 5))
-			data->port = 443;
-		else
-			data->port = 80;
+		/*
+		 * Remove port number from internal host name variable
+		 */
+		if (data->hostname && (tok = strchr(data->hostname, ':'))) {
+			*tok = 0;
+			data->port = atoi(tok+1);
+		} else if (data->url) {
+			if (!strncasecmp(data->url, "https", 5))
+				data->port = 443;
+			else
+				data->port = 80;
+		}
+
+		if (!strlen(data->hostname) || !data->port) {
+			i = -5;
+			goto bailout;
+		}
 	}
 
 bailout:
@@ -212,7 +231,7 @@ bailout:
 
 	if (i <= 0) {
 		if (debug)
-			printf("headers_recv: fd %d warning %d (connection closed)\n", fd, i);
+			printf("headers_recv: fd %d error %d\n", fd, i);
 		return 0;
 	}
 
@@ -395,16 +414,6 @@ int chunked_data_send(int dst, int src) {
 		if (debug)
 			printf("Line: %s", buf);
 
-		/*
-		printf("*buf = ");
-		for (i = 0; i < 100; i++) {
-			printf("%02x ", buf[i]);
-			if (i % 8 == 7)
-				printf("\n       ");
-		}
-		printf("\n");
-		*/
-
 		csize = strtol(buf, &err, 16);
 
 		if (debug)
@@ -477,7 +486,7 @@ int tunnel(int cd, int sd) {
 			ret = read(from, buf, BUFSIZE);
 			if (ret > 0) {
 				ret = write(to, buf, ret);
-			} if (ret <= 0) {
+			} else {
 				free(buf);
 				return (ret == 0);
 			}
@@ -489,5 +498,102 @@ int tunnel(int cd, int sd) {
 
 	free(buf);
 	return 1;
+}
+
+/*
+ * Return 0 if no body, -1 if body until EOF, number if size known
+ */
+int http_has_body(rr_data_t request, rr_data_t response) {
+	rr_data_t current;
+	int length, nobody;
+	char *tmp;
+
+	/*
+	 * Are we checking a complete req+res conversation or just the
+	 * request body?
+	 */
+	current = (response->empty ? request : response);
+
+	/*
+	 * HTTP body length decisions. There MUST NOT be any body from 
+	 * server if the request was HEAD or reply is 1xx, 204 or 304.
+	 * No body can be in GET request if direction is from client.
+	 */
+	if (current == response) {
+		nobody = (HEAD(request) ||
+			(response->code >= 100 && response->code < 200) ||
+			response->code == 204 ||
+			response->code == 304);
+	} else {
+		nobody = GET(request) || HEAD(request);
+	}
+
+	/*
+	 * Otherwise consult Content-Length. If present, we forward exaclty
+	 * that many bytes.
+	 *
+	 * If not present, but there is Transfer-Encoding or Content-Type
+	 * (or a request to close connection, that is, end of data is signaled
+	 * by remote close), we will forward until EOF.
+	 *
+	 * No C-L, no T-E, no C-T == no body.
+	 */
+	tmp = hlist_get(current->headers, "Content-Length");
+	if (!nobody && tmp == NULL && (hlist_in(current->headers, "Content-Type")
+			|| hlist_in(current->headers, "Transfer-Encoding")
+			|| hlist_subcmp(current->headers, "Connection", "close"))) {
+			// || (response->code == 200) 
+		if (hlist_in(current->headers, "Transfer-Encoding")
+				&& hlist_subcmp(current->headers, "Transfer-Encoding", "chunked"))
+			length = 1;
+		else
+			length = -1;
+	} else
+		length = (tmp == NULL || nobody ? 0 : atol(tmp));
+
+	return length;
+}
+
+/*
+ * Send a HTTP body (if any) between descriptors readfd and writefd
+ */
+int http_body_send(int writefd, int readfd, rr_data_t request, rr_data_t response) {
+	int bodylen;
+	int rc = 1;
+	rr_data_t current;
+
+	/*
+	 * Are we checking a complete req+res conversation or just the
+	 * request body?
+	 */
+	current = (response->empty ? request : response);
+
+	bodylen = http_has_body(request, response);
+	/*
+	 * Ok, so do we expect any body?
+	 */
+	if (bodylen) {
+		/*
+		 * Check for supported T-E.
+		 */
+		if (hlist_subcmp(current->headers, "Transfer-Encoding", "chunked")) {
+			if (debug)
+				printf("Chunked body included.\n");
+
+			rc = chunked_data_send(writefd, readfd);
+			if (debug)
+				printf(rc ? "Chunked body sent.\n" : "Could not chunk send whole body\n");
+		} else {
+			if (debug)
+				printf("Body included. Lenght: %d\n", bodylen);
+
+			rc = data_send(writefd, readfd, bodylen);
+			if (debug)
+				printf(rc ? "Body sent.\n" : "Could not send whole body\n");
+		}
+	} else if (debug)
+		printf("No body.\n");
+
+	return rc;
 }
 

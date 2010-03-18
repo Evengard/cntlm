@@ -33,7 +33,11 @@
 #include "forward.h"
 #include "scanner.h"
 
-int scanner_hook(rr_data_t *request, rr_data_t *response, int *cd, int *sd, long maxKBs) {
+/*
+ * This code is a piece of shit, but it works. Cannot rewrite it now, because
+ * I don't have ISA AV filter anymore - wouldn't be able to test it.
+ */
+int scanner_hook(rr_data_t request, rr_data_t response, int cd, int *sd, long maxKBs) {
 	char *buf, *line, *pos, *tmp, *pat, *post, *isaid, *uurl;
 	int bsize, lsize, size, len, i, w, nc;
 	rr_data_t newreq, newres;
@@ -43,13 +47,13 @@ int scanner_hook(rr_data_t *request, rr_data_t *response, int *cd, int *sd, long
 	int headers_initiated = 0;
 	long c, progress = 0, filesize = 0;
 
-	if (!(*request)->method || !(*response)->http
-		|| has_body(*request, *response) != -1
-		|| hlist_subcmp((*response)->headers, "Transfer-Encoding", "chunked")
-		|| !hlist_subcmp((*response)->headers, "Proxy-Connection", "close"))
+	if (!request->method || !response->http
+		|| http_has_body(request, response) != -1
+		|| hlist_subcmp(response->headers, "Transfer-Encoding", "chunked")
+		|| !hlist_subcmp(response->headers, "Proxy-Connection", "close"))
 		return PLUG_SENDHEAD | PLUG_SENDDATA;
 
-	tmp = hlist_get((*request)->headers, "User-Agent");
+	tmp = hlist_get(request->headers, "User-Agent");
 	if (tmp) {
 		tmp = lowercase(strdup(tmp));
 		list = scanner_agent_list;
@@ -130,8 +134,8 @@ int scanner_hook(rr_data_t *request, rr_data_t *response, int *cd, int *sd, long
 						 */
 						headers_initiated = 1;
 						tmp = new(MINIBUF_SIZE);
-						snprintf(tmp, MINIBUF_SIZE, "HTTP/1.%s 200 OK\r\n", (*request)->http);
-						w = write(*cd, tmp, strlen(tmp));
+						snprintf(tmp, MINIBUF_SIZE, "HTTP/1.%s 200 OK\r\n", request->http);
+						w = write(cd, tmp, strlen(tmp));
 						free(tmp);
 					}
 
@@ -148,7 +152,7 @@ int scanner_hook(rr_data_t *request, rr_data_t *response, int *cd, int *sd, long
 						tmp = new(MINIBUF_SIZE);
 						progress = atol(line+12);
 						snprintf(tmp, MINIBUF_SIZE, "ISA-Scanner: %ld of %ld\r\n", progress, filesize);
-						w = write(*cd, tmp, strlen(tmp));
+						w = write(cd, tmp, strlen(tmp));
 						free(tmp);
 					}
 
@@ -165,59 +169,46 @@ int scanner_hook(rr_data_t *request, rr_data_t *response, int *cd, int *sd, long
 				pos = urlencode(tmp);
 				free(tmp);
 
-				uurl = urlencode((*request)->url);
+				uurl = urlencode(request->url);
 
 				post = new(BUFSIZE);
 				snprintf(post, bsize, "%surl=%s&%sSaveToDisk=YES&%sOrig=%s", isaid, pos, isaid, isaid, uurl);
 
 				if (debug)
-					printf("scanner_hook: Getting file with URL data = %s\n", (*request)->url);
+					printf("scanner_hook: Getting file with URL data = %s\n", request->url);
 
 				tmp = new(MINIBUF_SIZE);
 				snprintf(tmp, MINIBUF_SIZE, "%d", (int)strlen(post));
 
 				newres = new_rr_data();
-				newreq = dup_rr_data(*request);
+				newreq = dup_rr_data(request);
 
 				free(newreq->method);
 				newreq->method = strdup("POST");
-				hlist_mod(newreq->headers, "Referer", (*request)->url, 1);
+				hlist_mod(newreq->headers, "Referer", request->url, 1);
 				hlist_mod(newreq->headers, "Content-Type", "application/x-www-form-urlencoded", 1);
 				hlist_mod(newreq->headers, "Content-Length", tmp, 1);
 				free(tmp);
 
-				/*
-				 * Try to use a cached connection or authenticate new.
-				 */
-				pthread_mutex_lock(&connection_mtx);
-				i = plist_pop(&connection_list);
-				pthread_mutex_unlock(&connection_mtx);
-				if (i) {
+				nc = proxy_connect();
+				c = proxy_authenticate(nc, newreq, newres, creds);
+				if (c && newres->code == 407) {
 					if (debug)
-						printf("scanner_hook: Found autenticated connection %d!\n", i);
-					nc = i;
+						printf("scanner_hook: Authentication OK, getting the file...\n");
 				} else {
-					nc = proxy_connect();
-					c = proxy_authenticate(nc, newreq, NULL, creds, NULL);
-					if (c > 0 && c != 500) {
-						if (debug)
-							printf("scanner_hook: Authentication OK, getting the file...\n");
-					} else {
-						if (debug)
-							printf("scanner_hook: Authentication failed\n");
-						close(nc);
-						nc = 0;
-					}
+					if (debug)
+						printf("scanner_hook: Authentication failed or refused!\n");
+					close(nc);
+					nc = 0;
 				}
 
 				/*
 				 * The POST request for the real file
 				 */
+				reset_rr_data(newres);
 				if (nc && headers_send(nc, newreq) && write(nc, post, strlen(post)) && headers_recv(nc, newres)) {
 					if (debug)
 						hlist_dump(newres->headers);
-
-					free_rr_data(*response);
 
 					/*
 					 * We always know the filesize here. Send it to the client, because ISA doesn't!!!
@@ -234,7 +225,7 @@ int scanner_hook(rr_data_t *request, rr_data_t *response, int *cd, int *sd, long
 					 * to the client. In such case, do not include the HTTP/1.x ID.
 					 */
 					newres->skip_http = headers_initiated;
-					*response = dup_rr_data(newres);
+					copy_rr_data(response, newres);
 					close(*sd);
 					*sd = nc;
 
@@ -258,17 +249,17 @@ int scanner_hook(rr_data_t *request, rr_data_t *response, int *cd, int *sd, long
 	if (len) {
 		if (debug) {
 			printf("scanner_hook: flushing %d original bytes\n", len);
-			hlist_dump((*response)->headers);
+			hlist_dump(response->headers);
 		}
 
-		if (!headers_send(*cd, *response)) {
+		if (!headers_send(cd, response)) {
 			if (debug)
 				printf("scanner_hook: failed to send headers\n");
 			free(buf);
 			return PLUG_ERROR;
 		}
 
-		size = write(*cd, buf, len);
+		size = write(cd, buf, len);
 		if (size > 0)
 			ok = PLUG_SENDDATA;
 		else

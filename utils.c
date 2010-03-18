@@ -187,14 +187,14 @@ int plist_pop(plist_t *list) {
  */
 int plist_count(plist_t list) {
 	plist_t t = list;
-	int ret = 0;
+	int rc = 0;
 
 	while (t) {
-		ret++;
+		rc++;
 		t = t->next;
 	}
 
-	return ret;
+	return rc;
 }
 
 /*
@@ -339,14 +339,14 @@ int hlist_in(hlist_t list, const char *key) {
  */
 int hlist_count(hlist_t list) {
 	hlist_t t = list;
-	int ret = 0;
+	int rc = 0;
 
 	while (t) {
-		ret++;
+		rc++;
 		t = t->next;
 	}
 
-	return ret;
+	return rc;
 }
 
 /*
@@ -372,17 +372,42 @@ int hlist_subcmp(hlist_t list, const char *key, const char *substr) {
 	int found = 0;
 	char *tmp, *low;
 
+	lowercase(low = strdup(substr));
 	tmp = hlist_get(list, key);
 	if (tmp) {
 		lowercase(tmp = strdup(tmp));
-		lowercase(low = strdup(substr));
-		if (strstr(tmp, substr))
+		if (strstr(tmp, low))
 			found = 1;
 
-		free(low);
 		free(tmp);
 	}
 
+	free(low);
+	return found;
+}
+
+/*
+ * Test if substr is part of the header's value.
+ * Both case-insensitive, checks all headers, not just first one.
+ */
+int hlist_subcmp_all(hlist_t list, const char *key, const char *substr) {
+	hlist_t t = list;
+	int found = 0;
+	char *tmp, *low;
+
+	lowercase(low = strdup(substr));
+	while (t) {
+		if (!strcasecmp(t->key, key)) {
+			lowercase(tmp = strdup(t->value));
+			if (strstr(tmp, low))
+				found = 1;
+
+			free(tmp);
+		}
+		t = t->next;
+	}
+
+	free(low);
 	return found;
 }
 
@@ -432,7 +457,7 @@ char *substr(const char *src, int pos, int len) {
 
 	l = MIN(len, strlen(src)-pos);
 	if (l <= 0)
-		return NULL;
+		return new(1);
 
 	tmp = new(l+1);
 	strlcpy(tmp, src+pos, l+1);
@@ -456,12 +481,51 @@ rr_data_t new_rr_data(void) {
 	data->headers = NULL;
 	data->method = NULL;
 	data->url = NULL;
+	data->rel_url = NULL;
 	data->hostname = NULL;
 	data->http = NULL;
 	data->msg = NULL;
 	data->body = NULL;
+	data->errmsg = NULL; 			/* for static strings - we don't free, dup, nor copy */
 
 	return data;
+}
+
+/*
+ * Copy the req/res data.
+ */
+rr_data_t copy_rr_data(rr_data_t dst, rr_data_t src) {
+	if (src == NULL || dst == NULL)
+		return NULL;
+
+	reset_rr_data(dst);
+	dst->req = src->req;
+	dst->code = src->code;
+	dst->skip_http = src->skip_http;
+	dst->body_len = src->body_len;
+	dst->empty = src->empty;
+	dst->port = src->port;
+
+	if (src->headers)
+		dst->headers = hlist_dup(src->headers);
+	if (src->method)
+		dst->method = strdup(src->method);
+	if (src->url)
+		dst->url = strdup(src->url);
+	if (src->rel_url)
+		dst->rel_url = strdup(src->rel_url);
+	if (src->hostname)
+		dst->hostname = strdup(src->hostname);
+	if (src->http)
+		dst->http = strdup(src->http);
+	if (src->msg)
+		dst->msg = strdup(src->msg);
+	if (src->body && src->body_len > 0) {
+		dst->body = new(src->body_len);
+		memcpy(dst->body, src->body, src->body_len);
+	}
+	
+	return dst;
 }
 
 /*
@@ -474,31 +538,7 @@ rr_data_t dup_rr_data(rr_data_t data) {
 		return NULL;
 
 	tmp = new_rr_data();
-	tmp->req = data->req;
-	tmp->code = data->code;
-	tmp->skip_http = data->skip_http;
-	tmp->body_len = data->body_len;
-	tmp->empty = data->empty;
-	tmp->port = data->port;
-
-	if (data->headers)
-		tmp->headers = hlist_dup(data->headers);
-	if (data->method)
-		tmp->method = strdup(data->method);
-	if (data->url)
-		tmp->url = strdup(data->url);
-	if (data->hostname)
-		tmp->hostname = strdup(data->hostname);
-	if (data->http)
-		tmp->http = strdup(data->http);
-	if (data->msg)
-		tmp->msg = strdup(data->msg);
-	if (data->body && data->body_len > 0) {
-		tmp->body = new(data->body_len);
-		memcpy(tmp->body, data->body, data->body_len);
-	}
-	
-	return tmp;
+	return copy_rr_data(tmp, data);
 }
 
 /*
@@ -518,6 +558,7 @@ rr_data_t reset_rr_data(rr_data_t data) {
 	if (data->headers) hlist_free(data->headers);
 	if (data->method) free(data->method);
 	if (data->url) free(data->url);
+	if (data->rel_url) free(data->rel_url);
 	if (data->hostname) free(data->hostname);
 	if (data->http) free(data->http);
 	if (data->msg) free(data->msg);
@@ -526,10 +567,12 @@ rr_data_t reset_rr_data(rr_data_t data) {
 	data->headers = NULL;
 	data->method = NULL;
 	data->url = NULL;
+	data->rel_url = NULL;
 	data->hostname = NULL;
 	data->http = NULL;
 	data->msg = NULL;
 	data->body = NULL;
+	data->errmsg = NULL;
 
 	return data;
 }
@@ -545,6 +588,7 @@ void free_rr_data(rr_data_t data) {
 	if (data->headers) hlist_free(data->headers);
 	if (data->method) free(data->method);
 	if (data->url) free(data->url);
+	if (data->rel_url) free(data->rel_url);
 	if (data->hostname) free(data->hostname);
 	if (data->http) free(data->http);
 	if (data->msg) free(data->msg);
@@ -681,7 +725,7 @@ char *uppercase(char *str) {
 }
 
 int unicode(char **dst, char *src) {
-	char *ret;
+	char *tmp;
 	int l, i;
 
 	if (!src) {
@@ -690,11 +734,11 @@ int unicode(char **dst, char *src) {
 	}
 
 	l = MIN(64, strlen(src));
-	ret = new(2*l);
+	tmp = new(2*l);
 	for (i = 0; i < l; ++i)
-		ret[2*i] = src[i];
+		tmp[2*i] = src[i];
 
-	*dst = ret;
+	*dst = tmp;
 	return 2*l;
 }
 

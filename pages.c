@@ -19,32 +19,53 @@
  *
  */
 
+#ifndef _PAGES_H
+#define _PAGES_H
+
 #include "utils.h"
 #include "string.h"
 #include "stdio.h"
 
-char *gen_407_page(char *http) {
+char *gen_407_page(const char *http) {
 	char *tmp;
-
+	if (http == NULL)
+		http = "0";
 	tmp = new(BUFSIZE);
-	snprintf(tmp, BUFSIZE, "HTTP/1.%s 407 Access denied.\r\n", http);
-	strcat(tmp, "Proxy-Authenticate: Basic realm=\"Cntlm Proxy\"\r\n");
-	strcat(tmp, "Content-Type: text/html\r\n\r\n");
-	strcat(tmp, "<html><body><h1>Authentication error</h1><p><a href='http://cntlm.sf.net/'>Cntlm</a> "
-		"proxy has NTLM-to-basic feature enabled. You have to enter correct credentials to continue "
-		"(refresh with Ctrl-R or F5).</p></body></html>");
-
+	snprintf(tmp, BUFSIZE-1,
+		"HTTP/1.%s 407 Access denied.\r\n"
+		"Proxy-Authenticate: Basic realm=\"Cntlm Proxy\"\r\n"
+		"Content-Type: text/html\r\n\r\n"
+		"<html><body><h1>Authentication error</h1><p><a href='http://cntlm.sf.net/'>Cntlm</a> proxy activated NTLM-to-basic feature. Enter your proxy credentials to continue (refresh with Ctrl-R or F5).</p></body></html>",
+		http);
 	return tmp;
 }
 
-
-char *gen_denied_page(char *ip) {
+char *gen_denied_page(const char *ip) {
 	char *tmp;
-
+	if (ip == NULL)
+		ip = "client";
 	tmp = new(BUFSIZE);
-	snprintf(tmp, BUFSIZE, "HTTP/1.0 407 Access denied.\r\nContent-Type: text/html\r\n\r\n"
-		"<html><body><h1>Access denied</h1><p>Your request has been declined, %s "
-		"is not allowed to connect.</p></body></html>", ip);
-
+	snprintf(tmp, BUFSIZE-1,
+		"HTTP/1.0 407 Access denied.\r\n"
+		"Content-Type: text/html\r\n\r\n"
+		"<html><body><h1>Access denied</h1><p>Your request has been declined, %s is not allowed to connect.</p></body></html>",
+		ip);
 	return tmp;
 }
+
+char *gen_502_page(const char *http, const char *msg) {
+	char *tmp;
+	if (http == NULL)
+		http = "0";
+	if (msg == NULL)
+		msg = "Proxy error";
+	tmp = new(BUFSIZE);
+	snprintf(tmp, BUFSIZE-1,
+		"HTTP/1.%s 502 %s\r\n"
+		"Content-Type: text/html\r\n\r\n"
+		"<html><body><h1>502 %s</h1><p><a href='http://cntlm.sf.net/'>Cntlm</a> proxy failed to complete the request.</p></body></html>",
+		http, msg, msg);
+	return tmp;
+}
+
+#endif /* _PAGES_H */

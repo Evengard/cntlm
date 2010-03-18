@@ -84,7 +84,7 @@ struct auth_s *dup_auth(struct auth_s *creds, int fullcopy) {
 }
 
 void free_auth(struct auth_s *creds) {
-	if (!creds)
+	if (creds == NULL)
 		return;
 
 	free(creds->domain);
@@ -104,7 +104,7 @@ void dump_auth(struct auth_s *creds) {
 	char *tmp;
 
 	printf("Credentials structure dump:\n");
-	if (!creds) {
+	if (creds == NULL) {
 		printf("Struct is not allocated!\n");
 		return;
 	}
