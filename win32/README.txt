@@ -1,31 +1,27 @@
 Cntlm Installation Manual for Windows
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-- Run setup.exe tool and install the software
-- Edit cntlm.ini in your installation path (or via Start Menu)
+- Run setup.exe installer
+- Edit cntlm.ini
+- Start Cntlm
 
+Visit http://cntlm.sf.net for HOWTO's and configuration tips.
 
 Starting and stopping
 ~~~~~~~~~~~~~~~~~~~~~
-Go to the Service management applet:
 
+You can use Cntlm Start Menu shortcuts to start, stop and configure
+the application. Cntlm is installed as an auto-start service.
+
+OR:
 Start -> Settings -> Control Panel -> Administrative Tools -> Services
 
-or
-
-Start -> Run, write "services.msc" and press enter.
-
-or
-
-CMD: net start cntlm / net stop cntlm
-
-Or use Cntlm Start Menu shortcuts to start and stop the application.
-By default, Cntlm is installed so as to auto-start on boot.
+OR (command line):
+net start cntlm
+net stop cntlm
 
 
 Uninstalling
 ~~~~~~~~~~~~
-Stop Cntlm service, run uninstall from Start Menu or your system's
-Add/Remove Programs application.
-
-Visit http://cntlm.sf.net for detailed HOWTO's on how to configure Cntlm.
+Stop Cntlm service, run uninstaller from your Start Menu, or use
+native Windows "Add/Remove Programs" Control Panel.
