@@ -71,7 +71,7 @@ win:
 	groff -t -e -mandoc -Tps doc/cntlm.1 | ps2pdf - win32/cntlm_manual.pdf
 	cat doc/cntlm.conf | unix2dos > win32/cntlm.ini
 	cat COPYRIGHT LICENSE | unix2dos > win32/license.txt
-	perl -pe 'BEGIN{open P,"VERSION";$$a=<P>}s/\$$VERSION/$$a/g' win32/setup.iss.in > win32/setup.iss
+	perl -pe 'BEGIN{open P,"VERSION";$$a=<P>;chomp $$a}s/\$$VERSION/$$a/g' win32/setup.iss.in > win32/setup.iss
 	cp /bin/cygwin1.dll /bin/cygrunsrv.exe win32/
 	cp cntlm.exe win32/
 	strip win32/cntlm.exe

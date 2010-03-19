@@ -2,8 +2,6 @@
 AppId={{4D753458-961F-45DA-B5E3-7B44D4E368B4}
 AppName=Cntlm
 AppVerName=Cntlm v$VERSION
-
-
 AppCopyright=Copyright (C) 2007-2010 David Kubicek
 AppPublisher=David Kubicek
 AppPublisherURL=http://cntlm.sf.net/
@@ -14,6 +12,7 @@ DefaultGroupName=Cntlm
 SetupIconFile=cntlm.ico
 UninstallDisplayIcon={app}\cntlm.ico
 Uninstallable=yes
+OutputBaseFileName=cntlm-$VERSION-setup
 OutputDir=.
 
 [Files]
