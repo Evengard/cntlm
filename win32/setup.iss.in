@@ -36,8 +36,8 @@ Filename: "{app}\cygrunsrv.exe"; StatusMsg: "Installing Cntlm service..."; Param
 Name: "{group}\cntlm.ini"; Filename: "{app}\cntlm.ini"
 Name: "{group}\Start Cntlm Authentication Proxy"; Filename: "{sys}\net.exe"; Parameters: "start cntlm"; WorkingDir: {app}
 Name: "{group}\Stop Cntlm Authentication Proxy"; Filename: "{sys}\net.exe"; Parameters: "stop cntlm"; WorkingDir: {app}
-Name: "{group}\Uninstall Cntlm"; Filename: "{uninstallexe}"
-Name: "{group}\Cntlm Homepage"; Filename: "{app}\Cntlm Homepage.url"
-Name: "{group}\Software Updates"; Filename: "{app}\Software Updates.url"
-Name: "{group}\Support Website"; Filename: "{app}\Support Website.url"
-Name: "{group}\PDF configuration manual"; Filename: "{app}\cntlm_manual.pdf"
+Name: "{group}\Tools\Uninstall Cntlm"; Filename: "{uninstallexe}"
+Name: "{group}\Tools\Cntlm Homepage"; Filename: "{app}\Cntlm Homepage.url"
+Name: "{group}\Tools\Software Updates"; Filename: "{app}\Software Updates.url"
+Name: "{group}\Tools\Support Website"; Filename: "{app}\Support Website.url"
+Name: "{group}\Tools\PDF configuration manual"; Filename: "{app}\cntlm_manual.pdf"
