@@ -1,1 +1,0 @@
-cygrunsrv.exe -R cntlm

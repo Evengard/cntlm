@@ -71,13 +71,13 @@ win:
 	groff -t -e -mandoc -Tps doc/cntlm.1 | ps2pdf - win32/cntlm_manual.pdf
 	cat doc/cntlm.conf | unix2dos > win32/cntlm.ini
 	cat COPYRIGHT LICENSE > win32/license.txt
+	perl -pe 'BEGIN{open P,"VERSION";$$a=<P>}s/\$$VERSION/$$a/g' win32/setup.iss.in > win32/setup.iss
 	cp /bin/cygwin1.dll /bin/cygrunsrv.exe win32/
-	strip cntlm.exe
 	cp cntlm.exe win32/
-	rm -f cntlm-install
-	ln -s win32 cntlm-install
-	zip -r cntlm-$(VER)-win32.zip cntlm-install -x *.svn/*
-	rm -f cntlm-install cntlm-$(VER)-win32.zip.sig
+	strip win32/cntlm.exe
+	@echo
+	@echo Now go to win32/ and run InnoSetup setup.iss
+	@echo It will generate a complete installer setup.exe
 
 uninstall:
 	rm -f $(BINDIR)/$(NAME) $(MANDIR)/man1/$(NAME).1 2>/dev/null || true
