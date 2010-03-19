@@ -1,0 +1,37 @@
+[Setup]
+AppId={{4D753458-961F-45DA-B5E3-7B44D4E368B4}
+AppName=Cntlm
+AppVerName=Cntlm v$VERSION
+
+AppCopyright=Copyright (C) 2007-2010 David Kubicek
+AppPublisher=David Kubicek
+AppPublisherURL=http://cntlm.sf.net/
+AppSupportURL=http://sourceforge.net/tracker/?group_id=197861
+AppUpdatesURL=http://sourceforge.net/projects/cntlm/files/
+LicenseFile=license.txt
+
+DefaultDirName={pf}\Cntlm
+DefaultGroupName=Cntlm
+SetupIconFile=cntlm.ico
+UninstallDisplayIcon={app}\cntlm.ico
+Uninstallable=yes
+OutputDir=.
+
+[Files]
+Source: "cntlm.exe"; DestDir: "{app}"
+Source: "cygrunsrv.exe"; DestDir: "{app}"
+Source: "cygwin1.dll"; DestDir: "{app}"
+Source: "cntlm.ini"; DestDir: "{app}"; Flags: uninsneveruninstall confirmoverwrite
+Source: "cntlm_manual.pdf"; DestDir: "{app}"
+Source: "README.txt"; DestDir: "{app}"; Flags: isreadme
+
+[Run]
+Filename: "{app}\cygrunsrv.exe"; StatusMsg: "Stopping Cntlm service..."; Parameters: " --stop cntlm"
+Filename: "{app}\cygrunsrv.exe"; StatusMsg: "Removing Cntlm service..."; Parameters: " --remove cntlm"
+Filename: "{app}\cygrunsrv.exe"; StatusMsg: "Installing Cntlm service..."; Parameters: "--install cntlm -s KILL -t auto -p ""{app}\cntlm.exe"" -d ""Cntlm Authentication Proxy"" -f ""HTTP Accelerator"" -a -f"
+
+[Icons]
+Name: "{group}\Start Cntlm"; Filename: "{sys}\net.exe"; Parameters: "start cntlm"; WorkingDir: {app}
+Name: "{group}\Stop Cntlm"; Filename: "{sys}\net.exe"; Parameters: "stop cntlm"; WorkingDir: {app}
+Name: "{group}\cntlm.ini"; Filename: "{app}\cntlm.ini"
+Name: "{group}\Uninstall Cntlm"; Filename: "{uninstallexe}"
