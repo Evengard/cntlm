@@ -84,7 +84,7 @@ uninstall:
 
 clean:
 	@rm -f *.o cntlm cntlm.exe configure-stamp build-stamp config/config.h 2>/dev/null
-	@rm -f cntlm-install win32/cyg* win32/cntlm* 2>/dev/null
+	@rm -f win32/*.exe win32/*.dll win32/*.iss win32/*.pdf win32/cntlm.ini win32/license.txt 2>/dev/null
 	@rm -f config/endian config/gethostname config/strdup config/socklen_t config/*.exe
 	@if [ -h Makefile ]; then rm -f Makefile; mv Makefile.gcc Makefile; fi
 
