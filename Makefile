@@ -70,6 +70,7 @@ tgz:
 win:
 	groff -t -e -mandoc -Tps doc/cntlm.1 | ps2pdf - win32/cntlm_manual.pdf
 	cat doc/cntlm.conf | unix2dos > win32/cntlm.ini
+	cat COPYRIGHT LICENSE > win32/license.txt
 	cp /bin/cygwin1.dll /bin/cygrunsrv.exe win32/
 	strip cntlm.exe
 	cp cntlm.exe win32/

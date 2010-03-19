@@ -1,6 +1,6 @@
 
  CNTLM - Authenticating HTTP Proxy
- Copyright (C) 2007 David Kubicek
+ Copyright (C) 2007-2010 David Kubicek
 
  This program is free software; you can redistribute it and/or modify
  it under the terms of the GNU General Public License as published by
@@ -18,3 +18,5 @@
 
  If you would like to negotiate alternate licensing terms, you may do
  so by contacting: David Kubicek <dave@awk.cz>, <kubicek@gedas.cz>
+
+
