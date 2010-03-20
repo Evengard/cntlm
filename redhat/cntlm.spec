@@ -1,9 +1,9 @@
 Summary:        Fast NTLM authentication proxy with tunneling
 Name:           cntlm
-Version:	0.90
+Version:		0.90
 Release:        1%{?dist}
 License:        GNU GPL V2
-Group:          System Environment/Daemons
+Group:          System/Daemons
 URL:            http://cntlm.sourceforge.net/
 Source0:        %{name}-%{version}.tar.bz2
 Source1:        cntlm.init
@@ -49,15 +49,19 @@ mkdir $RPM_BUILD_ROOT
   mkdir -p $RPM_BUILD_ROOT%{_sysconfdir}/sysconfig
 %endif
 
+mkdir -p $RPM_BUILD_ROOT/sbin
+
 %makeinstall SYSCONFDIR=$RPM_BUILD_ROOT/%{_sysconfdir} \
              BINDIR=$RPM_BUILD_ROOT/%{_sbindir} \
              MANDIR=$RPM_BUILD_ROOT/%{_mandir}
 %if 0%{?suse_version}
   install -D -m 755 %{SOURCE1} $RPM_BUILD_ROOT/%{_initrddir}/cntlm
   install -D -m 644 %{SOURCE2} $RPM_BUILD_ROOT/var/adm/fillup-templates/sysconfig.cntlm
+  ln -sf %{_initrddir}/cntlm $RPM_BUILD_ROOT/sbin/rccntlm
 %else
   install -D -m 755 %{SOURCE1} $RPM_BUILD_ROOT/%{_initrddir}/cntlmd
   install -D -m 644 %{SOURCE2} $RPM_BUILD_ROOT/%{_sysconfdir}/sysconfig/cntlmd
+  ln -sf %{_initrddir}/cntlmd $RPM_BUILD_ROOT/sbin/rccntlmd
 %endif
 
 %clean
@@ -133,10 +137,12 @@ fi
 %config(noreplace) %{_sysconfdir}/cntlm.conf
 %if 0%{?suse_version}
  %config(noreplace) /var/adm/fillup-templates/sysconfig.cntlm
- %config(noreplace) %{_initrddir}/cntlm
+ %{_initrddir}/cntlm
+ /sbin/rccntlm
 %else
  %config(noreplace) %{_sysconfdir}/sysconfig/cntlmd
- %config(noreplace) %{_initrddir}/cntlmd
+ %{_initrddir}/cntlmd
+ /sbin/rccntlmd
 %endif
 
 %changelog
