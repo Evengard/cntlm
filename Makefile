@@ -118,4 +118,3 @@ distclean: clean
 		fakeroot redhat/rules clean; \
 	fi
 	rm -f *.deb *.rpm *.tgz *.tar.gz *.tar.bz2 tags ctags pid 2>/dev/null
-
