@@ -542,7 +542,7 @@ int main(int argc, char **argv) {
 					dup2(tracefile, 2);
 					printf("Cntlm debug trace, version " VERSION);
 #ifdef __CYGWIN__
-					printf(" win32/cygwin port");
+					printf(" windows/cygwin port");
 #endif
 					printf(".\nCommand line: ");
 					for (i = 0; i < argc; ++i)

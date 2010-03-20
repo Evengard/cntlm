@@ -40,10 +40,10 @@ uninstall:
 	rm -f $(BINDIR)/$(NAME) $(MANDIR)/man1/$(NAME).1 2>/dev/null || true
 
 clean:
-	rm -f *.o cntlm cntlm.exe configure-stamp build-stamp config/config.h 2>/dev/null
-	rm -f cntlm-install win32/cyg* win32/cntlm* 2>/dev/null
-	rm -f config/endian config/gethostname config/strdup config/socklen_t config/*.exe
-	if [ -h Makefile ]; then rm -f Makefile; mv Makefile.gcc Makefile; fi
+	@rm -f *.o cntlm cntlm.exe configure-stamp build-stamp config/config.h 2>/dev/null
+	@rm -f cntlm-install win/cyg* win/cntlm* 2>/dev/null
+	@rm -f config/endian config/gethostname config/strdup config/socklen_t config/*.exe
+	@if [ -h Makefile ]; then rm -f Makefile; mv Makefile.gcc Makefile; fi
 
 distclean: clean
-	rm -f *.deb *.rpm *.tgz *.tar.gz *.tar.bz2 tags ctags pid 2>/dev/null
+	@rm -f *.deb *.rpm *.tgz *.tar.gz *.tar.bz2 tags ctags pid 2>/dev/null
