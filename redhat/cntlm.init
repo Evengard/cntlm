@@ -7,8 +7,10 @@
 #                    the primary proxy then, listening on a selected local port. 
 #                    You point all your proxy-aware programs to it and don't ever
 #                    have to deal with proxy authentication again.
-# Author:            Radislav Vrnata
+#
+# Authors:           Radislav Vrnata
 #                    Michal Strnad
+#                    Christian Wittmer
 #
 ### BEGIN INIT INFO
 # Provides:          cntlm
