@@ -9,7 +9,7 @@ MANDIR=/usr/local/man
 #
 #
 CC=xlc_r
-OBJS=utils.o ntlm.o xcrypt.o config.o socket.o acl.o auth.o http.o proxy.o forward.o direct.o scanner.o pages.o
+OBJS=utils.o ntlm.o xcrypt.o config.o socket.o acl.o auth.o http.o forward.o direct.o scanner.o pages.o main.o
 CFLAGS=$(FLAGS) -O3 -D_POSIX_C_SOURCE=200112 -D_ISOC99_SOURCE -D_REENTRANT -DVERSION=\"`cat VERSION`\"
 LDFLAGS=-lpthread
 NAME=cntlm
@@ -17,11 +17,11 @@ NAME=cntlm
 $(NAME): $(OBJS)
 	$(CC) $(CFLAGS) -o $@ $(OBJS) $(LDFLAGS)
 
-proxy.o: proxy.c
+main.o: main.c
 	if [ -z "$(SYSCONFDIR)" ]; then \
-		$(CC) $(CFLAGS) -c proxy.c -o $@; \
+		$(CC) $(CFLAGS) -c main.c -o $@; \
 	else \
-		$(CC) $(CFLAGS) -DSYSCONFDIR=\"$(SYSCONFDIR)\" -c proxy.c -o $@; \
+		$(CC) $(CFLAGS) -DSYSCONFDIR=\"$(SYSCONFDIR)\" -c main.c -o $@; \
 	fi
 
 install: $(NAME)

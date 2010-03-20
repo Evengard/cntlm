@@ -50,7 +50,7 @@ fakeroot. However, to install your packages you have to be root.
 	To build an RPM package from scratch, as root change to
 	/usr/src/[redhat|rpm|whatever]/SOURCES
 
-	Copy there all files from cntlm's redhat/ directory plus appropriate version of
+	Copy there all files from cntlm's rpm/ directory plus appropriate version of
 	the source tar.gz and type:
 
 	# rpmbuild -ba cntlm.spec

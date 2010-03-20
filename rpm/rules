@@ -18,7 +18,7 @@ if [ "$1" = "binary" ]; then
 
 	make tbz2
 	mv $NAME.tar.bz2 $DIR/SOURCES
-	cp redhat/cntlm.* $DIR/SOURCES					# Prepare build environment
+	cp rpm/cntlm.* $DIR/SOURCES					# Prepare build environment
 
 	rpmbuild \
 		--define "_topdir $DIR" \
