@@ -123,7 +123,7 @@ test -r $CNTLM_SYSCONFIG && . $CNTLM_SYSCONFIG || {
 [ -z "${DAEMON}" ] && DAEMON=/usr/sbin/cntlm
 [ -z "${DESC}" ] && DESC="CNTLM Authentication Proxy"
 [ -z "${PIDFILE}" ] && PIDFILE="/var/run/cntlm/cntlmd.pid"
-[ -z "${LOCKFILE}" ] && LOCKFILE="/var/lock/subsys/cntlm"
+[ -z "${LOCKFILE}" ] && LOCKFILE="/var/lock/subsys/cntlmd"
 [ -z "${RUNAS}" ] && RUNAS="cntlm"
 
 # if no "Proxy" is set in cntlm.conf try '127.0.0.1:3128' as a default

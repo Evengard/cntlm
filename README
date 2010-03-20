@@ -1,6 +1,10 @@
 Installation using packages
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
+Most of the popular distros contain cntlm packages.n their repositories.
+You can use the procedures described below to prepare a package of current cntlm
+version if desired.
+
 NOTE: generating packages traditionally requires root privileges (to be able to set
 proper ownership and permissions on package members). You can overcome that using
 fakeroot. However, to install your packages you have to be root.
@@ -51,7 +55,7 @@ fakeroot. However, to install your packages you have to be root.
 	/usr/src/[redhat|rpm|whatever]/SOURCES
 
 	Copy there all files from cntlm's rpm/ directory plus appropriate version of
-	the source tar.gz and type:
+	the source tar.bz2 (see SOURCE TARBALL section above) and type:
 
 	# rpmbuild -ba cntlm.spec
 

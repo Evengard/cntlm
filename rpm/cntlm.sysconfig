@@ -4,6 +4,9 @@
 # TIMEOUT            How long to wait before forcing cntlm to stop with a second
 #                    signal when active connections are still not finished
 # RUNAS              Name or number of the non-privileged account to run as
+# OPTARGS            List o optional arguments one would specify on the command line.
+#                    See the cntlm man page for list of available arguments
+#                    with their description.
 #
 
 DAEMON=/usr/sbin/cntlm

@@ -1,4 +1,4 @@
-.TH CNTLM 1 "Nov 2007" "cntlm 0.35" "Accelerating NTLM/NTLMv2 Authentication Proxy"
+.TH CNTLM 1 "Nov 2010" "cntlm 0.90" "Accelerating NTLM/NTLMv2 Authentication Proxy"
 .SH NAME
 \fBcntlm\fP - authenticating HTTP(S) proxy with TCP/IP tunneling and acceleration
 
@@ -357,9 +357,9 @@ Print debugging information. Automatically enables (\fB-f\fP).
 
 .TP
 .B -w <workstation>\ \ \ \ (Workstation)
-Workstation NetBIOS name. Do not use full domain name (FQDN) here. Just the first part. If not specified,
-\fBcntlm\fP tries to get the system hostname and if that fails, uses "cntlm" - it's because some proxies
-require this field non-empty.
+Workstation NetBIOS name. Do not use full qualified domain name (FQDN) here. Just the first part. 
+If not specified, \fBcntlm\fP tries to get the system hostname and if that fails, uses "cntlm" - it's because
+some proxies require this field non-empty.
 
 .SH CONFIGURATION
 Configuration file has the same syntax as OpenSSH ssh_config. It comprises of whitespace delimited keywords
