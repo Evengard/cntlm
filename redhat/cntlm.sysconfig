@@ -9,7 +9,7 @@
 DAEMON=/usr/sbin/cntlm
 PIDFILE=/var/run/cntlm/cntlmd.pid
 LOCKFILE=/var/lock/subsys/cntlmd
-TIMEOUT=5
+TIMEOUT=1
 RUNAS=cntlm
 DESC="CNTLM Authentication Proxy"
 OPTARGS="-U $RUNAS -P $PIDFILE"

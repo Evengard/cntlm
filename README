@@ -3,57 +3,49 @@ Installation using packages
 
 NOTE: generating packages traditionally requires root privileges (to be able to set
 proper ownership and permissions on package members). You can overcome that using
-the magnificent "fakeroot" utility. BUT you can use it only for package creation,
-NOT package installation. To install you packages, you have to be real root.
+fakeroot. However, to install your packages you have to be root.
 
+*** SOURCE TARBALL ***
+
+	$ make tgz
+	or
+	$ make tbz2
 
 *** DEBIAN PACKAGES ***
 
-1) Files you need:
+1) Quick way:
 
-	cntlm_0.XX-Y.diff.gz
-	cntlm_0.XX-Y.dsc
+	$ make deb
+
+2) From Debian/Ubuntu repository:
+
+	Get these files (e.g. apt-get source cntlm):
+
+	cntlm_0.XX-X.diff.gz
+	cntlm_0.XX-X.dsc
 	cntlm_0.XX.orig.tar.gz
 
-	Those can be acquired from the FTP and soon, from Debian pool directly.
-
-2) Compilation steps:
+	Compile:
 
 	$ dpkg-source -x cntlm_0.XX-Y.dsc
 	$ cd cntlm-0.XX/
 	$ dpkg-buildpackage -b -rfakeroot
-	# dpkg -i ../cntlm_0.XX-Y_arch.deb
+	# dpkg -i ../cntlm_0.XX-Y_arch.deb	# Install as root
 
 	Upon installation, the package takes care of creating a dedicated user for
 	cntlm, init script integration, manages eventual configuration file updates
 	with new upstream versions, things like restart of the daemon after future
 	updates, etc. You can later revert all these changes with one command, should
-	you decide to remove cntlm from your system. Basic "apt-get remove" keeps your
-	configuration file intact, so you can easily reinstall cntlm when you've grown
-	older and wiser. :) Alternatively, you can get rid of everything using "apt-get
-	--purge remove".
+	you decide to remove cntlm from your system.
 
 
 *** RPM FROM SCRATCH ***
 
-1) For the impatient:
+1) Quick way:
 
 	$ make rpm			# you'll need root privs. or fakeroot utility
-	# rpm -i cntlm-X.XX-{arch}.rpm
 
 2) Detailed howto (or if make rpm doesn't work for you)
-
-	As root:
-
-	# redhat/build binary
-
-	of as an unprivileged user:
-
-	$ fakeroot redhat/build binary
-
-	Either way, packages will then be in your current directory.
-
-	--- OR ---
 
 	To build an RPM package from scratch, as root change to
 	/usr/src/[redhat|rpm|whatever]/SOURCES
@@ -70,7 +62,7 @@ NOT package installation. To install you packages, you have to be real root.
 	broken RPM build environment. You should add this to your ~/.rpmmacros:
 	%_sysconfdir	/etc
 
-*** RPM FROM *.SRC.RPM ***
+*** RPM FROM *.src.rpm ***
 
 	If you just want to create a binary package from src.rpm, as root type:
 
@@ -89,6 +81,7 @@ First, you have to compile cntlm. Using the Makefile, this should be very easy:
 
 $ ./configure
 $ make
+$ make install
 
 Cntlm does not require any dynamic libraries and there are no dependencies you
 have to satisfy before compilation, except for libpthreads. This library is
@@ -96,27 +89,23 @@ required for all threaded applications and is very likely to be part of your
 system already, because it comes with libc. Next, install cntlm onto your
 system like so:
 
-$ make install
+Default installation directories are /usr/sbin, /usr/share/man and /etc. Should
+you want to install cntlm into a different location, change the DESTDIR
+installation prefix (from "/") to add a different installation prefix (e.g.
+/usr/local).  To change individual directories, use BINDIR, MANDIR and
+SYSCONFDIR:
 
-Default installation directories are /usr/local/bin, /usr/local/share/man and
-/usr/local/etc. Should you want to install cntlm into a different location,
-change the BINDIR, MANDIR and SYSCONFDIR in the Makefile or on the command line
-(see below). Installation uses the "install" helper, which has many differences
-across various platforms. Currently, we use GNU flavour by default and
-autodetect AIX. You might need to change some parameters on other POSIX
-systems.
-
-$ make install BINDIR=/usr/bin MANDIR=/usr/share/man
+$ make SYSCONFDIR=/etc BINDIR=/usr/bin MANDIR=/usr/share/man
+$ make install SYSCONFDIR=/etc BINDIR=/usr/bin MANDIR=/usr/share/man
 
 Cntlm is compiled with system-wide configuration file by default. That means
-whenever you run cntlm, it looks into a hardcoded path (see SYSCONFDIR in the
-Makefile) and tries to load cntml.conf. You cannot make it not to do so, unless
-you use -c with an alternative file or /dev/null. This is standard behaviour
-and probably what you want. On the other hand, some of you might not want to
-use cntlm as a daemon started by init scripts and you would prefer setting up
-everything on the command line. This is possible, just comment out SYSCONFDIR
-variable definition in the Makefile before you compile cntlm and it will remove
-this feature.
+whenever you run cntlm, it looks into a hardcoded path (SYSCONFDIR) and tries
+to load cntml.conf. You cannot make it not to do so, unless you use -c with an
+alternative file or /dev/null. This is standard behaviour and probably what you
+want. On the other hand, some of you might not want to use cntlm as a daemon
+started by init scripts and you would prefer setting up everything on the
+command line. This is possible, just comment out SYSCONFDIR variable definition
+in the Makefile before you compile cntlm and it will remove this feature.
 
 Installation includes the main binary, the man page (see "man cntlm") and if
 the default config feature was not removed, it also installs a configuration
@@ -127,22 +116,20 @@ among other things a file called "cntlmd". It can be used as an init.d script.
 
 Architectures
 ~~~~~~~~~~~~~
-The build system now has an independent autodetection of the build arch
-endianness. The result is printed during the compilation and is also part of
-cntlm's startup banner.
+The build system now has an autodetection of the build arch endianness. Every
+common CPU and OS out there is supported, including Windows, MacOS X, Linux,
+*BSD, AIX.
 
 
 Compilers
 ~~~~~~~~~
-Cntlm was tested and successfully compiles with GCC and IBM XL C/C++. Other
-compilers might work for you (then again, they might not). To compile with
-XLC, use:
-
-$ make -f Makefile.xlc ...
-
-or rename Makefile.xlc to Makefile. The rest is the same.
+Cntlm is tested against GCC and IBM XL C/C++, other C compilers will work
+for you too. There are no compiler specific directives and options AFAIK.
+compilers might work for you (then again, they might not). Specific
+Makefiles for different compilers are supported by the ./configure script
+(e.g. Makefile.xlc)
 
 
 Contact
 ~~~~~~~
-David Kubicek <dave@awk.cz>, <kubicek@gedas.cz>
+David Kubicek <dave@awk.cz>

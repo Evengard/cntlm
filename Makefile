@@ -2,9 +2,10 @@
 # You can tweak these three variables to make things install where you
 # like, but do not touch more unless you know what you are doing. ;)
 #
-SYSCONFDIR=/usr/local/etc
-BINDIR=/usr/local/bin
-MANDIR=/usr/local/man
+DESTDIR=
+SYSCONFDIR=$(DESTDIR)/etc
+BINDIR=$(DESTDIR)/usr/sbin
+MANDIR=$(DESTDIR)/usr/share/man
 
 #
 # Careful now...
@@ -15,7 +16,7 @@ NAME=cntlm
 CC=gcc
 VER=`cat VERSION`
 OBJS=utils.o ntlm.o xcrypt.o config.o socket.o acl.o auth.o http.o proxy.o forward.o direct.o scanner.o pages.o
-CFLAGS=$(FLAGS) -std=c99 -Wall -pedantic -O3 -D__BSD_VISIBLE -D_ALL_SOURCE -D_XOPEN_SOURCE=600 -D_POSIX_C_SOURCE=200112 -D_ISOC99_SOURCE -D_REENTRANT -DVERSION=\"`cat VERSION`\" -g
+CFLAGS=$(FLAGS) -std=c99 -Wall -pedantic -O3 -D__BSD_VISIBLE -D_ALL_SOURCE -D_XOPEN_SOURCE=600 -D_POSIX_C_SOURCE=200112 -D_ISOC99_SOURCE -D_REENTRANT -DVERSION=\"`cat VERSION`\"
 OS=$(shell uname -s)
 OSLDFLAGS=$(shell [ $(OS) = "SunOS" ] && echo "-lrt -lsocket -lnsl")
 LDFLAGS:=-lpthread $(OSLDFLAGS)
@@ -39,18 +40,30 @@ proxy.o: proxy.c
 install: $(NAME)
 	# AIX?
 	if [ -f /usr/bin/oslevel ]; then \
-		install -O root -G system -M 755 -S -f $(BINDIR) $(NAME); \
-		install -O root -G system -M 644 -f $(MANDIR)/man1 doc/$(NAME).1; \
-		install -O root -G system -M 600 -c $(SYSCONFDIR) doc/$(NAME).conf; \
+		install -M 755 -S -f $(BINDIR) $(NAME); \
+		install -M 644 -f $(MANDIR)/man1 doc/$(NAME).1; \
+		install -M 600 -c $(SYSCONFDIR) doc/$(NAME).conf; \
 	else \
-		install -D -o root -g root -m 755 -s $(NAME) $(BINDIR)/$(NAME); \
-		install -D -o root -g root -m 644 doc/$(NAME).1 $(MANDIR)/man1/$(NAME).1; \
+		install -D -m 755 -s $(NAME) $(BINDIR)/$(NAME); \
+		install -D -m 644 doc/$(NAME).1 $(MANDIR)/man1/$(NAME).1; \
 		[ -f $(SYSCONFDIR)/$(NAME).conf -o -z "$(SYSCONFDIR)" ] \
-			|| install -D -o root -g root -m 600 doc/$(NAME).conf $(SYSCONFDIR)/$(NAME).conf; \
+			|| install -D -m 600 doc/$(NAME).conf $(SYSCONFDIR)/$(NAME).conf; \
 	fi
 	@echo; echo "Cntlm will look for configuration in $(SYSCONFDIR)/$(NAME).conf"
 
+deb:
+	sed -i "s/^\(cntlm *\)([^)]*)/\1($(VER))/g" debian/changelog
+	if [ `id -u` = 0 ]; then \
+		debian/rules binary; \
+		debian/rules clean; \
+	else \
+		fakeroot debian/rules binary; \
+		fakeroot debian/rules clean; \
+	fi
+	mv ../cntlm_$(VER)*.deb .
+
 rpm:
+	sed -i "s/^\(Version:[\t ]*\)\(.*\)/\1$(VER)/g" redhat/cntlm.spec
 	if [ `id -u` = 0 ]; then \
 		redhat/rules binary; \
 		redhat/rules clean; \
@@ -61,17 +74,25 @@ rpm:
 
 tgz:
 	mkdir -p tmp
-	rm -f tmp/$(NAME)-$(VER)
-	ln -s $(PWD) tmp/$(NAME)-$(VER)
-	sed "s/^\./$(NAME)-$(VER)/" doc/files.txt | tar zchf $(NAME)-$(VER).tar.gz --no-recursion -C tmp -T -
-	rm tmp/$(NAME)-$(VER)
+	rm -rf tmp/$(NAME)-$(VER)
+	svn export . tmp/$(NAME)-$(VER)
+	tar zcvf $(NAME)-$(VER).tar.gz -C tmp/ $(NAME)-$(VER)
+	rm -rf tmp/$(NAME)-$(VER)
+	rmdir tmp 2>/dev/null || true
+
+tbz2:
+	mkdir -p tmp
+	rm -rf tmp/$(NAME)-$(VER)
+	svn export . tmp/$(NAME)-$(VER)
+	tar jcvf $(NAME)-$(VER).tar.bz2 -C tmp/ $(NAME)-$(VER)
+	rm -rf tmp/$(NAME)-$(VER)
 	rmdir tmp 2>/dev/null || true
 
 win:
 	groff -t -e -mandoc -Tps doc/cntlm.1 | ps2pdf - win32/cntlm_manual.pdf
 	cat doc/cntlm.conf | unix2dos > win32/cntlm.ini
 	cat COPYRIGHT LICENSE | unix2dos > win32/license.txt
-	perl -pe 'BEGIN{open P,"VERSION";$$a=<P>;chomp $$a}s/\$$VERSION/$$a/g' win32/setup.iss.in > win32/setup.iss
+	sed "s/\$$VERSION/$(VER)/g" win32/setup.iss.in > win32/setup.iss
 	cp /bin/cygwin1.dll /bin/cygrunsrv.exe win32/
 	cp cntlm.exe win32/
 	strip win32/cntlm.exe

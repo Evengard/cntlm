@@ -1,0 +1,6 @@
+cntlm (0.90) unstable; urgency=low
+
+  * Ad-hoc source build, not a Debian maintained package!
+
+ -- David Kubicek <dave@awk.cz>  Fri, 14 Mar 2010 02:16:39 +0100
+

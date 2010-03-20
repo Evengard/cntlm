@@ -9,7 +9,7 @@ MANDIR=/usr/local/man
 #
 #
 CC=xlc_r
-OBJS=utils.o ntlm.o xcrypt.o config.o socket.o acl.o auth.o http.o proxy.o
+OBJS=utils.o ntlm.o xcrypt.o config.o socket.o acl.o auth.o http.o proxy.o forward.o direct.o scanner.o pages.o
 CFLAGS=$(FLAGS) -O3 -D_POSIX_C_SOURCE=200112 -D_ISOC99_SOURCE -D_REENTRANT -DVERSION=\"`cat VERSION`\"
 LDFLAGS=-lpthread
 NAME=cntlm
@@ -19,14 +19,14 @@ $(NAME): $(OBJS)
 
 install: $(NAME)
 	if [ -f /usr/bin/oslevel ]; then \
-		install -O root -G system -M 0755 -S -f $(BINDIR) $(NAME); \
-		install -O root -G system -M 0644 -f $(MANDIR)/man1 doc/$(NAME).1; \
-		install -O root -G system -M 0600 -c $(SYSCONFDIR) doc/$(NAME).conf; \
+		install -M 0755 -S -f $(BINDIR) $(NAME); \
+		install -M 0644 -f $(MANDIR)/man1 doc/$(NAME).1; \
+		install -M 0600 -c $(SYSCONFDIR) doc/$(NAME).conf; \
 	else \
-		install -D -o root -g root -m 0755 -s $(NAME) $(BINDIR)/$(NAME); \
-		install -D -o root -g root -m 0644 doc/$(NAME).1 $(MANDIR)/man1/$(NAME).1; \
+		install -D -m 0755 -s $(NAME) $(BINDIR)/$(NAME); \
+		install -D -m 0644 doc/$(NAME).1 $(MANDIR)/man1/$(NAME).1; \
 		[ -f $(SYSCONFDIR)/$(NAME).conf -o -z "$(SYSCONFDIR)" ] \
-			|| install -D -o root -g root -m 0600 doc/$(NAME).conf $(SYSCONFDIR)/$(NAME).conf; \
+			|| install -D -m 0600 doc/$(NAME).conf $(SYSCONFDIR)/$(NAME).conf; \
 	fi
 
 uninstall:

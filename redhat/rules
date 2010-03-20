@@ -9,7 +9,7 @@ if [ ! -f VERSION -o ! -f Makefile ]; then
 fi
 
 RC=~/.rpmmacros
-RPMS="BUILD RPMS SOURCES SPECS SRPMS tmp"
+RPMS="BUILDROOT BUILD RPMS SOURCES SPECS SRPMS tmp"
 DIR=`pwd`/tmp
 NAME=cntlm-`cat VERSION`
 
@@ -37,9 +37,8 @@ _EOF_
 
 	for i in $RPMS; do mkdir -p $DIR/$i; done	# Create new rpm build structure
 	TMP=`pwd`
-	rm -f $DIR/tmp/$NAME 2>/dev/null
-	ln -s $TMP $DIR/tmp/$NAME			# Generate source .tar.gz
-	sed "s/^\./$NAME/" doc/files.txt | tar zchf $DIR/SOURCES/$NAME.tar.gz --no-recursion -C $DIR/tmp -T -
+	make tbz2
+	mv $NAME.tar.bz2 $DIR/SOURCES/
 	cp redhat/cntlm.* $DIR/SOURCES/			# Prepare build environment
 
 	rpmbuild -ba $DIR/SOURCES/cntlm.spec		# Build RPM and copy to current dir
