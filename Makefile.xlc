@@ -17,6 +17,13 @@ NAME=cntlm
 $(NAME): $(OBJS)
 	$(CC) $(CFLAGS) -o $@ $(OBJS) $(LDFLAGS)
 
+proxy.o: proxy.c
+	if [ -z "$(SYSCONFDIR)" ]; then \
+		$(CC) $(CFLAGS) -c proxy.c -o $@; \
+	else \
+		$(CC) $(CFLAGS) -DSYSCONFDIR=\"$(SYSCONFDIR)\" -c proxy.c -o $@; \
+	fi
+
 install: $(NAME)
 	if [ -f /usr/bin/oslevel ]; then \
 		install -M 0755 -S -f $(BINDIR) $(NAME); \
@@ -33,14 +40,10 @@ uninstall:
 	rm -f $(BINDIR)/$(NAME) $(MANDIR)/man1/$(NAME).1 2>/dev/null || true
 
 clean:
-	@rm -f *.o cntlm cntlm.exe configure-stamp build-stamp config/config.h 2>/dev/null
-	@rm -f cntlm-install win32/cyg* win32/cntlm* 2>/dev/null
-	@rm -f config/endian config/gethostname config/strdup config/socklen_t config/*.exe
-	@if [ -h Makefile ]; then rm -f Makefile; mv Makefile.gcc Makefile; fi
+	rm -f *.o cntlm cntlm.exe configure-stamp build-stamp config/config.h 2>/dev/null
+	rm -f cntlm-install win32/cyg* win32/cntlm* 2>/dev/null
+	rm -f config/endian config/gethostname config/strdup config/socklen_t config/*.exe
+	if [ -h Makefile ]; then rm -f Makefile; mv Makefile.gcc Makefile; fi
 
-proxy.o: proxy.c
-	if [ -z "$(SYSCONFDIR)" ]; then \
-		$(CC) $(CFLAGS) -c proxy.c -o $@; \
-	else \
-		$(CC) $(CFLAGS) -DSYSCONFDIR=\"$(SYSCONFDIR)\" -c proxy.c -o $@; \
-	fi
+distclean: clean
+	rm -f *.deb *.rpm *.tgz *.tar.gz *.tar.bz2 tags ctags pid 2>/dev/null
