@@ -104,18 +104,18 @@ uninstall:
 	rm -f $(BINDIR)/$(NAME) $(MANDIR)/man1/$(NAME).1 2>/dev/null || true
 
 clean:
-	@rm -f *.o cntlm cntlm.exe configure-stamp build-stamp config/config.h 2>/dev/null
-	@rm -f win32/*.exe win32/*.dll win32/*.iss win32/*.pdf win32/cntlm.ini win32/license.txt 2>/dev/null
-	@rm -f config/endian config/gethostname config/strdup config/socklen_t config/*.exe
-	@if [ -h Makefile ]; then rm -f Makefile; mv Makefile.gcc Makefile; fi
-
-cleanp: clean
-	@rm -f *.deb *.tgz *.tar.gz *.rpm *.o tags cntlm pid massif* callgrind* 2>/dev/null
+	rm -f *.o cntlm cntlm.exe configure-stamp build-stamp config/config.h 2>/dev/null
+	rm -f win32/*.exe win32/*.dll win32/*.iss win32/*.pdf win32/cntlm.ini win32/license.txt 2>/dev/null
+	rm -f config/endian config/gethostname config/strdup config/socklen_t config/*.exe
+	if [ -h Makefile ]; then rm -f Makefile; mv Makefile.gcc Makefile; fi
 
 distclean: clean
 	if [ `id -u` = 0 ]; then \
+		debian/rules clean; \
 		redhat/rules clean; \
 	else \
+		fakeroot debian/rules clean; \
 		fakeroot redhat/rules clean; \
 	fi
+	rm -f *.deb *.rpm *.tgz *.tar.gz *.tar.bz2 tags ctags pid 2>/dev/null
 
