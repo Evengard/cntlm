@@ -282,6 +282,13 @@ rr_data_t direct_request(void *cdata, rr_data_t request) {
 				}
 
 				data[0]->headers = hlist_mod(data[0]->headers, "Connection", "keep-alive", 1);
+				data[0]->headers = hlist_del(data[0]->headers, "Proxy-Authorization");
+
+				/*
+				 * Try to get auth from client if present
+				 */
+				if (http_parse_basic(data[0]->headers, "Authorization", tcreds) > 0 && debug)
+					printf("NTLM-to-basic: Credentials parsed: %s\\%s at %s\n", tcreds->domain, tcreds->user, tcreds->workstation);
 			}
 
 			/*
@@ -306,7 +313,6 @@ rr_data_t direct_request(void *cdata, rr_data_t request) {
 				goto bailout;
 			}
 
-			printf("loop=%d, code=%d, found=%d\n", loop, data[1]->code, hlist_subcmp_all(data[1]->headers, "WWW-Authenticate", "NTLM"));
 			if (loop == 1 && data[1]->code == 401 && hlist_subcmp_all(data[1]->headers, "WWW-Authenticate", "NTLM")) {
 				/*
 				 * Server closing the connection after 401?
@@ -330,6 +336,21 @@ rr_data_t direct_request(void *cdata, rr_data_t request) {
 						printf("WWW auth connection error.\n");
 
 					tmp = gen_502_page(data[1]->http, data[1]->errmsg ? data[1]->errmsg : "Error during WWW-Authenticate");
+					w = write(cd, tmp, strlen(tmp));
+					free(tmp);
+
+					free_rr_data(data[0]);
+					free_rr_data(data[1]);
+
+					rc = (void *)-1;
+					goto bailout;
+
+				} else if (data[1]->code == 401) {
+					/*
+					 * Server giving 401 after auth?
+					 * Request basic auth
+					 */
+					tmp = gen_401_page(data[1]->http, data[0]->hostname, data[0]->port);
 					w = write(cd, tmp, strlen(tmp));
 					free(tmp);
 

@@ -271,10 +271,10 @@ bailout:
  */
 rr_data_t forward_request(void *cdata, rr_data_t request) {
 	int i, w, loop, plugin;
-	char *tmp, *buf, *pos, *dom;
 	int *rsocket[2], *wsocket[2];
 	rr_data_t data[2], rc = NULL;
 	hlist_t tl;
+	char *tmp;
 
 	struct auth_s *tcreds = NULL;						/* Per-thread credentials */
 	char *hostname = NULL;
@@ -426,72 +426,21 @@ shortcut:
 			 * NTLM-to-Basic implementation
 			 */
 			if (loop == 0 && ntlmbasic) {
-				tmp = hlist_get(data[loop]->headers, "Proxy-Authorization");
-				pos = NULL;
-				buf = NULL;
-
-				if (tmp) {
-					buf = new(strlen(tmp));
-					i = 5;
-					while (tmp[++i] == ' ');
-					from_base64(buf, tmp+i);
+				if (http_parse_basic(data[loop]->headers, "Proxy-Authorization", tcreds) > 0) {
 					if (debug)
-						printf("NTLM-to-basic: Received client credentials.\n");
-					pos = strchr(buf, ':');
-				}
-
-				if (pos == NULL) {
-					if (debug && tmp != NULL)
-						printf("NTLM-to-basic: Could not parse given credentials.\n");
+						printf("NTLM-to-basic: Credentials parsed: %s\\%s at %s\n", tcreds->domain, tcreds->user, tcreds->workstation);
+				} else {
 					if (debug)
-						printf("NTLM-to-basic: Sending the client auth request.\n");
+						printf("NTLM-to-basic: Sending new auth request.\n");
 
 					tmp = gen_407_page(data[loop]->http);
 					w = write(cd, tmp, strlen(tmp));
 					free(tmp);
 
-					if (buf) {
-						memset(buf, 0, strlen(buf));
-						free(buf);
-					}
-
 					free_rr_data(data[0]);
 					free_rr_data(data[1]);
 					rc = (void *)-1;
 					goto bailout;
-				} else {
-					dom = strchr(buf, '\\');
-					if (dom == NULL) {
-						auth_strncpy(tcreds, user, buf, MIN(MINIBUF_SIZE, pos-buf+1));
-					} else {
-						auth_strncpy(tcreds, domain, buf, MIN(MINIBUF_SIZE, dom-buf+1));
-						auth_strncpy(tcreds, user, dom+1, MIN(MINIBUF_SIZE, pos-dom));
-					}
-
-					if (tcreds->hashntlm2) {
-						tmp = ntlm2_hash_password(tcreds->user, tcreds->domain, pos+1);
-						auth_memcpy(tcreds, passntlm2, tmp, 16);
-						free(tmp);
-					}
-
-					if (tcreds->hashnt) {
-						tmp = ntlm_hash_nt_password(pos+1);
-						auth_memcpy(tcreds, passnt, tmp, 21);
-						free(tmp);
-					}
-
-					if (tcreds->hashlm) {
-						tmp = ntlm_hash_lm_password(pos+1);
-						auth_memcpy(tcreds, passlm, tmp, 21);
-						free(tmp);
-					}
-
-					if (debug) {
-						printf("NTLM-to-basic: Credentials parsed: %s\\%s at %s\n", tcreds->domain, tcreds->user, tcreds->workstation);
-					}
-
-					memset(buf, 0, strlen(buf));
-					free(buf);
 				}
 			}
 

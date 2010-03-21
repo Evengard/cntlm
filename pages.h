@@ -22,5 +22,6 @@
 #include "stdio.h"
 
 extern char *gen_407_page(const char *http);
+extern char *gen_401_page(const char *http, const char *host, int port);
 extern char *gen_denied_page(const char *ip);
 extern char *gen_502_page(const char *http, const char *msg);

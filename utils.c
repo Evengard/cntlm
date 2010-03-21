@@ -28,6 +28,7 @@
 #include <stdio.h>
 #include <errno.h>
 #include <ctype.h>
+#include <syslog.h>
 
 #include "config/config.h"
 #include "swap.h"
@@ -41,6 +42,22 @@ int hexindex[128] = {-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
 	-1,10,11,12,13,14,15,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
 	-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,10,11,12,13,14,15,-1,-1,-1,-1,-1,
 	-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1};
+
+void myexit(int rc) {
+	if (rc)
+		fprintf(stderr, "Exitting with error. Check daemon logs or run with -v.\n");
+	
+	exit(rc);
+}
+
+void croak(const char *msg, int console) {
+	if (console)
+		printf("%s", msg);
+	else
+		syslog(LOG_ERR, "%s", msg);
+	
+	myexit(1);
+}
 
 /*
  * Add a new item to a list. Every plist_t variable must be 

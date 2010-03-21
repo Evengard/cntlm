@@ -118,13 +118,6 @@ void sighandler(int p) {
 		quit++;
 }
 
-void myexit(int rc) {
-	if (rc)
-		fprintf(stderr, "Exitting with error. Check daemon logs or run with -v.\n");
-	
-	exit(rc);
-}
-
 /*
  * Parse proxy parameter and add it to the global list.
  */
@@ -293,15 +286,6 @@ plist_t noproxy_add(plist_t list, char *spec) {
 	return list;
 }
 
-void carp(const char *msg, int console) {
-	if (console)
-		printf("%s", msg);
-	else
-		syslog(LOG_ERR, "%s", msg);
-	
-	myexit(1);
-}
-
 void *proxy_thread(void *cdata) {
 	rr_data_t request, ret;
 	plist_t list;
@@ -314,8 +298,10 @@ void *proxy_thread(void *cdata) {
 		keep_alive = 0;
 		direct = 0;
 
-		printf("\n******* Round 1 C: %d *******\n", cd);
-		printf("Reading headers (%d)...\n", cd);
+		if (debug) {
+			printf("\n******* Round 1 C: %d *******\n", cd);
+			printf("Reading headers (%d)...\n", cd);
+		}
 
 		request = new_rr_data();
 		if (!headers_recv(cd, request)) {
@@ -335,7 +321,8 @@ void *proxy_thread(void *cdata) {
 			list = noproxy_list;
 			while (list) {
 				if (list->aux && strlen(list->aux) && fnmatch(list->aux, request->hostname, 0) == 0) {
-					printf("MATCH: %s (%s)\n", request->hostname, list->aux);
+					if (debug)
+						printf("MATCH: %s (%s)\n", request->hostname, list->aux);
 					direct = 1;
 					break;
 				}
@@ -844,16 +831,16 @@ int main(int argc, char **argv) {
 	config_close(cf);
 
 	if (!ntlmbasic && !strlen(cuser))
-		carp("Parent proxy account username missing.\n", interactivehash || interactivepwd || magic_detect);
+		croak("Parent proxy account username missing.\n", interactivehash || interactivepwd || magic_detect);
 
 	if (!ntlmbasic && !strlen(cdomain))
-		carp("Parent proxy account domain missing.\n", interactivehash || interactivepwd || magic_detect);
+		croak("Parent proxy account domain missing.\n", interactivehash || interactivepwd || magic_detect);
 
 	if (!interactivehash && !parent_list)
-		carp("Parent proxy address missing.\n", interactivepwd || magic_detect);
+		croak("Parent proxy address missing.\n", interactivepwd || magic_detect);
 
 	if (!interactivehash && !magic_detect && !proxyd_list)
-		carp("No proxy service ports were successfully opened.\n", interactivepwd);
+		croak("No proxy service ports were successfully opened.\n", interactivepwd);
 
 	/*
 	 * Set default value for the workstation. Hostname if possible.

@@ -95,6 +95,8 @@ struct thread_arg_s {
 	struct sockaddr_in addr;
 };
 
+extern void myexit(int rc);
+extern void croak(const char *msg, int console);
 extern plist_t plist_add(plist_t list, unsigned long key, char *aux);
 extern plist_t plist_del(plist_t list, unsigned long key);
 extern int plist_in(plist_t list, unsigned long key);

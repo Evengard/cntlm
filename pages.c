@@ -32,11 +32,25 @@ char *gen_407_page(const char *http) {
 		http = "0";
 	tmp = new(BUFSIZE);
 	snprintf(tmp, BUFSIZE-1,
-		"HTTP/1.%s 407 Access denied.\r\n"
+		"HTTP/1.%s 407 Access denied\r\n"
 		"Proxy-Authenticate: Basic realm=\"Cntlm Proxy\"\r\n"
 		"Content-Type: text/html\r\n\r\n"
-		"<html><body><h1>Authentication error</h1><p><a href='http://cntlm.sf.net/'>Cntlm</a> proxy activated NTLM-to-basic feature. Enter your proxy credentials to continue (refresh with Ctrl-R or F5).</p></body></html>",
+		"<html><body><h1>407 Access denied</h1><p><a href='http://cntlm.sf.net/'>Cntlm</a> requests your credentials for proxy access.</p></body></html>",
 		http);
+	return tmp;
+}
+
+char *gen_401_page(const char *http, const char *host, int port) {
+	char *tmp;
+	if (http == NULL)
+		http = "0";
+	tmp = new(BUFSIZE);
+	snprintf(tmp, BUFSIZE-1,
+		"HTTP/1.%s 401 Access denied\r\n"
+		"WWW-Authenticate: Basic realm=\"%s:%d\"\r\n"
+		"Content-Type: text/html\r\n\r\n"
+		"<html><body><h1>401 Access denied</h1><p><a href='http://cntlm.sf.net/'>Cntlm</a> proxy requests your credentials for this URL.</p></body></html>",
+		http, host, port);
 	return tmp;
 }
 
@@ -46,7 +60,7 @@ char *gen_denied_page(const char *ip) {
 		ip = "client";
 	tmp = new(BUFSIZE);
 	snprintf(tmp, BUFSIZE-1,
-		"HTTP/1.0 407 Access denied.\r\n"
+		"HTTP/1.0 407 Access denied\r\n"
 		"Content-Type: text/html\r\n\r\n"
 		"<html><body><h1>Access denied</h1><p>Your request has been declined, %s is not allowed to connect.</p></body></html>",
 		ip);

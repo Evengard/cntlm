@@ -31,6 +31,7 @@
 
 #include "utils.h"
 #include "socket.h"
+#include "ntlm.h"
 #include "http.h"
 
 #define BLOCK		2048
@@ -597,3 +598,59 @@ int http_body_send(int writefd, int readfd, rr_data_t request, rr_data_t respons
 	return rc;
 }
 
+/*
+ * Parse headers for BASIC auth credentials
+ *
+ * Return 1 = creds parsed OK, 0 = no creds, -1 = invalid creds
+ */
+int http_parse_basic(hlist_t headers, const char *header, struct auth_s *tcreds) {
+	char *tmp = NULL, *pos = NULL, *buf = NULL, *dom = NULL;
+	int i;
+
+	if (!hlist_subcmp(headers, header, "basic"))
+		return 0;
+
+	tmp = hlist_get(headers, header);
+	buf = new(strlen(tmp) + 1);
+	i = 5;
+	while (i < strlen(tmp) && tmp[++i] == ' ');
+	from_base64(buf, tmp+i);
+	pos = strchr(buf, ':');
+
+	if (pos == NULL) {
+		memset(buf, 0, strlen(buf));		/* clean password memory */
+		free(buf);
+		return -1;
+	} else {
+		dom = strchr(buf, '\\');
+		if (dom == NULL) {
+			auth_strncpy(tcreds, user, buf, MIN(MINIBUF_SIZE, pos-buf+1));
+		} else {
+			auth_strncpy(tcreds, domain, buf, MIN(MINIBUF_SIZE, dom-buf+1));
+			auth_strncpy(tcreds, user, dom+1, MIN(MINIBUF_SIZE, pos-dom));
+		}
+
+		if (tcreds->hashntlm2) {
+			tmp = ntlm2_hash_password(tcreds->user, tcreds->domain, pos+1);
+			auth_memcpy(tcreds, passntlm2, tmp, 16);
+			free(tmp);
+		}
+
+		if (tcreds->hashnt) {
+			tmp = ntlm_hash_nt_password(pos+1);
+			auth_memcpy(tcreds, passnt, tmp, 21);
+			free(tmp);
+		}
+
+		if (tcreds->hashlm) {
+			tmp = ntlm_hash_lm_password(pos+1);
+			auth_memcpy(tcreds, passlm, tmp, 21);
+			free(tmp);
+		}
+
+		memset(buf, 0, strlen(buf));
+		free(buf);
+	}
+
+	return 1;
+}
