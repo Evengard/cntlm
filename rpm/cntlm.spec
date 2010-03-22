@@ -3,11 +3,15 @@ Name:           cntlm
 Version:		0.90
 Release:        1%{?dist}
 License:        GNU GPL V2
+%if 0%{?suse_version}
+Group:			Productivity/Networking/Web/Proxy
+%else
 Group:          System/Daemons
+%endif
 URL:            http://cntlm.sourceforge.net/
 Source0:        %{name}-%{version}.tar.bz2
-Source1:        cntlm.init
-Source2:        cntlm.sysconfig
+Source1:        %{name}.init
+Source2:        %{name}.sysconfig
 
 
 %if 0%{?suse_version}
@@ -15,7 +19,7 @@ Prereq: util-linux %{?insserv_prereq} %{?fillup_prereq}
 %else
 Prereq: which /sbin/chkconfig
 %endif
-Prereq: /usr/sbin/useradd
+Prereq: /usr/sbin/useradd /usr/bin/getent
 
 Provides: cntlm = %{version}
 
@@ -69,7 +73,9 @@ rm -rf $RPM_BUILD_ROOT
 
 %pre
 if [ "$1" -eq 1 ]; then
-    /usr/sbin/useradd -s /sbin/nologin -m -r -d /var/run/cntlm cntlm 2>/dev/null
+	[ -z  "`%{_bindir}/getent passwd "cntlm"`" ] && {
+    useradd -s /sbin/nologin -m -r -d /var/run/cntlm cntlm 2>/dev/null
+	}
 fi
 :
 

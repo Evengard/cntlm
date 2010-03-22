@@ -29,8 +29,12 @@
 #
 # Note on runlevels:
 # 0 - halt/poweroff 			6 - reboot
-# 1 - single user			2 - multiuser without network exported
-# 3 - multiuser w/ network (text mode)  5 - multiuser w/ network and X11 (xdm)
+# 1 - single user
+# 2 - multiuser without network exported
+# 3 - multiuser with network (text mode)
+# 4 - Not used/User-definable
+# 5 - multiuser with network and X11 (xdm)
+# 6 - reboot
 # 
 
 # Determining Linux RedHat/SuSE 
