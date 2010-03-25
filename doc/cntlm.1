@@ -53,8 +53,8 @@ consumption (several complex sites, 50 paralell connections/threads; values are 
 .ft C
 
        VSZ   RSS CMD
-      3204  1436 ./cntlm -f -c ./cntlm.conf -P pid
-    411604  6264 /usr/share/ntlmaps/main.py -c /etc/ntlmaps/server.cfg
+      3204  1436 ./cntlm \-f \-c ./cntlm.conf \-P pid
+    411604  6264 /usr/share/ntlmaps/main.py \-c /etc/ntlmaps/server.cfg
 .ft P
 .fi
 
@@ -505,7 +505,7 @@ description of the problem and how to reproduce it. Visit the home page for more
 .nf
 .ft C
 
-    cntlm[.exe] -T cntlmtrace.log -v -s ... the rest ...
+    cntlm \-T cntlmtrace.log \-v \-s ... the rest ...
 .ft P
 .fi
 

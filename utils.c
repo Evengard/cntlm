@@ -68,7 +68,7 @@ void croak(const char *msg, int console) {
  * This list type allows to store an arbitrary pointer
  * associating it with the key.
  */
-plist_t plist_add(plist_t list, unsigned long key, char *aux) {
+plist_t plist_add(plist_t list, unsigned long key, void *aux) {
 	plist_t tmp, t = list;
 
 	tmp = malloc(sizeof(struct plist_s));
@@ -140,7 +140,7 @@ void plist_dump(plist_t list) {
 
 	t = list;
 	while (t) {
-		printf("List data: %lu => %s\n", (unsigned long int)t->key, t->aux);
+		printf("List data: %lu => 0x%08x\n", (unsigned long int)t->key, (unsigned int)t->aux);
 		t = t->next;
 	}
 }
@@ -170,12 +170,16 @@ char *plist_get(plist_t list, int key) {
  * In conjunction with plist_add, the list behaves as a FIFO.
  * This feature is used for rotating cached connections in the
  * list, so that none is left too long unused (proxy timeout).
- * Returns only key, not aux.
+ *
+ * Returns key value (descriptor) and if aux != NULL, *aux gets
+ * aux pointer value (which caller must free if != NULL).
  */
-int plist_pop(plist_t *list) {
+
+int plist_pop(plist_t *list, void **aux) {
 	plist_t tmp, t;
 	int id = 0;
 	int ok = 0;
+	void *a = NULL;
 
 	if (list == NULL || *list == NULL)
 		return 0;
@@ -183,11 +187,14 @@ int plist_pop(plist_t *list) {
 	t = *list;
 	while (!ok && t) {
 		id = t->key;
+		a = t->aux;
 		tmp = t->next;
 
-		if (so_closed(id))
+		if (so_closed(id)) {
 			close(id);
-		else
+			if (t->aux)
+				free(t->aux);
+		} else
 			ok = 1;
 
 		free(t);
@@ -196,7 +203,13 @@ int plist_pop(plist_t *list) {
 
 	*list = t;
 
-	return (ok ? id : 0);
+	if (ok) {
+		if (aux != NULL)
+			*aux = a;
+		return id;
+	}
+
+	return 0;
 }
 
 /*

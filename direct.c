@@ -17,11 +17,11 @@
  *
  */
 
+#include <sys/types.h>
 #include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
-#include <sys/types.h>
 #include <string.h>
 #include <syslog.h>
 #include <netinet/in.h>
@@ -207,7 +207,7 @@ rr_data_t direct_request(void *cdata, rr_data_t request) {
 	 * Now save NTLM credentials for purposes of this thread.
 	 * If web auth fails, we'll rewrite them like with NTLM-to-Basic in proxy mode.
 	 */
-	tcreds = dup_auth(creds, 1);
+	tcreds = dup_auth(g_creds, /* fullcopy */ 1);
 
 	if (request->hostname) {
 		hostname = strdup(request->hostname);
@@ -235,7 +235,7 @@ rr_data_t direct_request(void *cdata, rr_data_t request) {
 
 		conn_alive = 0;
 
-		for (loop = 0; loop < 2; loop++) {
+		for (loop = 0; loop < 2; ++loop) {
 			if (data[loop]->empty) {				// Isn't this the first loop with request supplied by caller?
 				if (debug) {
 					printf("\n******* Round %d C: %d, S: %d *******\n", loop+1, cd, sd);
@@ -410,7 +410,7 @@ rr_data_t direct_request(void *cdata, rr_data_t request) {
 
 bailout:
 	if (tcreds)
-		free_auth(tcreds);
+		free(tcreds);
 	if (hostname)
 		free(hostname);
 

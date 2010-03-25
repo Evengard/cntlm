@@ -24,13 +24,20 @@
 
 #include <stdint.h>
 
+#include "utils.h"
+
+/*
+ * Although I always prefer structs with pointer refs, I need direct storage
+ * here to be able to alloc/free it in one go. It is used in a plist_t which
+ * frees its items, but not recursively.
+ */
 struct auth_s {
-	char *user;
-	char *domain;
-	char *workstation;
-	char *passlm;
-	char *passnt;
-	char *passntlm2;
+	char user[MINIBUF_SIZE];
+	char domain[MINIBUF_SIZE];
+	char workstation[MINIBUF_SIZE];
+	char passlm[MINIBUF_SIZE];
+	char passnt[MINIBUF_SIZE];
+	char passntlm2[MINIBUF_SIZE];
 	int hashntlm2;
 	int hashnt;
 	int hashlm;
@@ -39,29 +46,21 @@ struct auth_s {
 
 #define auth_strcpy(creds, var, value) \
 	if ((creds) && (value)) { \
-		if (!((creds)->var)) \
-			((creds)->var) = new(MINIBUF_SIZE); \
 		strlcpy(((creds)->var), (value), MINIBUF_SIZE); \
-	} 
-
-#define auth_strncpy(creds, var, value, len) \
-	if ((creds) && (value)) { \
-		if (!((creds)->var)) \
-			((creds)->var) = new(MINIBUF_SIZE); \
-		strlcpy(((creds)->var), (value), MIN(len, MINIBUF_SIZE)); \
 	} 
 
 #define auth_memcpy(creds, var, value, len) \
 	if ((creds) && (value)) { \
-		if (!((creds)->var)) \
-			((creds)->var) = new(MINIBUF_SIZE); \
 		memcpy(((creds)->var), (value), MIN(len, MINIBUF_SIZE)); \
 	} 
 
-
+/*
+ * No free_auth() required, just use free()
+ * new_auth() is also just a convenience malloc/memset() wrapper
+ */
 extern struct auth_s *new_auth(void);
+extern struct auth_s *copy_auth(struct auth_s *dst, struct auth_s *src, int fullcopy);
 extern struct auth_s *dup_auth(struct auth_s *creds, int fullcopy);
-extern void free_auth(struct auth_s *creds);
 extern void dump_auth(struct auth_s *creds);
 
 #endif /* _AUTH_H */

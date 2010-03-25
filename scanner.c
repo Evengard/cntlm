@@ -17,11 +17,12 @@
  *
  */
 
+#include <sys/types.h>
 #include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
-#include <sys/types.h>
+#include <ctype.h>
 #include <string.h>
 #include <strings.h>
 #include <fnmatch.h>
@@ -37,17 +38,21 @@
  * This code is a piece of shit, but it works. Cannot rewrite it now, because
  * I don't have ISA AV filter anymore - wouldn't be able to test it.
  */
-int scanner_hook(rr_data_t request, rr_data_t response, int cd, int *sd, long maxKBs) {
+int scanner_hook(rr_data_t request, rr_data_t response, struct auth_s *credentials, int cd, int *sd, long maxKBs) {
 	char *buf, *line, *pos, *tmp, *pat, *post, *isaid, *uurl;
 	int bsize, lsize, size, len, i, w, nc;
 	rr_data_t newreq, newres;
 	plist_t list;
+
 	int ok = 1;
-	int done = 0;
+	char *done = NULL;
 	int headers_initiated = 0;
 	long c, progress = 0, filesize = 0;
 
-	if (!request->method || !response->http
+	/*
+	 * Let's limit the responses we examine to an absolute minimum
+	 */
+	if (!request->req || response->code != 200
 		|| http_has_body(request, response) != -1
 		|| hlist_subcmp(response->headers, "Transfer-Encoding", "chunked")
 		|| !hlist_subcmp(response->headers, "Proxy-Connection", "close"))
@@ -114,11 +119,16 @@ int scanner_hook(rr_data_t request, rr_data_t response, int cd, int *sd, long ma
 				strcat(buf, line);
 				len += c;
 
-				if (i > 0 && (!strncmp(line, " UpdatePage(", 12) || (done=!strncmp(line, "DownloadFinished(", 17)))) {
+				if (i > 0 && (
+						((pos = strstr(line, "UpdatePage("))
+						&& isdigit(pos[11]))
+					     ||
+						((done = strstr(line, "DownloadFinished("))
+						&& isdigit(pos[17])) )) {
 					if (debug)
 						printf("scanner_hook: %s", line);
 
-					if ((pos=strstr(line, "To be downloaded"))) {
+					if ((pos = strstr(line, "To be downloaded"))) {
 						filesize = atol(pos+16);
 						if (debug)
 							printf("scanner_hook: file size detected: %ld KiBs (max: %ld)\n", filesize/1024, maxKBs);
@@ -190,8 +200,8 @@ int scanner_hook(rr_data_t request, rr_data_t response, int cd, int *sd, long ma
 				hlist_mod(newreq->headers, "Content-Length", tmp, 1);
 				free(tmp);
 
-				nc = proxy_connect();
-				c = proxy_authenticate(nc, newreq, newres, creds);
+				nc = proxy_connect(credentials);
+				c = proxy_authenticate(nc, newreq, newres, credentials);
 				if (c && newres->code == 407) {
 					if (debug)
 						printf("scanner_hook: Authentication OK, getting the file...\n");

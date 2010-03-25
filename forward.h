@@ -23,11 +23,11 @@
 #include "utils.h"
 #include "auth.h"
 
-int proxy_connect(void);
-int proxy_authenticate(int sd, rr_data_t request, rr_data_t response, struct auth_s *creds);
-void *tunnel_thread(void *data);
-void *socks5_thread(void *data);
-rr_data_t forward_request(void *cdata, rr_data_t request);
-void magic_auth_detect(const char *url);
+extern int proxy_connect(struct auth_s *credentials);
+extern int proxy_authenticate(int sd, rr_data_t request, rr_data_t response, struct auth_s *creds);
+extern void *tunnel_thread(void *data);
+extern void *socks5_thread(void *data);
+extern rr_data_t forward_request(void *cdata, rr_data_t request);
+extern void magic_auth_detect(const char *url);
 
 #endif /* _FORWARD_H */

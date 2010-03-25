@@ -19,14 +19,14 @@
  *
  */
 
-#include <pthread.h>
-#include <stdio.h>
-#include <errno.h>
 #include <sys/types.h>
 #include <sys/time.h>
 #include <sys/select.h>
 #include <sys/stat.h>
 #include <sys/socket.h>
+#include <pthread.h>
+#include <stdio.h>
+#include <errno.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <signal.h>
@@ -69,7 +69,7 @@
  */
 int debug = 0;					/* all debug printf's and possibly external modules */
 
-struct auth_s *creds = NULL;			/* throughout the whole module */
+struct auth_s *g_creds = NULL;			/* throughout the whole module */
 
 int quit = 0;					/* sighandler() */
 int ntlmbasic = 0;				/* forward_request() */
@@ -286,12 +286,12 @@ plist_t noproxy_add(plist_t list, char *spec) {
 	return list;
 }
 
-void *proxy_thread(void *cdata) {
+void *proxy_thread(void *thread_data) {
 	rr_data_t request, ret;
 	plist_t list;
 	int direct, keep_alive;				/* Proxy-Connection */
 
-	int cd = ((struct thread_arg_s *)cdata)->fd;
+	int cd = ((struct thread_arg_s *)thread_data)->fd;
 
 	do {
 		ret = NULL;
@@ -322,7 +322,7 @@ void *proxy_thread(void *cdata) {
 			while (list) {
 				if (list->aux && strlen(list->aux) && fnmatch(list->aux, request->hostname, 0) == 0) {
 					if (debug)
-						printf("MATCH: %s (%s)\n", request->hostname, list->aux);
+						printf("MATCH: %s (%s)\n", request->hostname, (char *)list->aux);
 					direct = 1;
 					break;
 				}
@@ -332,9 +332,9 @@ void *proxy_thread(void *cdata) {
 			keep_alive = hlist_subcmp(request->headers, "Proxy-Connection", "keep-alive");
 
 			if (direct)
-				ret = direct_request(cdata, request);
+				ret = direct_request(thread_data, request);
 			else
-				ret = forward_request(cdata, request);
+				ret = forward_request(thread_data, request);
 
 			if (debug)
 				printf("proxy_thread: request rc = %x\n", (int)ret);
@@ -356,7 +356,7 @@ void *proxy_thread(void *cdata) {
 		pthread_mutex_unlock(&threads_mtx);
 	}
 
-	free(cdata);
+	free(thread_data);
 	close(cd);
 
 	return NULL;
@@ -391,7 +391,7 @@ int main(int argc, char **argv) {
 	config_t cf = NULL;
 	char *magic_detect = NULL;
 
-	creds = new_auth();
+	g_creds = new_auth();
 	cuser = new(MINIBUF_SIZE);
 	cdomain = new(MINIBUF_SIZE);
 	cpassword = new(MINIBUF_SIZE);
@@ -860,25 +860,25 @@ int main(int argc, char **argv) {
 	 */
 	if (strlen(cauth)) {
 		if (!strcasecmp("ntlm", cauth)) {
-			creds->hashnt = 1;
-			creds->hashlm = 1;
-			creds->hashntlm2 = 0;
+			g_creds->hashnt = 1;
+			g_creds->hashlm = 1;
+			g_creds->hashntlm2 = 0;
 		} else if (!strcasecmp("nt", cauth)) {
-			creds->hashnt = 1;
-			creds->hashlm = 0;
-			creds->hashntlm2 = 0;
+			g_creds->hashnt = 1;
+			g_creds->hashlm = 0;
+			g_creds->hashntlm2 = 0;
 		} else if (!strcasecmp("lm", cauth)) {
-			creds->hashnt = 0;
-			creds->hashlm = 1;
-			creds->hashntlm2 = 0;
+			g_creds->hashnt = 0;
+			g_creds->hashlm = 1;
+			g_creds->hashntlm2 = 0;
 		} else if (!strcasecmp("ntlmv2", cauth)) {
-			creds->hashnt = 0;
-			creds->hashlm = 0;
-			creds->hashntlm2 = 1;
+			g_creds->hashnt = 0;
+			g_creds->hashlm = 0;
+			g_creds->hashntlm2 = 1;
 		} else if (!strcasecmp("ntlm2sr", cauth)) {
-			creds->hashnt = 2;
-			creds->hashlm = 0;
-			creds->hashntlm2 = 0;
+			g_creds->hashnt = 2;
+			g_creds->hashlm = 0;
+			g_creds->hashntlm2 = 0;
 		} else {
 			syslog(LOG_ERR, "Unknown NTLM auth combination.\n");
 			myexit(1);
@@ -889,11 +889,11 @@ int main(int argc, char **argv) {
 		syslog(LOG_WARNING, "SOCKS5 proxy will NOT require any authentication\n");
 
 	if (!magic_detect)
-		syslog(LOG_INFO, "Using following NTLM hashes: NTLMv2(%d) NT(%d) LM(%d)\n", creds->hashntlm2, creds->hashnt, creds->hashlm);
+		syslog(LOG_INFO, "Using following NTLM hashes: NTLMv2(%d) NT(%d) LM(%d)\n", g_creds->hashntlm2, g_creds->hashnt, g_creds->hashlm);
 
 	if (cflags) {
 		syslog(LOG_INFO, "Using manual NTLM flags: 0x%X\n", swap32(cflags));
-		creds->flags = cflags;
+		g_creds->flags = cflags;
 	}
 
 	/*
@@ -926,8 +926,7 @@ int main(int argc, char **argv) {
 				syslog(LOG_ERR, "Invalid PassNTLMv2 hash, terminating\n");
 				exit(1);
 			}
-			auth_memcpy(creds, passntlm2, tmp, 16);
-			memset(creds->passntlm2+16, 0, 5);
+			auth_memcpy(g_creds, passntlm2, tmp, 16);
 			free(tmp);
 		}
 		if (strlen(cpassnt)) {
@@ -936,8 +935,7 @@ int main(int argc, char **argv) {
 				syslog(LOG_ERR, "Invalid PassNT hash, terminating\n");
 				exit(1);
 			}
-			auth_memcpy(creds, passnt, tmp, 16);
-			memset(creds->passnt+16, 0, 5);
+			auth_memcpy(g_creds, passnt, tmp, 16);
 			free(tmp);
 		}
 		if (strlen(cpasslm)) {
@@ -946,30 +944,29 @@ int main(int argc, char **argv) {
 				syslog(LOG_ERR, "Invalid PassLM hash, terminating\n");
 				exit(1);
 			}
-			auth_memcpy(creds, passlm, tmp, 16);
-			memset(creds->passlm+16, 0, 5);
+			auth_memcpy(g_creds, passlm, tmp, 16);
 			free(tmp);
 		}
 	} else {
-		if (creds->hashnt || magic_detect || interactivehash) {
+		if (g_creds->hashnt || magic_detect || interactivehash) {
 			tmp = ntlm_hash_nt_password(cpassword);
-			auth_memcpy(creds, passnt, tmp, 21);
+			auth_memcpy(g_creds, passnt, tmp, 21);
 			free(tmp);
-		} if (creds->hashlm || magic_detect || interactivehash) {
+		} if (g_creds->hashlm || magic_detect || interactivehash) {
 			tmp = ntlm_hash_lm_password(cpassword);
-			auth_memcpy(creds, passlm, tmp, 21);
+			auth_memcpy(g_creds, passlm, tmp, 21);
 			free(tmp);
-		} if (creds->hashntlm2 || magic_detect || interactivehash) {
+		} if (g_creds->hashntlm2 || magic_detect || interactivehash) {
 			tmp = ntlm2_hash_password(cuser, cdomain, cpassword);
-			auth_memcpy(creds, passntlm2, tmp, 16);
+			auth_memcpy(g_creds, passntlm2, tmp, 16);
 			free(tmp);
 		}
 		memset(cpassword, 0, strlen(cpassword));
 	}
 
-	auth_strcpy(creds, user, cuser);
-	auth_strcpy(creds, domain, cdomain);
-	auth_strcpy(creds, workstation, cworkstation);
+	auth_strcpy(g_creds, user, cuser);
+	auth_strcpy(g_creds, domain, cdomain);
+	auth_strcpy(g_creds, workstation, cworkstation);
 
 	free(cuser);
 	free(cdomain);
@@ -990,21 +987,21 @@ int main(int argc, char **argv) {
 	}
 
 	if (interactivehash) {
-		if (creds->passlm) {
-			tmp = printmem(creds->passlm, 16, 8);
+		if (g_creds->passlm) {
+			tmp = printmem(g_creds->passlm, 16, 8);
 			printf("PassLM          %s\n", tmp);
 			free(tmp);
 		}
 
-		if (creds->passnt) {
-			tmp = printmem(creds->passnt, 16, 8);
+		if (g_creds->passnt) {
+			tmp = printmem(g_creds->passnt, 16, 8);
 			printf("PassNT          %s\n", tmp);
 			free(tmp);
 		}
 
-		if (creds->passntlm2) {
-			tmp = printmem(creds->passntlm2, 16, 8);
-			printf("PassNTLMv2      %s    # Only for user '%s', domain '%s'\n", tmp, creds->user, creds->domain);
+		if (g_creds->passntlm2) {
+			tmp = printmem(g_creds->passntlm2, 16, 8);
+			printf("PassNTLMv2      %s    # Only for user '%s', domain '%s'\n", tmp, g_creds->user, g_creds->domain);
 			free(tmp);
 		}
 		goto bailout;
@@ -1013,7 +1010,10 @@ int main(int argc, char **argv) {
 	/*
 	 * If we're going to need a password, check we really have it.
 	 */
-	if (!ntlmbasic && ((creds->hashnt && !creds->passnt) || (creds->hashlm && !creds->passlm) || (creds->hashntlm2 && !creds->passntlm2))) {
+	if (!ntlmbasic && (
+			(g_creds->hashnt && !g_creds->passnt)
+		     || (g_creds->hashlm && !g_creds->passlm)
+		     || (g_creds->hashntlm2 && !g_creds->passntlm2))) {
 		syslog(LOG_ERR, "Parent proxy account password (or required hashes) missing.\n");
 		myexit(1);
 	}
@@ -1303,9 +1303,9 @@ bailout:
 	free(cuid);
 	free(cpidfile);
 	free(magic_detect);
-	free_auth(creds);
+	free(g_creds);
 
-	parent_list = plist_free(parent_list);
+	plist_free(parent_list);
 
 	exit(0);
 }

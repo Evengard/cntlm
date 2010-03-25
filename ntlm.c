@@ -64,7 +64,7 @@ static int ntlm_calc_resp(char **dst, char *keys, char *challenge) {
 }
 
 static void ntlm2_calc_resp(char **nthash, int *ntlen, char **lmhash, int *lmlen, 
-		char *username, char *domain, char *passnt2, char *challenge, int tbofs, int tblen) {
+		char *passnt2, char *challenge, int tbofs, int tblen) {
 	char *tmp, *blob, *nonce, *buf;
 	int64_t tw;
 	int blen;
@@ -353,7 +353,7 @@ int ntlm_response(char **dst, char *challenge, int challen, struct auth_s *creds
 	}
 
 	if (creds->hashntlm2) {
-		ntlm2_calc_resp(&nthash, &ntlen, &lmhash, &lmlen, creds->user, creds->domain, creds->passntlm2, challenge, tbofs, tblen);
+		ntlm2_calc_resp(&nthash, &ntlen, &lmhash, &lmlen, creds->passntlm2, challenge, tbofs, tblen);
 	}
 
 	if (creds->hashnt == 2) {

@@ -17,11 +17,11 @@
  *
  */
 
+#include <sys/types.h>
 #include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
-#include <sys/types.h>
 #include <string.h>
 #include <syslog.h>
 #include <netinet/in.h>
@@ -48,8 +48,10 @@ pthread_mutex_t parent_mtx = PTHREAD_MUTEX_INITIALIZER;
  * in the line. Each request scans the whole list until all items are tried
  * or a working proxy is found, in which case it is selected and used by
  * all threads until it stops working. Then the search starts again.
+ *
+ * Writes required credentials into passed auth_s structure
  */
-int proxy_connect(void) {
+int proxy_connect(struct auth_s *credentials) {
 	proxy_t *aux;
 	int i, prev;
 	plist_t list, tmp;
@@ -93,7 +95,10 @@ int proxy_connect(void) {
 		plist_free(connection_list);
 		pthread_mutex_unlock(&connection_mtx);
 	}
-		
+
+	if (i > 0 && credentials != NULL)
+		copy_auth(credentials, g_creds, /* fullcopy */ !ntlmbasic);
+
 	return i;
 }
 
@@ -111,7 +116,7 @@ int proxy_connect(void) {
  * Caller must init & free "request" and "response" (if supplied)
  *
  */
-int proxy_authenticate(int sd, rr_data_t request, rr_data_t response, struct auth_s *creds) {
+int proxy_authenticate(int sd, rr_data_t request, rr_data_t response, struct auth_s *credentials) {
 	char *tmp, *buf, *challenge;
 	rr_data_t auth;
 	int len;
@@ -122,7 +127,7 @@ int proxy_authenticate(int sd, rr_data_t request, rr_data_t response, struct aut
 	buf = new(BUFSIZE);
 
 	strcpy(buf, "NTLM ");
-	len = ntlm_request(&tmp, creds);
+	len = ntlm_request(&tmp, credentials);
 	to_base64(MEM(buf, unsigned char, 5), MEM(tmp, unsigned char, 0), len, BUFSIZE-5);
 	free(tmp);
 
@@ -201,7 +206,7 @@ int proxy_authenticate(int sd, rr_data_t request, rr_data_t response, struct aut
 			challenge = new(strlen(tmp) + 5 + 1);
 			len = from_base64(challenge, tmp + 5);
 			if (len > NTLM_CHALLENGE_MIN) {
-				len = ntlm_response(&tmp, challenge, len, creds);
+				len = ntlm_response(&tmp, challenge, len, credentials);
 				if (len > 0) {
 					strcpy(buf, "NTLM ");
 					to_base64(MEM(buf, unsigned char, 5), MEM(tmp, unsigned char, 0), len, BUFSIZE-5);
@@ -266,10 +271,10 @@ bailout:
  * Returned request means server name has changed and needs to be checked
  * agains NoProxy exceptions.
  *
- * cdata is NOT freed
+ * thread_data is NOT freed
  * request is NOT freed
  */
-rr_data_t forward_request(void *cdata, rr_data_t request) {
+rr_data_t forward_request(void *thread_data, rr_data_t request) {
 	int i, w, loop, plugin;
 	int *rsocket[2], *wsocket[2];
 	rr_data_t data[2], rc = NULL;
@@ -286,16 +291,24 @@ rr_data_t forward_request(void *cdata, rr_data_t request) {
 	int was_cached = 0;
 	int sd = 0;
 
-	int cd = ((struct thread_arg_s *)cdata)->fd;
-	struct sockaddr_in caddr = ((struct thread_arg_s *)cdata)->addr;
+	int cd = ((struct thread_arg_s *)thread_data)->fd;
+	struct sockaddr_in caddr = ((struct thread_arg_s *)thread_data)->addr;
 
 	if (debug) {
 		printf("Thread processing...\n");
 		plist_dump(connection_list);
 	}
 
+	/*
+	 * NTLM credentials for purposes of this thread (tcreds) are given to
+	 * us by proxy_connect() or retrieved from connection cache.
+	 *
+	 * Ultimately, the source for creds is always proxy_connect(), but when
+	 * we cache a connection, we store creds associated with it in the 
+	 * cache as well, in case we'll need them.
+	 */
 	pthread_mutex_lock(&connection_mtx);
-	i = plist_pop(&connection_list);
+	i = plist_pop(&connection_list, (void **)&tcreds);
 	pthread_mutex_unlock(&connection_mtx);
 	if (i) {
 		if (debug)
@@ -304,7 +317,8 @@ rr_data_t forward_request(void *cdata, rr_data_t request) {
 		authok = 1;
 		was_cached = 1;
 	} else {
-		sd = proxy_connect();
+		tcreds = new_auth();
+		sd = proxy_connect(tcreds);
 		if (sd <= 0) {
 			tmp = gen_502_page(request->http, "Parent proxy unreacheable");
 			w = write(cd, tmp, strlen(tmp));
@@ -315,19 +329,9 @@ rr_data_t forward_request(void *cdata, rr_data_t request) {
 	}
 
 	/*
-	 * Now save NTLM credentials for purposes of this thread.
-	 *
-	 * If NTLM-to-Basic, don't do a full copy, leave out user name
-	 * and hashes - they will be supplied by the client via Basic auth.
-	 *
-	 * Otherwise, make a complete copy, that's what we'll be using.
+	 * Each thread only serves req's for one hostname. If hostname changes,
+	 * we return request to our caller for a new direct/forward decision.
 	 */
-	if (ntlmbasic) {
-		tcreds = dup_auth(creds, 0);
-	} else {
-		tcreds = dup_auth(creds, 1);
-	}
-
 	if (request->hostname) {
 		hostname = strdup(request->hostname);
 	}
@@ -378,7 +382,7 @@ auth_retry:
 		proxy_alive = 0;
 		conn_alive = 0;
 
-		for (loop = 0; loop < 2; loop++) {
+		for (loop = 0; loop < 2; ++loop) {
 			if (data[loop]->empty) {				// Isn't this the first loop with request supplied by caller?
 				if (debug) {
 					printf("\n******* Round %d C: %d, S: %d (authok=%d, noauth=%d) *******\n", loop+1, cd, sd, authok, noauth);
@@ -484,7 +488,9 @@ shortcut:
 				}
 
 				/*
-				 * !!! data[1] is now filled from proxy_authenticate() !!!
+				 * !!! data[1] is now filled by proxy_authenticate() !!!
+				 * !!! with proxy's reply to our first (auth) req.   !!!
+				 * !!! that's why we reset data[1] below             !!!
 				 *
 				 * Reply to auth request wasn't 407? Then auth is not required,
 				 * let's jump into the next loop and forward it to client
@@ -504,7 +510,7 @@ shortcut:
 					if (debug)
 						printf("Proxy closing after 407? Reconnect, but will probably fail.\n");
 					close(sd);
-					sd = proxy_connect();
+					sd = proxy_connect(tcreds);
 					was_cached = 0;
 					authok = 0;
 				}
@@ -532,7 +538,7 @@ shortcut:
 					printf("\nCached connection timed out - retrying.\n");
 
 				close(sd);
-				sd = proxy_connect();
+				sd = proxy_connect(tcreds);
 				was_cached = 0;
 				authok = 0;
 				if (sd <= 0) {
@@ -565,7 +571,7 @@ shortcut:
 			 */
 			plugin = PLUG_ALL;
 			if (loop == 1 && scanner_plugin) {
-				plugin = scanner_hook(data[0], data[1], *wsocket[loop], rsocket[loop], scanner_plugin_maxsize);
+				plugin = scanner_hook(data[0], data[1], tcreds, *wsocket[loop], rsocket[loop], scanner_plugin_maxsize);
 			}
 
 			/*
@@ -652,25 +658,25 @@ shortcut:
 	} while (conn_alive && proxy_alive && !so_closed(sd) && !so_closed(cd) && !serialize);
 
 bailout:
-	if (debug)
-		printf("\nThread finished.\n");
 
-	if (tcreds)
-		free_auth(tcreds);
 	if (hostname)
 		free(hostname);
 
-	if (debug)
+	if (debug) {
 		printf("forward_request: palive=%d, authok=%d, ntlm=%d, closed=%d\n", proxy_alive, authok, ntlmbasic, so_closed(sd));
+		printf("\nThread finished.\n");
+	}
 
 	if (proxy_alive && authok && !ntlmbasic && !so_closed(sd)) {
 		if (debug)
 			printf("Storing the connection for reuse (%d:%d).\n", cd, sd);
 		pthread_mutex_lock(&connection_mtx);
-		connection_list = plist_add(connection_list, sd, NULL);
+		connection_list = plist_add(connection_list, sd, (void *)tcreds);
 		pthread_mutex_unlock(&connection_mtx);
-	} else
+	} else {
+		free(tcreds);
 		close(sd);
+	}
 
 	return rc;
 }
@@ -681,7 +687,7 @@ bailout:
  *
  * Return 1 for success, 0 failure.
  */
-int prepare_http_connect(int sd, const char *thost) {
+int prepare_http_connect(int sd, struct auth_s *credentials, const char *thost) {
 	rr_data_t data1, data2;
 	int rc = 0;
 	hlist_t tl;
@@ -710,7 +716,7 @@ int prepare_http_connect(int sd, const char *thost) {
 	if (debug)
 		printf("Starting authentication...\n");
 
-	if (proxy_authenticate(sd, data1, data2, creds)) {
+	if (proxy_authenticate(sd, data1, data2, credentials)) {
 		/*
 		 * Let's try final auth step, possibly changing data2->code
 		 */
@@ -765,18 +771,21 @@ bailout:
  * "corkscrew" which after all require us for authentication and tunneling
  *  their HTTP CONNECT in the end.
  */
-void *tunnel_thread(void *data) {
+void *tunnel_thread(void *thread_data) {
 	int sd;
+	struct auth_s *tcreds;
 
-	int cd = ((struct thread_arg_s *)data)->fd;
-	char *thost = ((struct thread_arg_s *)data)->target;
-	struct sockaddr_in caddr = ((struct thread_arg_s *)data)->addr;
-	free(data);
+	int cd = ((struct thread_arg_s *)thread_data)->fd;
+	char *thost = ((struct thread_arg_s *)thread_data)->target;
+	struct sockaddr_in caddr = ((struct thread_arg_s *)thread_data)->addr;
+	free(thread_data);
 
-	sd = proxy_connect();
+	tcreds = new_auth();
+	sd = proxy_connect(tcreds);
 
 	if (sd <= 0) {
 		close(cd);
+		free(tcreds);
 		return NULL;
 	}
 
@@ -784,12 +793,13 @@ void *tunnel_thread(void *data) {
 		printf("Tunneling to %s for client %d...\n", thost, cd);
 	syslog(LOG_DEBUG, "%s TUNNEL %s", inet_ntoa(caddr.sin_addr), thost);
 
-	if (prepare_http_connect(sd, thost)) {
+	if (prepare_http_connect(sd, tcreds, thost)) {
 		tunnel(cd, sd);
 	}
 
 	close(sd);
 	close(cd);
+	free(tcreds);
 
 	/*
 	 * Add ourself to the "threads to join" list.
@@ -801,19 +811,20 @@ void *tunnel_thread(void *data) {
 	return NULL;
 }
 
-void *socks5_thread(void *data) {
+void *socks5_thread(void *thread_data) {
 	char *tmp, *thost, *tport, *uname, *upass;
-	unsigned char *bs, *auths, *addr;
 	unsigned short port;
 	int ver, r, c, i, w;
 
+	struct auth_s *tcreds = NULL;
+	unsigned char *bs = NULL, *auths = NULL, *addr = NULL;
 	int found = -1;
 	int sd = 0;
 	int open = !hlist_count(users_list);
 
-	int cd = ((struct thread_arg_s *)data)->fd;
-	struct sockaddr_in caddr = ((struct thread_arg_s *)data)->addr;
-	free(data);
+	int cd = ((struct thread_arg_s *)thread_data)->fd;
+	struct sockaddr_in caddr = ((struct thread_arg_s *)thread_data)->addr;
+	free(thread_data);
 
 	/*
 	 * Check client's version, possibly fuck'em
@@ -823,7 +834,7 @@ void *socks5_thread(void *data) {
 	tport = new(MINIBUF_SIZE);
 	r = read(cd, bs, 2);
 	if (r != 2 || bs[0] != 5)
-		goto bail1;
+		goto bailout;
 
 	/*
 	 * Read offered auth schemes
@@ -832,7 +843,7 @@ void *socks5_thread(void *data) {
 	auths = (unsigned char *)new(c+1);
 	r = read(cd, auths, c);
 	if (r != c)
-		goto bail2;
+		goto bailout;
 
 	/*
 	 * Are we wide open and client is OK with no auth?
@@ -856,7 +867,7 @@ void *socks5_thread(void *data) {
 		bs[0] = 5;
 		bs[1] = 0xFF;
 		w = write(cd, bs, 2);
-		goto bail2;
+		goto bailout;
 	} else {
 		bs[0] = 5;
 		bs[1] = found;
@@ -875,7 +886,7 @@ void *socks5_thread(void *data) {
 			bs[0] = 1;
 			bs[1] = 0xFF;		/* Unsuccessful (not supported) */
 			w = write(cd, bs, 2);
-			goto bail2;
+			goto bailout;
 		}
 		c = bs[1];
 
@@ -886,7 +897,7 @@ void *socks5_thread(void *data) {
 		r = read(cd, uname, c+1);
 		if (r != c+1) {
 			free(uname);
-			goto bail2;
+			goto bailout;
 		}
 		i = uname[c];
 		uname[c] = 0;
@@ -900,7 +911,7 @@ void *socks5_thread(void *data) {
 		if (r != c) {
 			free(upass);
 			free(uname);
-			goto bail2;
+			goto bailout;
 		}
 		upass[c] = 0;
 
@@ -927,7 +938,7 @@ void *socks5_thread(void *data) {
 		 * Fuck'em if auth failed
 		 */
 		if (bs[1])
-			goto bail2;
+			goto bailout;
 	}
 
 	/*
@@ -935,7 +946,7 @@ void *socks5_thread(void *data) {
 	 */
 	r = read(cd, bs, 4);
 	if (r != 4)
-		goto bail2;
+		goto bailout;
 
 	/*
 	 * Is it connect for supported address type (IPv4 or DNS)? If not, fuck'em
@@ -947,7 +958,7 @@ void *socks5_thread(void *data) {
 		bs[3] = 1;			/* Dummy IPv4 */
 		memset(bs+4, 0, 6);
 		w = write(cd, bs, 10);
-		goto bail2;
+		goto bailout;
 	}
 
 	/*
@@ -961,14 +972,14 @@ void *socks5_thread(void *data) {
 		ver = 2;			/* FQDN, get string length */
 		r = read(cd, &c, 1);
 		if (r != 1)
-			goto bail2;
+			goto bailout;
 	} else
-		goto bail2;
+		goto bailout;
 
 	addr = (unsigned char *)new(c+10 + 1);
 	r = read(cd, addr, c);
 	if (r != c)
-		goto bail3;
+		goto bailout;
 	addr[c] = 0;
 
 	/*
@@ -985,7 +996,7 @@ void *socks5_thread(void *data) {
 	 */
 	r = read(cd, &port, 2);
 	if (r != 2)
-		goto bail3;
+		goto bailout;
 	sprintf(tport, "%d", ntohs(port));
 	strlcat(thost, ":", MINIBUF_SIZE);
 	strlcat(thost, tport, MINIBUF_SIZE);
@@ -993,8 +1004,9 @@ void *socks5_thread(void *data) {
 	/*
 	 * Try connect to parent proxy
 	 */
-	sd = proxy_connect();
-	if (sd <= 0 || !prepare_http_connect(sd, thost)) {
+	tcreds = new_auth();
+	sd = proxy_connect(tcreds);
+	if (sd <= 0 || !prepare_http_connect(sd, tcreds, thost)) {
 		/*
 		 * No such luck, report failure
 		 */
@@ -1004,7 +1016,7 @@ void *socks5_thread(void *data) {
 		bs[3] = 1;			/* Dummy IPv4 */
 		memset(bs+4, 0, 6);
 		w = write(cd, bs, 10);
-		goto bail3;
+		goto bailout;
 	} else {
 		/*
 		 * Proxy ok, auth worked
@@ -1024,17 +1036,22 @@ void *socks5_thread(void *data) {
 	 */
 	tunnel(cd, sd);
 
-bail3:
-	free(addr);
-bail2:
-	free(auths);
-bail1:
-	free(thost);
-	free(tport);
-	free(bs);
-	close(cd);
+bailout:
+	if (addr)
+		free(addr);
+	if (auths)
+		free(auths);
+	if (thost)
+		free(thost);
+	if (tport)
+		free(tport);
+	if (bs)
+		free(bs);
+	if (tcreds)
+		free(tcreds);
 	if (sd)
 		close(sd);
+	close(cd);
 
 	return NULL;
 }
@@ -1044,9 +1061,10 @@ void magic_auth_detect(const char *url) {
 	rr_data_t req, res;
 	char *tmp, *pos, *host = NULL;
 
+	struct auth_s *tcreds;
 	char *authstr[5] = { "NTLMv2", "NTLM2SR", "NT", "NTLM", "LM" };
 	int prefs[MAGIC_TESTS][5] = {
-		/* NT, LM, NTLMv2, Flags, Auth param equiv. */
+		/* NT, LM, NTLMv2, Flags, index to authstr[] */
 		{ 0, 0, 1, 0, 0 },
 		{ 0, 0, 1, 0xa208b207, 0 },
 		{ 0, 0, 1, 0xa2088207, 0 },
@@ -1061,9 +1079,11 @@ void magic_auth_detect(const char *url) {
 	};
 
 	debug = 0;
+	tcreds = new_auth();
+	copy_auth(tcreds, g_creds, /* fullcopy */ 1);
 
-	if (!creds->passnt || !creds->passlm || !creds->passntlm2) {
-		printf("Cannot detect NTLM dialect - password or its hashes must be defined, try -I\n");
+	if (!tcreds->passnt || !tcreds->passlm || !tcreds->passntlm2) {
+		printf("Cannot detect NTLM dialect - password or all its hashes must be defined, try -I\n");
 		exit(1);
 	}
 
@@ -1088,14 +1108,14 @@ void magic_auth_detect(const char *url) {
 		if (host)
 			req->headers = hlist_add(req->headers, "Host", host, HLIST_ALLOC, HLIST_ALLOC);
 
-		creds->hashnt = prefs[i][0];
-		creds->hashlm = prefs[i][1];
-		creds->hashntlm2 = prefs[i][2];
-		creds->flags = prefs[i][3];
+		tcreds->hashnt = prefs[i][0];
+		tcreds->hashlm = prefs[i][1];
+		tcreds->hashntlm2 = prefs[i][2];
+		tcreds->flags = prefs[i][3];
 
 		printf("Config profile %2d/%d... ", i+1, MAGIC_TESTS);
 
-		nc = proxy_connect();
+		nc = proxy_connect(NULL);
 		if (nc <= 0) {
 			printf("\nConnection to proxy failed, bailing out\n");
 			free_rr_data(res);
@@ -1106,7 +1126,7 @@ void magic_auth_detect(const char *url) {
 			return;
 		}
 
-		c = proxy_authenticate(nc, req, res, creds);
+		c = proxy_authenticate(nc, req, res, tcreds);
 		if (c && res->code != 407) {
 			printf("Auth request ignored (HTTP code: %d)\n", c);
 			free_rr_data(res);
@@ -1147,15 +1167,15 @@ void magic_auth_detect(const char *url) {
 		if (prefs[found][3])
 			printf("Flags           0x%x\n", prefs[found][3]);
 		if (prefs[found][0]) {
-			printf("PassNT          %s\n", tmp=printmem(creds->passnt, 16, 8));
+			printf("PassNT          %s\n", tmp=printmem(tcreds->passnt, 16, 8));
 			free(tmp);
 		}
 		if (prefs[found][1]) {
-			printf("PassLM          %s\n", tmp=printmem(creds->passlm, 16, 8));
+			printf("PassLM          %s\n", tmp=printmem(tcreds->passlm, 16, 8));
 			free(tmp);
 		}
 		if (prefs[found][2]) {
-			printf("PassNTLMv2      %s\n", tmp=printmem(creds->passntlm2, 16, 8));
+			printf("PassNTLMv2      %s\n", tmp=printmem(tcreds->passntlm2, 16, 8));
 			free(tmp);
 		}
 		printf("------------------------------------------------\n");

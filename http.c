@@ -19,15 +19,15 @@
  *
  */
 
+#include <sys/types.h>
+#include <sys/select.h>
+#include <sys/time.h>
 #include <string.h>
 #include <strings.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
 #include <errno.h>
-#include <sys/select.h>
-#include <sys/types.h>
-#include <sys/time.h>
 
 #include "utils.h"
 #include "socket.h"
@@ -622,12 +622,14 @@ int http_parse_basic(hlist_t headers, const char *header, struct auth_s *tcreds)
 		free(buf);
 		return -1;
 	} else {
+		*pos = 0;
 		dom = strchr(buf, '\\');
 		if (dom == NULL) {
-			auth_strncpy(tcreds, user, buf, MIN(MINIBUF_SIZE, pos-buf+1));
+			auth_strcpy(tcreds, user, buf);
 		} else {
-			auth_strncpy(tcreds, domain, buf, MIN(MINIBUF_SIZE, dom-buf+1));
-			auth_strncpy(tcreds, user, dom+1, MIN(MINIBUF_SIZE, pos-dom));
+			*dom = 0;
+			auth_strcpy(tcreds, domain, buf);
+			auth_strcpy(tcreds, user, dom+1);
 		}
 
 		if (tcreds->hashntlm2) {

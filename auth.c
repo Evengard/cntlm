@@ -29,13 +29,16 @@
 struct auth_s *new_auth(void) {
 	struct auth_s *tmp;
 
-	tmp = (struct auth_s *)new(sizeof(struct auth_s));
-	tmp->user = NULL;
-	tmp->domain = NULL;
-	tmp->workstation = NULL;
-	tmp->passntlm2 = 0;
-	tmp->passnt = 0;
-	tmp->passlm = 0;
+	tmp = (struct auth_s *)malloc(sizeof(struct auth_s));
+	if (tmp == NULL)
+		return NULL;
+
+	memset(tmp->user, 0, MINIBUF_SIZE);
+	memset(tmp->domain, 0, MINIBUF_SIZE);
+	memset(tmp->workstation, 0, MINIBUF_SIZE);
+	memset(tmp->passntlm2, 0, MINIBUF_SIZE);
+	memset(tmp->passnt, 0, MINIBUF_SIZE);
+	memset(tmp->passlm, 0, MINIBUF_SIZE);
 	tmp->hashntlm2 = 1;
 	tmp->hashnt = 0;
 	tmp->hashlm = 0;
@@ -44,60 +47,41 @@ struct auth_s *new_auth(void) {
 	return tmp;
 }
 
+struct auth_s *copy_auth(struct auth_s *dst, struct auth_s *src, int fullcopy) {
+	dst->hashntlm2 = src->hashntlm2;
+	dst->hashnt = src->hashnt;
+	dst->hashlm = src->hashlm;
+	dst->flags = src->flags;
+
+	strlcpy(dst->domain, src->domain, MINIBUF_SIZE);
+	strlcpy(dst->workstation, src->workstation, MINIBUF_SIZE);
+
+	if (fullcopy) {
+		strlcpy(dst->user, src->user, MINIBUF_SIZE);
+		if (src->passntlm2)
+			memcpy(dst->passntlm2, src->passntlm2, MINIBUF_SIZE);
+		if (src->passnt)
+			memcpy(dst->passnt, src->passnt, MINIBUF_SIZE);
+		if (src->passlm)
+			memcpy(dst->passlm, src->passlm, MINIBUF_SIZE);
+	} else {
+		memset(dst->user, 0, MINIBUF_SIZE);
+		memset(dst->passntlm2, 0, MINIBUF_SIZE);
+		memset(dst->passnt, 0, MINIBUF_SIZE);
+		memset(dst->passlm, 0, MINIBUF_SIZE);
+	}
+
+	return dst;
+}
+
 struct auth_s *dup_auth(struct auth_s *creds, int fullcopy) {
 	struct auth_s *tmp;
 
 	tmp = new_auth();
+	if (tmp == NULL)
+		return NULL;
 
-	tmp->domain = new(MINIBUF_SIZE);
-	strlcpy(tmp->domain, creds->domain, MINIBUF_SIZE);
-
-	tmp->workstation = new(MINIBUF_SIZE);
-	strlcpy(tmp->workstation, creds->workstation, MINIBUF_SIZE);
-
-	tmp->hashntlm2 = creds->hashntlm2;
-	tmp->hashnt = creds->hashnt;
-	tmp->hashlm = creds->hashlm;
-	tmp->flags = creds->flags;
-
-	if (fullcopy) {
-		tmp->user = new(MINIBUF_SIZE);
-		strlcpy(tmp->user, creds->user, MINIBUF_SIZE);
-
-		if (creds->passntlm2) {
-			tmp->passntlm2 = new(MINIBUF_SIZE);
-			memcpy(tmp->passntlm2, creds->passntlm2, MINIBUF_SIZE);
-		}
-
-		if (creds->passnt) {
-			tmp->passnt = new(MINIBUF_SIZE);
-			memcpy(tmp->passnt, creds->passnt, MINIBUF_SIZE);
-		}
-
-		if (creds->passlm) {
-			tmp->passlm = new(MINIBUF_SIZE);
-			memcpy(tmp->passlm, creds->passlm, MINIBUF_SIZE);
-		}
-	}
-
-	return tmp;
-}
-
-void free_auth(struct auth_s *creds) {
-	if (creds == NULL)
-		return;
-
-	free(creds->domain);
-	free(creds->workstation);
-	if (creds->user)
-		free(creds->user);
-	if (creds->passntlm2)
-		free(creds->passntlm2);
-	if (creds->passnt)
-		free(creds->passnt);
-	if (creds->passlm)
-		free(creds->passlm);
-	free(creds);
+	return copy_auth(tmp, creds, fullcopy);
 }
 
 void dump_auth(struct auth_s *creds) {

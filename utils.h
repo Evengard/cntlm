@@ -22,15 +22,22 @@
 #ifndef _UTILS_H
 #define _UTILS_H
 
+#if defined(__FreeBSD__) || defined(__NetBSD__) || defined(__OpenBSD__)
+#include <sys/param.h>
+#endif
 #include <pthread.h>
 #include <netinet/in.h>
+
 #include "config/config.h"
 
 #define BUFSIZE			1024
 #define MINIBUF_SIZE		50
 #define VAL(var, type, offset)	*((type *)(var+offset))
 #define MEM(var, type, offset)	(type *)(var+offset)
+
+#if !defined(__FreeBSD__) && !defined(__NetBSD__) && !defined(__OpenBSD__)
 #define MIN(a, b)		((a) < (b) ? (a) : (b))
+#endif
 
 /*
  * Solaris doesn't have LOG_PERROR
@@ -54,7 +61,7 @@ struct hlist_s {
 typedef struct plist_s *plist_t;
 struct plist_s {
 	unsigned long key;
-	char *aux;
+	void *aux;
 	struct plist_s *next;
 };
 
@@ -97,12 +104,13 @@ struct thread_arg_s {
 
 extern void myexit(int rc);
 extern void croak(const char *msg, int console);
-extern plist_t plist_add(plist_t list, unsigned long key, char *aux);
+
+extern plist_t plist_add(plist_t list, unsigned long key, void *aux);
 extern plist_t plist_del(plist_t list, unsigned long key);
 extern int plist_in(plist_t list, unsigned long key);
 extern void plist_dump(plist_t list);
 extern char *plist_get(plist_t list, int key);
-extern int plist_pop(plist_t *list);
+extern int plist_pop(plist_t *list, void **aux);
 extern int plist_count(plist_t list);
 extern plist_t plist_free(plist_t list);
 

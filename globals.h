@@ -25,10 +25,11 @@
 #include <pthread.h>
 
 #include "utils.h"
+#include "auth.h"
 
 extern int debug;
 
-extern struct auth_s *creds;			/* global NTLM credentials */
+extern struct auth_s *g_creds;			/* global NTLM credentials */
 
 extern int ntlmbasic;				/* forward_request() */
 extern int serialize;
@@ -44,7 +45,11 @@ extern pthread_mutex_t connection_mtx;
 extern int parent_count;
 extern plist_t parent_list;
 
+/*
+ * just malloc/free sizeof(proxy_t), no recuursion required
+ */
 typedef struct {
+	struct auth_s creds;
 	struct in_addr host;
 	int port;
 } proxy_t;
