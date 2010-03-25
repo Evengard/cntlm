@@ -45,7 +45,7 @@ int scanner_hook(rr_data_t request, rr_data_t response, struct auth_s *credentia
 	plist_t list;
 
 	int ok = 1;
-	char *done = NULL;
+	int done = 0;
 	int headers_initiated = 0;
 	long c, progress = 0, filesize = 0;
 
@@ -119,12 +119,13 @@ int scanner_hook(rr_data_t request, rr_data_t response, struct auth_s *credentia
 				strcat(buf, line);
 				len += c;
 
-				if (i > 0 && (
+				if (i >= 0 && (
 						((pos = strstr(line, "UpdatePage("))
 						&& isdigit(pos[11]))
 					     ||
-						((done = strstr(line, "DownloadFinished("))
-						&& isdigit(pos[17])) )) {
+						((pos = strstr(line, "DownloadFinished("))
+						&& isdigit(pos[17])
+						&& (done = 1)) )) {
 					if (debug)
 						printf("scanner_hook: %s", line);
 
@@ -174,7 +175,7 @@ int scanner_hook(rr_data_t request, rr_data_t response, struct auth_s *credentia
 				}
 			} while (i > 0 && !done);
 
-			if (i > 0 && done && (pos = strstr(line, "\",\"")+3) && (c = strchr(pos, '"')-pos) > 0) {
+			if (i >= 0 && done && (pos = strstr(line, "\",\"")+3) && (c = strchr(pos, '"') - pos) > 0) {
 				tmp = substr(pos, 0, c);
 				pos = urlencode(tmp);
 				free(tmp);
