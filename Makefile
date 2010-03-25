@@ -125,4 +125,4 @@ distclean: clean
 		fakeroot debian/rules clean; \
 		fakeroot rpm/rules clean; \
 	fi
-	@rm -f *.deb *.rpm *.tgz *.tar.gz *.tar.bz2 tags ctags pid 2>/dev/null
+	@rm -f *.exe *.deb *.rpm *.tgz *.tar.gz *.tar.bz2 tags ctags pid 2>/dev/null
