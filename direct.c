@@ -316,6 +316,7 @@ rr_data_t direct_request(void *cdata, rr_data_t request) {
 			if (loop == 1 && data[1]->code == 401 && hlist_subcmp_all(data[1]->headers, "WWW-Authenticate", "NTLM")) {
 				/*
 				 * Server closing the connection after 401?
+				 * Should never happen.
 				 */
 				if (hlist_subcmp(data[1]->headers, "Connection", "close")) {
 					if (debug)
@@ -344,7 +345,6 @@ rr_data_t direct_request(void *cdata, rr_data_t request) {
 
 					rc = (void *)-1;
 					goto bailout;
-
 				} else if (data[1]->code == 401) {
 					/*
 					 * Server giving 401 after auth?

@@ -23,7 +23,7 @@
 #define _UTILS_H
 
 #if defined(__FreeBSD__) || defined(__NetBSD__) || defined(__OpenBSD__)
-#include <sys/param.h>
+# include <sys/param.h>
 #endif
 #include <pthread.h>
 #include <netinet/in.h>
@@ -36,14 +36,19 @@
 #define MEM(var, type, offset)	(type *)(var+offset)
 
 #if !defined(__FreeBSD__) && !defined(__NetBSD__) && !defined(__OpenBSD__)
-#define MIN(a, b)		((a) < (b) ? (a) : (b))
+# define MIN(a, b)		((a) < (b) ? (a) : (b))
 #endif
+
+/*
+#define isalnum(c)	(isalpha(c) || isdigit(c))
+#define isspace(c)	((c) == ' ' || (c) == '\f' || (c) == '\t' || (c) == '\r' || (c) == '\n')
+*/
 
 /*
  * Solaris doesn't have LOG_PERROR
  */
 #ifndef LOG_PERROR
-#define LOG_PERROR	LOG_CONS
+# define LOG_PERROR	LOG_CONS
 #endif
 
 /*

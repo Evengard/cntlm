@@ -320,7 +320,8 @@ void *proxy_thread(void *thread_data) {
 
 			list = noproxy_list;
 			while (list) {
-				if (list->aux && strlen(list->aux) && fnmatch(list->aux, request->hostname, 0) == 0) {
+				if (list->aux && strlen(list->aux)
+						&& fnmatch(list->aux, request->hostname, 0) == 0) {
 					if (debug)
 						printf("MATCH: %s (%s)\n", request->hostname, (char *)list->aux);
 					direct = 1;
@@ -364,7 +365,8 @@ void *proxy_thread(void *thread_data) {
 
 int main(int argc, char **argv) {
 	char *tmp, *head;
-	char *cpassword, *cpassntlm2, *cpassnt, *cpasslm, *cuser, *cdomain, *cworkstation, *cuid, *cpidfile, *cauth;
+	char *cpassword, *cpassntlm2, *cpassnt, *cpasslm;
+	char *cuser, *cdomain, *cworkstation, *cuid, *cpidfile, *cauth;
 	struct passwd *pw;
 	struct termios termold, termnew;
 	pthread_attr_t pattr;
@@ -501,12 +503,16 @@ int main(int argc, char **argv) {
 					fprintf(stderr, "Invalid username:password format for -R: %s\n", tmp);
 				} else {
 					head[0] = 0;
-					users_list = hlist_add(users_list, tmp, head+1, HLIST_ALLOC, HLIST_ALLOC);
+					users_list = hlist_add(users_list, tmp, head+1,
+						HLIST_ALLOC, HLIST_ALLOC);
 				}
 				break;
 			case 'r':
 				if (is_http_header(optarg))
-					header_list = hlist_add(header_list, get_http_header_name(optarg), get_http_header_value(optarg), HLIST_NOALLOC, HLIST_NOALLOC);
+					header_list = hlist_add(header_list,
+						get_http_header_name(optarg),
+						get_http_header_value(optarg),
+						HLIST_NOALLOC, HLIST_NOALLOC);
 				break;
 			case 'S':
 				scanner_plugin = 1;
@@ -519,9 +525,9 @@ int main(int argc, char **argv) {
 				serialize = 1;
 				break;
 			case 'T':
-				tracefile = open(optarg, O_CREAT | O_EXCL | O_WRONLY, 0600);
+				tracefile = open(optarg, O_CREAT | O_TRUNC | O_WRONLY, 0600);
 				if (tracefile < 0) {
-					fprintf(stderr, "Cannot create the trace file, make sure it doesn't already exist.\n");
+					fprintf(stderr, "Cannot create trace file.\n");
 					myexit(1);
 				} else {
 					printf("Redirecting all output to %s\n", optarg);
@@ -567,24 +573,25 @@ int main(int argc, char **argv) {
 	 * Help requested?
 	 */
 	if (help) {
-		printf("CNTLM - Accelerating NTLM Authentication Proxy version " VERSION "\nCopyright (c) 2oo7-2o1o David Kubicek\n\n"
+		printf("CNTLM - Accelerating NTLM Authentication Proxy version " VERSION "\n");
+		printf("Copyright (c) 2oo7-2o1o David Kubicek\n\n"
 			"This program comes with NO WARRANTY, to the extent permitted by law. You\n"
 			"may redistribute copies of it under the terms of the GNU GPL Version 2 or\n"
 			"newer. For more information about these matters, see the file LICENSE.\n"
 			"For copyright holders of included encryption routines see headers.\n\n");
 
-		fprintf(stderr, "Usage: %s [-AaBcDdFfgHhILlMPSsTUvw] -u <user>[@<domain>] -p <pass> <proxy_host>[:]<proxy_port> ...\n", argv[0]);
+		fprintf(stderr, "Usage: %s [-AaBcDdFfgHhILlMPpSsTUuvw] <proxy_host>[:]<proxy_port> ...\n", argv[0]);
 		fprintf(stderr, "\t-A  <address>[/<net>]\n"
-				"\t    New ACL allow rule. Address can be an IP or a hostname, net must be a number (CIDR notation)\n");
+				"\t    ACL allow rule. IP or hostname, net must be a number (CIDR notation)\n");
 		fprintf(stderr, "\t-a  ntlm | nt | lm\n"
-				"\t    Authentication parameter - combined NTLM, just LM, or just NT. Default is to,\n"
-				"\t    send both, NTLM. It is the most versatile setting and likely to work for you.\n");
+				"\t    Authentication type - combined NTLM, just LM, or just NT. Default NTLM.\n"
+				"\t    It is the most versatile setting and likely to work for you.\n");
 		fprintf(stderr, "\t-B  Enable NTLM-to-basic authentication.\n");
 		fprintf(stderr, "\t-c  <config_file>\n"
 				"\t    Configuration file. Other arguments can be used as well, overriding\n"
 				"\t    config file settings.\n");
 		fprintf(stderr, "\t-D  <address>[/<net>]\n"
-				"\t    New ACL deny rule. Syntax same as -A.\n");
+				"\t    ACL deny rule. Syntax same as -A.\n");
 		fprintf(stderr, "\t-d  <domain>\n"
 				"\t    Domain/workgroup can be set separately.\n");
 		fprintf(stderr, "\t-f  Run in foreground, do not fork into daemon mode.\n");
@@ -593,7 +600,7 @@ int main(int argc, char **argv) {
 		fprintf(stderr, "\t-G  <pattern>\n"
 				"\t    User-Agent matching for the trans-isa-scan plugin.\n");
 		fprintf(stderr, "\t-g  Gateway mode - listen on all interfaces, not only loopback.\n");
-		fprintf(stderr, "\t-H  Prompt for the password interactively, print its hashes and exit (NTLMv2 needs -u and -d).\n");
+		fprintf(stderr, "\t-H  Print password hashes for use in config file (NTLMv2 needs -u and -d).\n");
 		fprintf(stderr, "\t-h  Print this help info along with version number.\n");
 		fprintf(stderr, "\t-I  Prompt for the password interactively.\n");
 		fprintf(stderr, "\t-L  [<saddr>:]<lport>:<rhost>:<rport>\n"
@@ -605,9 +612,9 @@ int main(int argc, char **argv) {
 		fprintf(stderr, "\t-M  <testurl>\n"
 				"\t    Magic autodetection of proxy's NTLM dialect.\n");
 		fprintf(stderr, "\t-N  \"<hostname_wildcard1>[, <hostname_wildcardN>\"\n"
-				"\t    Process these URL's as a stand-alone proxy - directly. (e.g. '*.intranet.local')\n");
+				"\t    List of URL's to serve direcly as stand-alone proxy (e.g. '*.local')\n");
 		fprintf(stderr, "\t-O  [<saddr>:]<lport>\n"
-				"\t    Enable SOCKS5 proxy and make it listen on the specified port (and address).\n");
+				"\t    Enable SOCKS5 proxy on port lport (binding to address saddr)\n");
 		fprintf(stderr, "\t-P  <pidfile>\n"
 				"\t    Create a PID file upon successful start.\n");
 		fprintf(stderr, "\t-p  <password>\n"
@@ -616,7 +623,7 @@ int main(int argc, char **argv) {
 				"\t    Add a header substitution. All such headers will be added/replaced\n"
 				"\t    in the client's requests.\n");
 		fprintf(stderr, "\t-S  <size_in_kb>\n"
-				"\t    Enable transparent handler of ISA AV scanner plugin for files up to size_in_kb KiB.\n");
+				"\t    Enable automation of GFI WebMonitor ISA scanner for files < size_in_kb.\n");
 		fprintf(stderr, "\t-s  Do not use threads, serialize all requests - for debugging only.\n");
 		fprintf(stderr, "\t-U  <uid>\n"
 				"\t    Run as uid. It is an important security measure not to run as root.\n");
@@ -719,7 +726,8 @@ int main(int argc, char **argv) {
 			if (is_http_header(tmp)) {
 				head = get_http_header_name(tmp);
 				if (!hlist_in(header_list, head))
-					header_list = hlist_add(header_list, head, get_http_header_value(tmp), HLIST_ALLOC, HLIST_NOALLOC);
+					header_list = hlist_add(header_list, head, get_http_header_value(tmp),
+						HLIST_ALLOC, HLIST_NOALLOC);
 				free(head);
 			} else
 				syslog(LOG_ERR, "Invalid header format: %s\n", tmp);
@@ -821,20 +829,9 @@ int main(int argc, char **argv) {
 			syslog(LOG_INFO, "Ignoring config file option: %s\n", list->key);
 			list = list->next;
 		}
-
-		/*
-		CFG_DEFAULT(cf, "PidFile", pidfile, MINIBUF_SIZE);
-		CFG_DEFAULT(cf, "Uid", uid, MINIBUF_SIZE);
-		*/
 	}
 
 	config_close(cf);
-
-	if (!ntlmbasic && !strlen(cuser))
-		croak("Parent proxy account username missing.\n", interactivehash || interactivepwd || magic_detect);
-
-	if (!ntlmbasic && !strlen(cdomain))
-		croak("Parent proxy account domain missing.\n", interactivehash || interactivepwd || magic_detect);
 
 	if (!interactivehash && !parent_list)
 		croak("Parent proxy address missing.\n", interactivepwd || magic_detect);
@@ -889,7 +886,8 @@ int main(int argc, char **argv) {
 		syslog(LOG_WARNING, "SOCKS5 proxy will NOT require any authentication\n");
 
 	if (!magic_detect)
-		syslog(LOG_INFO, "Using following NTLM hashes: NTLMv2(%d) NT(%d) LM(%d)\n", g_creds->hashntlm2, g_creds->hashnt, g_creds->hashlm);
+		syslog(LOG_INFO, "Using following NTLM hashes: NTLMv2(%d) NT(%d) LM(%d)\n",
+			g_creds->hashntlm2, g_creds->hashnt, g_creds->hashlm);
 
 	if (cflags) {
 		syslog(LOG_INFO, "Using manual NTLM flags: 0x%X\n", swap32(cflags));
@@ -1001,7 +999,8 @@ int main(int argc, char **argv) {
 
 		if (g_creds->passntlm2) {
 			tmp = printmem(g_creds->passntlm2, 16, 8);
-			printf("PassNTLMv2      %s    # Only for user '%s', domain '%s'\n", tmp, g_creds->user, g_creds->domain);
+			printf("PassNTLMv2      %s    # Only for user '%s', domain '%s'\n",
+				tmp, g_creds->user, g_creds->domain);
 			free(tmp);
 		}
 		goto bailout;
@@ -1196,67 +1195,71 @@ int main(int argc, char **argv) {
 		cd = select(FD_SETSIZE, &set, NULL, NULL, &tv);
 		if (cd > 0) {
 			for (i = 0; i < FD_SETSIZE; ++i) {
-				if (FD_ISSET(i, &set)) {
-					clen = sizeof(caddr);
-					cd = accept(i, (struct sockaddr *)&caddr, (socklen_t *)&clen);
+				if (!FD_ISSET(i, &set))
+					continue;
 
-					if (cd < 0) {
-						syslog(LOG_ERR, "Serious error during accept: %s\n", strerror(errno));
-						continue;
-					}
+				clen = sizeof(caddr);
+				cd = accept(i, (struct sockaddr *)&caddr, (socklen_t *)&clen);
 
-					/*
-					 * Check main access control list.
-					 */
-					if (acl_check(rules, caddr.sin_addr) != ACL_ALLOW) {
-						syslog(LOG_WARNING, "Connection denied for %s:%d\n", inet_ntoa(caddr.sin_addr), ntohs(caddr.sin_port));
-						tmp = gen_denied_page(inet_ntoa(caddr.sin_addr));
-						w = write(cd, tmp, strlen(tmp));
-						free(tmp);
-						close(cd);
-						continue;
-					}
+				if (cd < 0) {
+					syslog(LOG_ERR, "Serious error during accept: %s\n", strerror(errno));
+					continue;
+				}
 
-					/*
-					 * Log peer IP if it's not localhost
-					 */
-					//if (debug || (gateway && caddr.sin_addr.s_addr != htonl(INADDR_LOOPBACK)))
-					//	syslog(LOG_INFO, "Connection accepted from %s:%d\n", inet_ntoa(caddr.sin_addr), ntohs(caddr.sin_port));
+				/*
+				 * Check main access control list.
+				 */
+				if (acl_check(rules, caddr.sin_addr) != ACL_ALLOW) {
+					syslog(LOG_WARNING, "Connection denied for %s:%d\n",
+						inet_ntoa(caddr.sin_addr), ntohs(caddr.sin_port));
+					tmp = gen_denied_page(inet_ntoa(caddr.sin_addr));
+					w = write(cd, tmp, strlen(tmp));
+					free(tmp);
+					close(cd);
+					continue;
+				}
 
-					pthread_attr_init(&pattr);
-					pthread_attr_setstacksize(&pattr, STACK_SIZE);
+				/*
+				 * Log peer IP if it's not localhost
+				 *
+				 * if (debug || (gateway && caddr.sin_addr.s_addr != htonl(INADDR_LOOPBACK)))
+				 * 	syslog(LOG_INFO, "Connection accepted from %s:%d\n",
+				 * 	inet_ntoa(caddr.sin_addr), ntohs(caddr.sin_port));
+				 */
+
+				pthread_attr_init(&pattr);
+				pthread_attr_setstacksize(&pattr, STACK_SIZE);
 #ifndef __CYGWIN__
-					pthread_attr_setguardsize(&pattr, 0);
+				pthread_attr_setguardsize(&pattr, 256);
 #endif
 
-					if (plist_in(proxyd_list, i)) {
-						data = (struct thread_arg_s *)new(sizeof(struct thread_arg_s));
-						data->fd = cd;
-						data->addr = caddr;
-						if (!serialize)
-							tid = pthread_create(&pthr, &pattr, proxy_thread, (void *)data);
-						else
-							proxy_thread((void *)data);
-					} else if (plist_in(socksd_list, i)) {
-						data = (struct thread_arg_s *)new(sizeof(struct thread_arg_s));
-						data->fd = cd;
-						data->addr = caddr;
-						tid = pthread_create(&pthr, &pattr, socks5_thread, (void *)data);
-					} else {
-						data = (struct thread_arg_s *)new(sizeof(struct thread_arg_s));
-						data->fd = cd;
-						data->addr = caddr;
-						data->target = plist_get(tunneld_list, i);
-						tid = pthread_create(&pthr, &pattr, tunnel_thread, (void *)data);
-					}
-
-					pthread_attr_destroy(&pattr);
-
-					if (tid)
-						syslog(LOG_ERR, "Serious error during pthread_create: %d\n", tid);
+				if (plist_in(proxyd_list, i)) {
+					data = (struct thread_arg_s *)new(sizeof(struct thread_arg_s));
+					data->fd = cd;
+					data->addr = caddr;
+					if (!serialize)
+						tid = pthread_create(&pthr, &pattr, proxy_thread, (void *)data);
 					else
-						tc++;
+						proxy_thread((void *)data);
+				} else if (plist_in(socksd_list, i)) {
+					data = (struct thread_arg_s *)new(sizeof(struct thread_arg_s));
+					data->fd = cd;
+					data->addr = caddr;
+					tid = pthread_create(&pthr, &pattr, socks5_thread, (void *)data);
+				} else {
+					data = (struct thread_arg_s *)new(sizeof(struct thread_arg_s));
+					data->fd = cd;
+					data->addr = caddr;
+					data->target = plist_get(tunneld_list, i);
+					tid = pthread_create(&pthr, &pattr, tunnel_thread, (void *)data);
 				}
+
+				pthread_attr_destroy(&pattr);
+
+				if (tid)
+					syslog(LOG_ERR, "Serious error during pthread_create: %d\n", tid);
+				else
+					tc++;
 			}
 		} else if (cd < 0 && !quit)
 			syslog(LOG_ERR, "Serious error during select: %s\n", strerror(errno));

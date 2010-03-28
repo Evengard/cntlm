@@ -23,6 +23,7 @@
 #define _SWAP_H
 
 #include <stdint.h>
+
 #include "config/config.h"
 
 #define swap16(x) \

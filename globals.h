@@ -22,6 +22,9 @@
  * proxy.c
  */
 
+#ifndef _GLOBALS_H
+#define _GLOBALS_H
+
 #include <pthread.h>
 
 #include "utils.h"
@@ -46,7 +49,7 @@ extern int parent_count;
 extern plist_t parent_list;
 
 /*
- * just malloc/free sizeof(proxy_t), no recuursion required
+ * just malloc/free sizeof(proxy_t)
  */
 typedef struct {
 	struct auth_s creds;
@@ -54,9 +57,9 @@ typedef struct {
 	int port;
 } proxy_t;
 
-
 extern hlist_t header_list;			/* forward_request() */
 extern hlist_t users_list;			/* socks5_thread() */
 extern plist_t scanner_agent_list;		/* scanner_hook() */
 extern plist_t noproxy_list;			/* proxy_thread() */ 
 
+#endif /* _GLOBALS_H */

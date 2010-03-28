@@ -160,7 +160,7 @@ int proxy_authenticate(int sd, rr_data_t request, rr_data_t response, struct aut
 	auth->headers = hlist_del(auth->headers, "Transfer-Encoding");
 
 	if (debug) {
-		printf("\nSending PROXE auth request...\n");
+		printf("\nSending PROXY auth request...\n");
 		hlist_dump(auth->headers);
 	}
 
@@ -352,7 +352,7 @@ rr_data_t forward_request(void *thread_data, rr_data_t request) {
 		 *   - auth_retry: jump here from second iter. of inner loop, when we detect
 		 *     that auth failed. "request" is set to the original request and by jumping
 		 *     here, we effectively re-try the attempt. This is just in case we're using
-		 *     a cached connection - it must have timed out, so we must reconnect and try
+		 *     a cached connection - it must have timed out, so we reconnect and try
 		 *     again.
 		 *   - shortcut: jump there from first iter. of inner loop, when we detect
 		 *     that auth isn't required by proxy. We do loop++, make the jump and
@@ -505,6 +505,7 @@ shortcut:
 
 				/*
 				 * In case a broken NTLM proxy closes the connection after the initial 407
+				 * Should never happen (NTLM nego must be uninterrupted)
 				 */
 				if (!hlist_subcmp(data[1]->headers, "Proxy-Connection", "keep-alive")) {
 					if (debug)
@@ -1078,7 +1079,6 @@ void magic_auth_detect(const char *url) {
 		{ 0, 1, 0, 0x8206, 4 }
 	};
 
-	debug = 0;
 	tcreds = new_auth();
 	copy_auth(tcreds, g_creds, /* fullcopy */ 1);
 
@@ -1128,7 +1128,7 @@ void magic_auth_detect(const char *url) {
 
 		c = proxy_authenticate(nc, req, res, tcreds);
 		if (c && res->code != 407) {
-			printf("Auth request ignored (HTTP code: %d)\n", c);
+			printf("Auth not required? (HTTP code: %d)\n", res->code);
 			free_rr_data(res);
 			free_rr_data(req);
 			close(nc);
@@ -1180,7 +1180,7 @@ void magic_auth_detect(const char *url) {
 		}
 		printf("------------------------------------------------\n");
 	} else
-		printf("You have used wrong credentials, bad URL or your proxy is quite insane,\nin which case try submitting a Support Request.\n");
+		printf("\nWrong credentials, forbidden http:// address, no auth is required\nor the proxy is insane - try visiting our Help forum.\n");
 
 	if (host)
 		free(host);

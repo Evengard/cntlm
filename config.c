@@ -27,9 +27,6 @@
 #include "config.h"
 #include "utils.h"
 
-#define alnum(c)	(isalpha(c) || isdigit(c))
-#define blank(c)	((c) == ' ' || (c) == '\t' || (c) == '\r' || (c) == '\n')
-
 config_t config_open(const char *fname) {
 	config_t rc;
 	FILE *fp;
@@ -54,22 +51,22 @@ config_t config_open(const char *fname) {
 			continue;
 
 		i = j = 0;
-		while (j < len && blank(buf[j]))
+		while (j < len && isspace(buf[j]))
 			j++;
 
 		if (j >= len || buf[j] == '#')
 			continue;
 
 		i = j;
-		while (j < len && alnum(buf[j]))
+		while (j < len && isalnum(buf[j]))
 			j++;
 
-		if (j >= len || !blank(buf[j]))
+		if (j >= len || !isspace(buf[j]))
 			continue;
 
 		key = substr(buf, i, j-i);
 		i = j;
-		while (j < len && blank(buf[j]))
+		while (j < len && isspace(buf[j]))
 			j++;
 
 		if (j >= len || buf[j] == '#')
