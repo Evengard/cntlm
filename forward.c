@@ -1170,7 +1170,7 @@ void magic_auth_detect(const char *url) {
 		}
 		printf("------------------------------------------------\n");
 	} else if (ign == MAGIC_TESTS) {
-		printf("\nYour proxy is open, you don't need Cntlm proxy!\n");
+		printf("\nYour proxy looks open, you don't need Cntlm proxy.\n");
 	} else
 		printf("\nWrong credentials, unauthorized URL, or the proxy doesn't support NTLM.\n");
 
