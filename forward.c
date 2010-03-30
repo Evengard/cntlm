@@ -494,26 +494,19 @@ shortcut:
 				 *
 				 * Reply to auth request wasn't 407? Then auth is not required,
 				 * let's jump into the next loop and forward it to client
+				 * Also just forward if proxy doesn't reply with keep-alive,
+				 * because without it, NTLM auth wouldn't work anyway.
+				 *
+				 * Let's decide proxy doesn't want any auth if it returns a
+				 * non-error reply. Next rounds will be faster.
 				 */
-				if (data[1]->code != 407) {
+				if (data[1]->code != 407 || !hlist_subcmp(data[1]->headers, "Proxy-Connection", "keep-alive")) {
 					if (debug)
 						printf("Proxy auth not requested - just forwarding.\n");
-					noauth = 1;
+					if (data[1]->code < 400)
+						noauth = 1;
 					loop = 1;
 					goto shortcut;
-				}
-
-				/*
-				 * In case a broken NTLM proxy closes the connection after the initial 407
-				 * Should never happen (NTLM nego must be uninterrupted)
-				 */
-				if (!hlist_subcmp(data[1]->headers, "Proxy-Connection", "keep-alive")) {
-					if (debug)
-						printf("Proxy closing after 407? Reconnect, but will probably fail.\n");
-					close(sd);
-					sd = proxy_connect(tcreds);
-					was_cached = 0;
-					authok = 0;
 				}
 
 				/*
@@ -532,7 +525,6 @@ shortcut:
 			 * just called with a new "request".  Remember that this is a second try
 			 * (auth_tries++) and if we get here again without success, return error
 			 * to the client.
-			 *
 			 */
 			if (loop == 1 && data[1]->code == 407 && was_cached && !auth_tries) {
 				if (debug)
@@ -1058,7 +1050,7 @@ bailout:
 }
 
 void magic_auth_detect(const char *url) {
-	int i, nc, c, found = -1;
+	int i, nc, c, ign = 0, found = -1;
 	rr_data_t req, res;
 	char *tmp, *pos, *host = NULL;
 
@@ -1128,7 +1120,8 @@ void magic_auth_detect(const char *url) {
 
 		c = proxy_authenticate(nc, req, res, tcreds);
 		if (c && res->code != 407) {
-			printf("Auth not required? (HTTP code: %d)\n", res->code);
+			ign++;
+			printf("Auth not required (HTTP code: %d)\n", res->code);
 			free_rr_data(res);
 			free_rr_data(req);
 			close(nc);
@@ -1145,9 +1138,6 @@ void magic_auth_detect(const char *url) {
 				printf("OK (HTTP code: %d)\n", res->code);
 				if (found < 0) {
 					found = i;
-					/*
-					 * Following only for prod. version
-					 */
 					free_rr_data(res);
 					free_rr_data(req);
 					close(nc);
@@ -1179,8 +1169,10 @@ void magic_auth_detect(const char *url) {
 			free(tmp);
 		}
 		printf("------------------------------------------------\n");
+	} else if (ign == MAGIC_TESTS) {
+		printf("\nYour proxy is open, you don't need Cntlm proxy!\n");
 	} else
-		printf("\nWrong credentials, forbidden http:// address, no auth is required\nor the proxy is insane - try visiting our Help forum.\n");
+		printf("\nWrong credentials, unauthorized URL, or the proxy doesn't support NTLM.\n");
 
 	if (host)
 		free(host);
