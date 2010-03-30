@@ -1,4 +1,4 @@
-cntlm (0.91rc) unstable; urgency=low
+cntlm (0.91rc2) unstable; urgency=low
 
   * Ad-hoc source build, not a Debian maintained package!
 

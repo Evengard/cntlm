@@ -40,3 +40,7 @@ Name: "{group}\Tools\Cntlm Homepage"; Filename: "{app}\Cntlm Homepage.url"
 Name: "{group}\Tools\Software Updates"; Filename: "{app}\Software Updates.url"
 Name: "{group}\Tools\Support Website"; Filename: "{app}\Support Website.url"
 Name: "{group}\Tools\PDF configuration manual"; Filename: "{app}\cntlm_manual.pdf"
+
+[UninstallRun]
+Filename: "{app}\cygrunsrv.exe"; StatusMsg: "Stopping Cntlm service..."; Parameters: " --stop cntlm"
+Filename: "{app}\cygrunsrv.exe"; StatusMsg: "Removing Cntlm service..."; Parameters: " --remove cntlm"
