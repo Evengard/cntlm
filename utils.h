@@ -60,6 +60,7 @@ typedef struct hlist_s *hlist_t;
 struct hlist_s {
 	char *key;
 	char *value;
+	int islist;
 	struct hlist_s *next;
 };
 

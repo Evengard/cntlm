@@ -96,6 +96,7 @@ buildwin:
 	@echo "* This build target must be run from a Cywgin shell on Windows *"
 	@echo "* and you also need InnoSetup installed                        *"
 	@echo
+	rm -f win/cntlm_manual.pdf
 	groff -t -e -mandoc -Tps doc/cntlm.1 | ps2pdf - win/cntlm_manual.pdf
 	cat doc/cntlm.conf | unix2dos > win/cntlm.ini
 	cat COPYRIGHT LICENSE | unix2dos > win/license.txt

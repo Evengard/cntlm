@@ -427,15 +427,21 @@ auth_retry:
 
 shortcut:
 			/*
-			 * NTLM-to-Basic implementation
+			 * Modify request headers.
+			 *
+			 * Try to request keep-alive for every connection. We keep them in a pool
+			 * for future reuse.
 			 */
-			if (loop == 0 && ntlmbasic) {
+			if (loop == 0 && data[0]->req) {
+				/*
+				 * NTLM-to-Basic
+				 */
 				if (http_parse_basic(data[loop]->headers, "Proxy-Authorization", tcreds) > 0) {
 					if (debug)
 						printf("NTLM-to-basic: Credentials parsed: %s\\%s at %s\n", tcreds->domain, tcreds->user, tcreds->workstation);
-				} else {
+				} else if (ntlmbasic) {
 					if (debug)
-						printf("NTLM-to-basic: Sending new auth request.\n");
+						printf("NTLM-to-basic: Returning client auth request.\n");
 
 					tmp = gen_407_page(data[loop]->http);
 					w = write(cd, tmp, strlen(tmp));
@@ -446,21 +452,13 @@ shortcut:
 					rc = (void *)-1;
 					goto bailout;
 				}
-			}
 
-			/*
-			 * Modify request headers.
-			 *
-			 * Try to request keep-alive for every connection. We keep them in a pool
-			 * for future reuse.
-			 */
-			if (loop == 0 && data[loop]->req) {
 				/*
 				 * Header replacement implementation
 				 */
 				tl = header_list;
 				while (tl) {
-					data[loop]->headers = hlist_mod(data[loop]->headers, tl->key, tl->value, 0);
+					data[0]->headers = hlist_mod(data[0]->headers, tl->key, tl->value, 0);
 					tl = tl->next;
 				}
 
@@ -468,8 +466,14 @@ shortcut:
 				 * Also remove runaway P-A from the client (e.g. Basic from N-t-B), which might 
 				 * cause some ISAs to deny us, even if the connection is already auth'd.
 				 */
-				data[loop]->headers = hlist_mod(data[loop]->headers, "Proxy-Connection", "keep-alive", 1);
-				data[loop]->headers = hlist_del(data[loop]->headers, "Proxy-Authorization");
+				data[0]->headers = hlist_mod(data[0]->headers, "Proxy-Connection", "keep-alive", 1);
+
+				/*
+				 * Remove all Proxy-Authorization headers from client
+				 */
+				while (hlist_get(data[loop]->headers, "Proxy-Authorization")) {
+					data[loop]->headers = hlist_del(data[loop]->headers, "Proxy-Authorization");
+				}
 			}
 
 			/*
@@ -578,6 +582,21 @@ shortcut:
 				conn_alive = hlist_subcmp(data[1]->headers, "Connection", "keep-alive");
 				if (!conn_alive)
 					data[1]->headers = hlist_mod(data[1]->headers, "Connection", "close", 1);
+
+				/*
+				 * Remove all Proxy-Authenticate headers from proxy
+				 */
+				while (hlist_get(data[loop]->headers, "Proxy-Authenticate")) {
+					data[loop]->headers = hlist_del(data[loop]->headers, "Proxy-Authenticate");
+				}
+
+				/*
+				 * Are we returning 407 to the client? Substitute his request
+				 * by our BASIC translation request.
+				 */
+				if (data[1]->code == 407) {
+					data[1]->headers = hlist_mod(data[1]->headers, "Proxy-Authenticate", "basic realm=\"Cntlm for parent\"", 1);
+				}
 			}
 
 			if (plugin & PLUG_SENDHEAD) {

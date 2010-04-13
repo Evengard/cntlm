@@ -24,14 +24,28 @@
 #include <string.h>
 #include <stdlib.h>
 
+#include "globals.h"
 #include "config.h"
 #include "utils.h"
+
+static const char *globals[] = {
+	"Allow",
+	"Deny",
+	"Gateway",
+	"Listen",
+	"SOCKS5Proxy",
+	"SOCKS5User",
+	"NTLMToBasic",
+	"Tunnel" };
 
 config_t config_open(const char *fname) {
 	config_t rc;
 	FILE *fp;
 	char *buf, *tmp, *key, *value;
-	int i, j, len;
+	char section[MINIBUF_SIZE] = "global";
+	int i, j, slen, len, quote;
+
+	//printf("sizeof = %d\n", sizeof(globals) / sizeof(char *));
 
 	fp = fopen(fname, "r");
 	if (!fp)
@@ -42,6 +56,7 @@ config_t config_open(const char *fname) {
 	rc->options = NULL;
 
 	while (!feof(fp)) {
+		quote = 0;
 		tmp = fgets(buf, BUFSIZE, fp);
 		if (!tmp)
 			break;
@@ -50,34 +65,76 @@ config_t config_open(const char *fname) {
 		if (!len || feof(fp))
 			continue;
 
-		i = j = 0;
-		while (j < len && isspace(buf[j]))
-			j++;
+		/*
+		 * Find first non-empty character
+		 */
+		for (i = j = 0; j < len && isspace(buf[j]); ++j);
 
-		if (j >= len || buf[j] == '#')
+		/*
+		 * Comment?
+		 */
+		if (j >= len || buf[j] == '#' || buf[j] == ';')
 			continue;
 
-		i = j;
-		while (j < len && isalnum(buf[j]))
-			j++;
+		/*
+		 * Find end of keyword
+		 */
+		for (i = j; j < len && isalnum(buf[j]); ++j);
 
-		if (j >= len || !isspace(buf[j]))
+		/*
+		 * Malformed?
+		 */
+		if (j >= len)
 			continue;
 
+		/*
+		 * Is it a section?
+		 */
+		if (buf[j] == '[') {
+			for (++j; j < len && isspace(buf[j]); ++j);
+			for (slen = j; j < len && j-slen < MINIBUF_SIZE-1 && buf[j] != ']' && !isspace(buf[j]); ++j);
+			if (j-slen > 0) {
+				strlcpy(section, buf+slen, j-slen+1);
+			}
+			continue;
+		}
+
+		/*
+		 * It's an OK keyword
+		 */
 		key = substr(buf, i, j-i);
-		i = j;
-		while (j < len && isspace(buf[j]))
-			j++;
 
-		if (j >= len || buf[j] == '#')
+		/*
+		 * Find next non-empty character
+		 */
+		for (i = j; j < len && isspace(buf[j]); ++j);
+		if (j >= len || buf[j] == '#' || buf[j] == ';')
 			continue;
 
-		value = substr(buf, j, len-j);
-		i = strcspn(value, "#");
-		if (i != strlen(value))
-			value[i] = 0;
+		/*
+		 * Is value quoted?
+		 */
+		if (buf[j] == '"') {
+			quote = 1;
+			for (i = ++j; j < len && buf[i] != '"'; ++i);
+			if (i >= len)
+				continue;
+		} else
+			i = len;
 
-		trimr(value);
+		/*
+		 * Get value as quoted or until EOL/comment
+		 */
+		value = substr(buf, j, i-j);
+		if (!quote) {
+			i = strcspn(value, "#");
+			if (i != strlen(value))
+				value[i] = 0;
+			trimr(value);
+		}
+
+		if (debug)
+			printf("section: %s, %s = '%s'\n", section, key, value);
 		rc->options = hlist_add(rc->options, key, value, HLIST_NOALLOC, HLIST_NOALLOC);
 	}
 

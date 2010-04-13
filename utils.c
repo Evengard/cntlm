@@ -62,8 +62,8 @@ void croak(const char *msg, int console) {
 /*
  * Add a new item to a list. Every plist_t variable must be 
  * initialized to NULL (or pass NULL for "list" when adding
- * the first item). This is required to strip down the 
- * complexity to minimum and not to need any plist_new func.
+ * the first item). This is for simplicity's sake (we don't
+ * need any plist_new).
  *
  * This list type allows to store an arbitrary pointer
  * associating it with the key.
@@ -246,16 +246,15 @@ plist_t plist_free(plist_t list) {
 
 /*
  * The same as plist_add. Here we have two other arguments.
- * They are treated as booleans - true means to duplicate a
- * key/value, false means to store the pointer directly.
+ * They are boolean flags - HLIST_ALLOC means to duplicate a
+ * key/value, HLIST_NOALLOC means to store the pointer directly.
  *
  * Caller decides this on a by-call basis. Part of the manipulation
  * routines is a "free". That method always deallocates both the
  * key and the value. So for static or temporary keys/values,
- * the caller instructs us to duplicate the necessary amount 
+ * the caller can instruct us to duplicate the necessary amount 
  * of heap. This mechanism is used to minimize memory-related
- * bugs throughout the code and tens of free's in the main
- * module.
+ * bugs throughout the code and tons of free's.
  */
 hlist_t hlist_add(hlist_t list, char *key, char *value, hlist_add_t allockey, hlist_add_t allocvalue) {
 	hlist_t tmp, t = list;
@@ -267,6 +266,7 @@ hlist_t hlist_add(hlist_t list, char *key, char *value, hlist_add_t allockey, hl
 	tmp->key = (allockey == HLIST_ALLOC ? strdup(key) : key);
 	tmp->value = (allocvalue == HLIST_ALLOC ? strdup(value) : value);
 	tmp->next = NULL;
+	tmp->islist = 0;
 
 	if (list == NULL)
 		return tmp;
@@ -632,9 +632,7 @@ void free_rr_data(rr_data_t data) {
 char *trimr(char *buf) {
 	int i;
 
-	i = strlen(buf)-1;
-	while (i >= 0 && (buf[i] == '\r' || buf[i] == '\n' || buf[i] == '\t' || buf[i] == ' '))
-		i--;
+	for (i = strlen(buf)-1; i >= 0 && isspace(buf[i]); --i);
 	buf[i+1] = 0;
 
 	return buf;

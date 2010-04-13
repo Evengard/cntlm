@@ -22,6 +22,7 @@
 #include <sys/types.h>
 #include <sys/select.h>
 #include <sys/time.h>
+#include <ctype.h>
 #include <string.h>
 #include <strings.h>
 #include <stdio.h>
@@ -418,9 +419,9 @@ int chunked_data_send(int dst, int src) {
 		csize = strtol(buf, &err, 16);
 
 		if (debug)
-			printf("strtol: %d (%x) - err: %s\n", csize, csize, err);
+			printf("strtol: %d (%x)\n", csize, csize);
 
-		if (*err != '\r' && *err != '\n' && *err != ';' && *err != ' ' && *err != '\t') {
+		if (!isspace(*err) && *err != ';') {
 			if (debug)
 				printf("chunked_data_send: aborting, chunk size format error\n");
 			free(buf);
@@ -446,7 +447,7 @@ int chunked_data_send(int dst, int src) {
 	do {
 		i = so_recvln(src, &buf, &bsize);
 		if (debug)
-			printf("Trailer header(i=%d): %s\n", i, buf);
+			printf("Trailer header (i=%d): %s\n", i, buf);
 		if (i > 0)
 			w = write(dst, buf, strlen(buf));
 	} while (i > 0 && buf[0] != '\r' && buf[0] != '\n');
