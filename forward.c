@@ -504,7 +504,7 @@ shortcut:
 				 * Let's decide proxy doesn't want any auth if it returns a
 				 * non-error reply. Next rounds will be faster.
 				 */
-				if (data[1]->code != 407 || !hlist_subcmp(data[1]->headers, "Proxy-Connection", "keep-alive")) {
+				if (data[1]->code != 407) {		// || !hlist_subcmp(data[1]->headers, "Proxy-Connection", "keep-alive")) {
 					if (debug)
 						printf("Proxy auth not requested - just forwarding.\n");
 					if (data[1]->code < 400)
