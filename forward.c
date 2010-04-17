@@ -275,27 +275,31 @@ bailout:
  * request is NOT freed
  */
 rr_data_t forward_request(void *thread_data, rr_data_t request) {
-	int i, w, loop, plugin;
+	int i, w, loop, plugin, retry = 0;
 	int *rsocket[2], *wsocket[2];
 	rr_data_t data[2], rc = NULL;
 	hlist_t tl;
 	char *tmp;
-
 	struct auth_s *tcreds = NULL;						/* Per-thread credentials */
 	char *hostname = NULL;
-	int proxy_alive = 0;
-	int conn_alive = 0;
-	int authok = 0;
-	int noauth = 0;
-	int auth_tries = 0;
-	int was_cached = 0;
-	int sd = 0;
+	int proxy_alive;
+	int conn_alive;
+	int authok;
+	int noauth;
+	int was_cached;
 
+	int sd;
 	int cd = ((struct thread_arg_s *)thread_data)->fd;
 	struct sockaddr_in caddr = ((struct thread_arg_s *)thread_data)->addr;
 
+beginning:
+	sd = was_cached = noauth = authok = conn_alive = proxy_alive = 0;
+
+	if (tcreds)
+		free(tcreds);
+
 	if (debug) {
-		printf("Thread processing...\n");
+		printf("Thread processing%s...\n", retry ? " (retry)" : "");
 		plist_dump(connection_list);
 	}
 
@@ -332,7 +336,7 @@ rr_data_t forward_request(void *thread_data, rr_data_t request) {
 	 * Each thread only serves req's for one hostname. If hostname changes,
 	 * we return request to our caller for a new direct/forward decision.
 	 */
-	if (request->hostname) {
+	if (!hostname && request->hostname) {
 		hostname = strdup(request->hostname);
 	}
 
@@ -348,25 +352,16 @@ rr_data_t forward_request(void *thread_data, rr_data_t request) {
 		 *   - read proxy response
 		 *   - forward it to the client with HTTP body, if present
 		 *
-		 * There are two goto's:
-		 *   - auth_retry: jump here from second iter. of inner loop, when we detect
-		 *     that auth failed. "request" is set to the original request and by jumping
-		 *     here, we effectively re-try the attempt. This is just in case we're using
-		 *     a cached connection - it must have timed out, so we reconnect and try
-		 *     again.
-		 *   - shortcut: jump there from first iter. of inner loop, when we detect
+		 * There two goto's:
+		 *   - beginning: jump here to retry request (when cached connection timed out
+		 *     or we thought proxy was notauth, but got 407)
+		 *   - shortcut: jump here from 1st iter. of inner loop, when we detect
 		 *     that auth isn't required by proxy. We do loop++, make the jump and
 		 *     the reply to our auth attempt (containing valid response) is sent to
-		 *     client directly without us making the request a second time.
-		 *
-		 *  Both goto's can be done via "break", but this is more obvious hopefully.
+		 *     client directly without us making a request a second time.
 		 */
-
-		auth_tries = 0;
-
-auth_retry:
 		if (request) {
-			if (auth_tries)
+			if (retry)
 				data[0] = request;				// Got from inside the loop = retry (must free ourselves)
 			else
 				data[0] = dup_rr_data(request);			// Got from caller (make a dup, caller will free)
@@ -379,6 +374,7 @@ auth_retry:
 		rsocket[0] = wsocket[1] = &cd;
 		rsocket[1] = wsocket[0] = &sd;
 
+		retry = 0;
 		proxy_alive = 0;
 		conn_alive = 0;
 
@@ -410,19 +406,19 @@ auth_retry:
 					&& strcasecmp(hostname, data[0]->hostname)) {
 				if (debug)
 					printf("\n******* F RETURN: %s *******\n", data[0]->url);
-
 				if (authok)
 					proxy_alive = 1;
+
 				rc = dup_rr_data(data[0]);
 				free_rr_data(data[0]);
 				free_rr_data(data[1]);
 				goto bailout;
 			}
 
-			if (debug && !auth_tries)
+			if (debug)
 				hlist_dump(data[loop]->headers);
 
-			if (loop == 0 && data[0]->req && !auth_tries)
+			if (loop == 0 && data[0]->req)
 				syslog(LOG_DEBUG, "%s %s %s", inet_ntoa(caddr.sin_addr), data[0]->method, data[0]->url);
 
 shortcut:
@@ -478,7 +474,7 @@ shortcut:
 
 			/*
 			 * Got request from client and connection is not yet authenticated?
-			 * This happens only for non-cached connections!
+			 * This can happen only with non-cached connections.
 			 */
 			if (loop == 0 && data[0]->req && !authok && !noauth) {
 				if (!proxy_authenticate(*wsocket[0], data[0], data[1], tcreds)) {
@@ -522,35 +518,17 @@ shortcut:
 
 			/*
 			 * Is final reply from proxy still 407 denied? If this is a chached
-			 * connection, make a new connection and try to auth one more time.
-			 * It must have timed out (because it was auth'd before).
-			 *
-			 * Let's jump to auth_retry: and pass the original request as if we were
-			 * just called with a new "request".  Remember that this is a second try
-			 * (auth_tries++) and if we get here again without success, return error
-			 * to the client.
+			 * connection or we thougth proxy was noauth (so we didn't auth), make a new
+			 * connect and try to auth.
 			 */
-			if (loop == 1 && data[1]->code == 407 && was_cached && !auth_tries) {
+			if (loop == 1 && data[1]->code == 407 && (was_cached || noauth)) {
 				if (debug)
-					printf("\nCached connection timed out - retrying.\n");
+					printf("\nFinal reply is 407 - retrying (cached=%d, noauth=%d).\n", was_cached, noauth);
 
-				close(sd);
-				sd = proxy_connect(tcreds);
-				was_cached = 0;
-				authok = 0;
-				if (sd <= 0) {
-					free_rr_data(data[0]);
-					free_rr_data(data[1]);
-					rc = (void *)-1;
-					/* error page */
-					goto bailout;
-				}
-
-				request = dup_rr_data(data[0]);
-				auth_tries++;
-				free_rr_data(data[0]);
+				retry = 1;
+				request = data[0];
 				free_rr_data(data[1]);
-				goto auth_retry;
+				goto beginning;
 			}
 
 			/*
@@ -670,7 +648,6 @@ shortcut:
 	} while (conn_alive && proxy_alive && !so_closed(sd) && !so_closed(cd) && !serialize);
 
 bailout:
-
 	if (hostname)
 		free(hostname);
 
