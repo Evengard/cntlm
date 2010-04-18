@@ -295,9 +295,6 @@ rr_data_t forward_request(void *thread_data, rr_data_t request) {
 beginning:
 	sd = was_cached = noauth = authok = conn_alive = proxy_alive = 0;
 
-	if (tcreds)
-		free(tcreds);
-
 	if (debug) {
 		printf("Thread processing%s...\n", retry ? " (retry)" : "");
 		plist_dump(connection_list);
@@ -524,10 +521,13 @@ shortcut:
 			if (loop == 1 && data[1]->code == 407 && (was_cached || noauth)) {
 				if (debug)
 					printf("\nFinal reply is 407 - retrying (cached=%d, noauth=%d).\n", was_cached, noauth);
+				if (tcreds)
+					free(tcreds);
 
 				retry = 1;
 				request = data[0];
 				free_rr_data(data[1]);
+				close(sd);
 				goto beginning;
 			}
 
@@ -573,7 +573,7 @@ shortcut:
 				 * by our BASIC translation request.
 				 */
 				if (data[1]->code == 407) {
-					data[1]->headers = hlist_mod(data[1]->headers, "Proxy-Authenticate", "basic realm=\"Cntlm for parent\"", 1);
+					data[1]->headers = hlist_mod(data[1]->headers, "Proxy-Authenticate", "Basic realm=\"Cntlm for parent\"", 1);
 				}
 			}
 
