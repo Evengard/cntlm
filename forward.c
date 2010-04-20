@@ -134,8 +134,6 @@ int proxy_authenticate(int sd, rr_data_t request, rr_data_t response, struct aut
 	auth = dup_rr_data(request);
 	auth->headers = hlist_mod(auth->headers, "Proxy-Authorization", buf, 1);
 
-	//tmp = hlist_get(auth->headers, "Content-Length");
-	//if ((tmp && atoi(tmp) > 0) || hlist_get(auth->headers, "Transfer-Encoding")) {
 	if (http_has_body(request, response) != 0) {
 		/*
 		 * There's a body - make this request just a probe. Do not send any body. If no auth
@@ -156,6 +154,15 @@ int proxy_authenticate(int sd, rr_data_t request, rr_data_t response, struct aut
 			printf("Will send just a probe request.\n");
 		pretend407 = 1;
 	}
+
+	/*
+	 * There are broken ISA's that don't accept HEAD for auth request!?
+	 */
+	if (HEAD(auth)) {
+		free(auth->method);
+		auth->method = strdup("GET");
+	}
+
 	auth->headers = hlist_mod(auth->headers, "Content-Length", "0", 1);
 	auth->headers = hlist_del(auth->headers, "Transfer-Encoding");
 
@@ -199,6 +206,7 @@ int proxy_authenticate(int sd, rr_data_t request, rr_data_t response, struct aut
 			if (debug)
 				printf("Got %d too many bytes.\n", len);
 			data_drop(sd, len);
+			// FIXME: if below fails, we should forward what we drop here...
 		}
 
 		tmp = hlist_get(auth->headers, "Proxy-Authenticate");
