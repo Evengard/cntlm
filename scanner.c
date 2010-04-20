@@ -202,7 +202,7 @@ int scanner_hook(rr_data_t request, rr_data_t response, struct auth_s *credentia
 				free(tmp);
 
 				nc = proxy_connect(credentials);
-				c = proxy_authenticate(nc, newreq, newres, credentials);
+				c = proxy_authenticate(&nc, newreq, newres, credentials);
 				if (c && newres->code == 407) {
 					if (debug)
 						printf("scanner_hook: Authentication OK, getting the file...\n");

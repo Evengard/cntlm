@@ -24,7 +24,7 @@
 #include "auth.h"
 
 extern int proxy_connect(struct auth_s *credentials);
-extern int proxy_authenticate(int sd, rr_data_t request, rr_data_t response, struct auth_s *creds);
+extern int proxy_authenticate(int *sd, rr_data_t request, rr_data_t response, struct auth_s *creds);
 extern void *tunnel_thread(void *data);
 extern void *socks5_thread(void *data);
 extern rr_data_t forward_request(void *cdata, rr_data_t request);

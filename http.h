@@ -38,11 +38,9 @@ extern char *get_http_header_value(const char *src);
 extern int http_parse_basic(hlist_t headers, const char *header, struct auth_s *tcreds);
 extern int headers_recv(int fd, rr_data_t data);
 extern int headers_send(int fd, rr_data_t data);
-extern int data_drop(int src, int size);
-extern int data_send(int dst, int src, int size);
-extern int chunked_data_send(int dst, int src);
 extern int tunnel(int cd, int sd);
 extern int http_has_body(rr_data_t request, rr_data_t response);
 extern int http_body_send(int writefd, int readfd, rr_data_t request, rr_data_t response);
+extern int http_body_drop(int fd, rr_data_t response);
 
 #endif /* _HTTP_H */

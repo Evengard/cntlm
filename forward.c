@@ -116,7 +116,7 @@ int proxy_connect(struct auth_s *credentials) {
  * Caller must init & free "request" and "response" (if supplied)
  *
  */
-int proxy_authenticate(int sd, rr_data_t request, rr_data_t response, struct auth_s *credentials) {
+int proxy_authenticate(int *sd, rr_data_t request, rr_data_t response, struct auth_s *credentials) {
 	char *tmp, *buf, *challenge;
 	rr_data_t auth;
 	int len;
@@ -134,7 +134,7 @@ int proxy_authenticate(int sd, rr_data_t request, rr_data_t response, struct aut
 	auth = dup_rr_data(request);
 	auth->headers = hlist_mod(auth->headers, "Proxy-Authorization", buf, 1);
 
-	if (http_has_body(request, response) != 0) {
+	if (HEAD(request) || http_has_body(request, response) != 0) {
 		/*
 		 * There's a body - make this request just a probe. Do not send any body. If no auth
 		 * is required, we let our caller send the reply directly to the client to avoid
@@ -149,6 +149,8 @@ int proxy_authenticate(int sd, rr_data_t request, rr_data_t response, struct aut
 		 * in this situation. Without it, caller wouldn't make it, sending the client a
 		 * reply to our PROBE, not the real request.
 		 *
+		 * The same for HEAD requests - at least one ISA doesn't allow making auth
+		 * request using HEAD!!
 		 */
 		if (debug)
 			printf("Will send just a probe request.\n");
@@ -156,9 +158,9 @@ int proxy_authenticate(int sd, rr_data_t request, rr_data_t response, struct aut
 	}
 
 	/*
-	 * There are broken ISA's that don't accept HEAD for auth request!?
+	 * For broken ISA's that don't accept HEAD in auth request
 	 */
-	if (HEAD(auth)) {
+	if (HEAD(request)) {
 		free(auth->method);
 		auth->method = strdup("GET");
 	}
@@ -171,7 +173,7 @@ int proxy_authenticate(int sd, rr_data_t request, rr_data_t response, struct aut
 		hlist_dump(auth->headers);
 	}
 
-	if (!headers_send(sd, auth)) {
+	if (!headers_send(*sd, auth)) {
 		goto bailout;
 	}
 
@@ -188,7 +190,7 @@ int proxy_authenticate(int sd, rr_data_t request, rr_data_t response, struct aut
 	}
 
 	reset_rr_data(auth);
-	if (!headers_recv(sd, auth)) {
+	if (!headers_recv(*sd, auth)) {
 		goto bailout;
 	}
 
@@ -201,14 +203,10 @@ int proxy_authenticate(int sd, rr_data_t request, rr_data_t response, struct aut
 	 * Auth required?
 	 */
 	if (auth->code == 407) {
-		tmp = hlist_get(auth->headers, "Content-Length");
-		if (tmp && (len = atoi(tmp))) {
-			if (debug)
-				printf("Got %d too many bytes.\n", len);
-			data_drop(sd, len);
-			// FIXME: if below fails, we should forward what we drop here...
+		if (!http_body_drop(*sd, auth)) {				// FIXME: if below fails, we should forward what we drop here...
+			rc = 0;
+			goto bailout;
 		}
-
 		tmp = hlist_get(auth->headers, "Proxy-Authenticate");
 		if (tmp) {
 			challenge = new(strlen(tmp) + 5 + 1);
@@ -237,12 +235,28 @@ int proxy_authenticate(int sd, rr_data_t request, rr_data_t response, struct aut
 		}
 	} else if (pretend407) {
 		if (debug)
-			printf("Client has a body - forcing second request.\n");
+			printf("Client %s - forcing second request.\n", HEAD(request) ? "sent HEAD" : "has a body");
 		if (response)
 			response->code = 407;				// See explanation above
+		if (!http_body_drop(*sd, auth)) {
+			rc = 0;
+			goto bailout;
+		}
 	}
 
-	// FIXME: co kdyz fakt zavre po 407? jen 0 a 1?? 
+	/*
+	 * Did proxy closed connection? It's our fault, reconnect for the caller.
+	 */
+	if (so_closed(*sd)) {
+		if (debug)
+			printf("proxy_authenticate: proxy closed on us, reconnect.\n");
+		*sd = proxy_connect(credentials);
+		if (*sd < 0) {
+			rc = 0;
+			goto bailout;
+		}
+	}
+
 bailout:
 	if (!response)
 		free_rr_data(auth);
@@ -302,6 +316,9 @@ rr_data_t forward_request(void *thread_data, rr_data_t request) {
 
 beginning:
 	sd = was_cached = noauth = authok = conn_alive = proxy_alive = 0;
+
+	rsocket[0] = wsocket[1] = &cd;
+	rsocket[1] = wsocket[0] = &sd;
 
 	if (debug) {
 		printf("Thread processing%s...\n", retry ? " (retry)" : "");
@@ -375,9 +392,6 @@ beginning:
 			data[0] = new_rr_data();
 		}
 		data[1] = new_rr_data();
-
-		rsocket[0] = wsocket[1] = &cd;
-		rsocket[1] = wsocket[0] = &sd;
 
 		retry = 0;
 		proxy_alive = 0;
@@ -482,7 +496,7 @@ shortcut:
 			 * This can happen only with non-cached connections.
 			 */
 			if (loop == 0 && data[0]->req && !authok && !noauth) {
-				if (!proxy_authenticate(*wsocket[0], data[0], data[1], tcreds)) {
+				if (!proxy_authenticate(wsocket[0], data[0], data[1], tcreds)) {
 					if (debug)
 						printf("Proxy auth connection error.\n");
 					free_rr_data(data[0]);
@@ -713,7 +727,7 @@ int prepare_http_connect(int sd, struct auth_s *credentials, const char *thost) 
 	if (debug)
 		printf("Starting authentication...\n");
 
-	if (proxy_authenticate(sd, data1, data2, credentials)) {
+	if (proxy_authenticate(&sd, data1, data2, credentials)) {
 		/*
 		 * Let's try final auth step, possibly changing data2->code
 		 */
@@ -1122,7 +1136,7 @@ void magic_auth_detect(const char *url) {
 			return;
 		}
 
-		c = proxy_authenticate(nc, req, res, tcreds);
+		c = proxy_authenticate(&nc, req, res, tcreds);
 		if (c && res->code != 407) {
 			ign++;
 			printf("Auth not required (HTTP code: %d)\n", res->code);

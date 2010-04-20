@@ -72,11 +72,10 @@ int www_authenticate(int sd, rr_data_t request, rr_data_t response, struct auth_
 	auth->headers = hlist_mod(auth->headers, "Content-Length", "0", 1);
 	auth->headers = hlist_del(auth->headers, "Transfer-Encoding");
 
-	if ((tmp = hlist_get(response->headers, "Content-Length")) && (len = atoi(tmp))) {
-		if (debug)
-			printf("Got %d bytes of error page.\n", len);
-		data_drop(sd, len);
-	}
+	/*
+	 * Drop whatever error page server returned
+	 */
+	http_body_drop(sd, response);
 
 	if (debug) {
 		printf("\nSending WWW auth request...\n");
@@ -105,13 +104,7 @@ int www_authenticate(int sd, rr_data_t request, rr_data_t response, struct auth_
 	 * Auth required?
 	 */
 	if (auth->code == 401) {
-		tmp = hlist_get(auth->headers, "Content-Length");
-		if (tmp && (len = atoi(tmp))) {
-			if (debug)
-				printf("Got %d too many bytes.\n", len);
-			data_drop(sd, len);
-		}
-
+		http_body_drop(sd, auth);
 		tmp = hlist_get(auth->headers, "WWW-Authenticate");
 		if (tmp && strlen(tmp) > 6 + 8) {
 			challenge = new(strlen(tmp) + 5 + 1);

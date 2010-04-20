@@ -311,35 +311,9 @@ int headers_send(int fd, rr_data_t data) {
 }
 
 /*
- * Connection cleanup - discard "size" of incomming data.
- */
-int data_drop(int src, int size) {
-	char *buf;
-	int i, block, c = 0;
-
-	if (!size)
-		return 1;
-
-	buf = new(BLOCK);
-	do {
-		block = (size-c > BLOCK ? BLOCK : size-c);
-		i = read(src, buf, block);
-		c += i;
-	} while (i > 0 && c < size);
-
-	free(buf);
-	if (i <= 0) {
-		if (debug)
-			printf("data_drop: fd %d warning %d (connection closed)\n", src, i);
-		return 0;
-	}
-
-	return 1;
-}
-
-/*
  * Forward "size" of data from "src" to "dst". If size == -1 then keep
  * forwarding until src reaches EOF.
+ * If dst == -1, data is discarded.
  */
 int data_send(int dst, int src, int size) {
 	char *buf;
@@ -359,17 +333,16 @@ int data_send(int dst, int src, int size) {
 		if (i > 0)
 			c += i;
 
-		if (debug)
+		if (dst >= 0 && debug)
 			printf("data_send: read %d of %d / %d of %d (errno = %s)\n", i, block, c, size, i < 0 ? strerror(errno) : "ok");
 
-		if (so_closed(dst)) {
+		if (dst >= 0 && so_closed(dst)) {
 			i = -999;
 			break;
 		}
 
-		if (i > 0) {
+		if (dst >= 0 && i > 0) {
 			j = write(dst, buf, i);
-
 			if (debug)
 				printf("data_send: wrote %d of %d\n", j, i);
 		}
@@ -392,6 +365,7 @@ int data_send(int dst, int src, int size) {
 
 /*
  * Forward chunked HTTP body from "src" descriptor to "dst".
+ * If dst == -1, data is discarded.
  */
 int chunked_data_send(int dst, int src) {
 	char *buf;
@@ -413,13 +387,7 @@ int chunked_data_send(int dst, int src) {
 			return 0;
 		}
 
-		if (debug)
-			printf("Line: %s", buf);
-
 		csize = strtol(buf, &err, 16);
-
-		if (debug)
-			printf("strtol: %d (%x)\n", csize, csize);
 
 		if (!isspace(*err) && *err != ';') {
 			if (debug)
@@ -428,10 +396,9 @@ int chunked_data_send(int dst, int src) {
 			return 0;
 		}
 
-		if (debug && !csize)
-			printf("last chunk: %d\n", csize);
+		if (dst >= 0)
+			i = write(dst, buf, strlen(buf));
 
-		i = write(dst, buf, strlen(buf));
 		if (csize)
 			if (!data_send(dst, src, csize+2)) {
 				if (debug)
@@ -440,15 +407,12 @@ int chunked_data_send(int dst, int src) {
 				free(buf);
 				return 0;
 			}
-
 	} while (csize != 0);
 
 	/* Take care of possible trailer */
 	do {
 		i = so_recvln(src, &buf, &bsize);
-		if (debug)
-			printf("Trailer header (i=%d): %s\n", i, buf);
-		if (i > 0)
+		if (dst >= 0 && i > 0)
 			w = write(dst, buf, strlen(buf));
 	} while (i > 0 && buf[0] != '\r' && buf[0] != '\n');
 
@@ -504,6 +468,7 @@ int tunnel(int cd, int sd) {
 
 /*
  * Return 0 if no body, -1 if body until EOF, number if size known
+ * One of request/response can be NULL
  */
 int http_has_body(rr_data_t request, rr_data_t response) {
 	rr_data_t current;
@@ -514,7 +479,7 @@ int http_has_body(rr_data_t request, rr_data_t response) {
 	 * Are we checking a complete req+res conversation or just the
 	 * request body?
 	 */
-	current = (response->empty ? request : response);
+	current = (!response || response->empty ? request : response);
 
 	/*
 	 * HTTP body length decisions. There MUST NOT be any body from 
@@ -570,10 +535,10 @@ int http_body_send(int writefd, int readfd, rr_data_t request, rr_data_t respons
 	 */
 	current = (response->empty ? request : response);
 
-	bodylen = http_has_body(request, response);
 	/*
 	 * Ok, so do we expect any body?
 	 */
+	bodylen = http_has_body(request, response);
 	if (bodylen) {
 		/*
 		 * Check for supported T-E.
@@ -595,6 +560,29 @@ int http_body_send(int writefd, int readfd, rr_data_t request, rr_data_t respons
 		}
 	} else if (debug)
 		printf("No body.\n");
+
+	return rc;
+}
+
+/*
+ * Connection cleanup - C-L or chunked body
+ * Return 0 if connection closed or EOF, 1 if OK to continue
+ */
+int http_body_drop(int fd, rr_data_t response) {
+	int bodylen, rc = 1;
+
+	bodylen = http_has_body(NULL, response);
+	if (bodylen) {
+		if (hlist_subcmp(response->headers, "Transfer-Encoding", "chunked")) {
+			if (debug)
+				printf("Discarding chunked body.\n");
+			rc = chunked_data_send(-1, fd);
+		} else {
+			if (debug)
+				printf("Discarding %d bytes.\n", bodylen);
+			rc = data_send(-1, fd, bodylen);
+		}
+	}
 
 	return rc;
 }
