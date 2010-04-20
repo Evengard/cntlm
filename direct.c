@@ -183,7 +183,7 @@ rr_data_t direct_request(void *cdata, rr_data_t request) {
 	struct sockaddr_in caddr = ((struct thread_arg_s *)cdata)->addr;
 
 	if (debug)
-		printf("Thread processing...\n");
+		printf("Direct thread processing...\n");
 
 	sd = host_connect(request->hostname, request->port);
 	if (sd < 0) {

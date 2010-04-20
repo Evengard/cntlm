@@ -249,7 +249,7 @@ int proxy_authenticate(int *sd, rr_data_t request, rr_data_t response, struct au
 	 */
 	if (so_closed(*sd)) {
 		if (debug)
-			printf("proxy_authenticate: proxy closed on us, reconnect.\n");
+			printf("Proxy closed on us, reconnect.\n");
 		*sd = proxy_connect(credentials);
 		if (*sd < 0) {
 			rc = 0;

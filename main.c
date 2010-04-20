@@ -296,7 +296,6 @@ void *proxy_thread(void *thread_data) {
 	do {
 		ret = NULL;
 		keep_alive = 0;
-		direct = 0;
 
 		if (debug) {
 			printf("\n******* Round 1 C: %d *******\n", cd);
@@ -318,6 +317,7 @@ void *proxy_thread(void *thread_data) {
 				request = ret;
 			}
 
+			direct = 0;
 			list = noproxy_list;
 			while (list) {
 				if (list->aux && strlen(list->aux)
