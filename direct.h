@@ -22,6 +22,7 @@
 
 #include "utils.h"
 
+extern int host_connect(const char *hostname, int port);
 extern rr_data_t direct_request(void *cdata, rr_data_t request);
 extern void direct_tunnel(void *thread_data);
 

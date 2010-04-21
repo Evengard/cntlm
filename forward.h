@@ -25,7 +25,7 @@
 
 extern int proxy_connect(struct auth_s *credentials);
 extern int proxy_authenticate(int *sd, rr_data_t request, rr_data_t response, struct auth_s *creds);
-extern void *socks5_thread(void *data);
+extern int prepare_http_connect(int sd, struct auth_s *credentials, const char *thost);
 extern rr_data_t forward_request(void *cdata, rr_data_t request);
 extern void forward_tunnel(void *thread_data);
 extern void magic_auth_detect(const char *url);
