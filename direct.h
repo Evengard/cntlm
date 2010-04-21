@@ -20,6 +20,9 @@
 #ifndef _DIRECT_H
 #define _DIRECT_H
 
+#include "utils.h"
+
 extern rr_data_t direct_request(void *cdata, rr_data_t request);
+extern void direct_tunnel(void *thread_data);
 
 #endif /* _DIRECT_H */

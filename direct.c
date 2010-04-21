@@ -75,16 +75,16 @@ int www_authenticate(int sd, rr_data_t request, rr_data_t response, struct auth_
 	/*
 	 * Drop whatever error page server returned
 	 */
-	http_body_drop(sd, response);
+	if (!http_body_drop(sd, response))
+		goto bailout;
 
 	if (debug) {
 		printf("\nSending WWW auth request...\n");
 		hlist_dump(auth->headers);
 	}
 
-	if (!headers_send(sd, auth)) {
+	if (!headers_send(sd, auth))
 		goto bailout;
-	}
 
 	if (debug)
 		printf("\nReading WWW auth response...\n");
@@ -104,7 +104,9 @@ int www_authenticate(int sd, rr_data_t request, rr_data_t response, struct auth_
 	 * Auth required?
 	 */
 	if (auth->code == 401) {
-		http_body_drop(sd, auth);
+		if (!http_body_drop(sd, auth))
+			goto bailout;
+
 		tmp = hlist_get(auth->headers, "WWW-Authenticate");
 		if (tmp && strlen(tmp) > 6 + 8) {
 			challenge = new(strlen(tmp) + 5 + 1);
@@ -411,3 +413,34 @@ bailout:
 
 	return rc;
 }
+
+void direct_tunnel(void *thread_data) {
+	int sd, port = 0;
+	char *pos;
+
+	int cd = ((struct thread_arg_s *)thread_data)->fd;
+	char *thost = ((struct thread_arg_s *)thread_data)->target;
+	struct sockaddr_in caddr = ((struct thread_arg_s *)thread_data)->addr;
+
+	if ((pos = strchr(thost, ':')) != NULL) {
+		*pos = 0;
+		port = atoi(++pos);
+	}
+
+	sd = host_connect(thost, port);
+	if (sd <= 0)
+		goto bailout;
+
+	syslog(LOG_DEBUG, "%s FORWARD %s", inet_ntoa(caddr.sin_addr), thost);
+	if (debug)
+		printf("Portforwarding to %s for client %d...\n", thost, cd);
+
+	tunnel(cd, sd);
+
+bailout:
+	close(sd);
+	close(cd);
+
+	return;
+}
+

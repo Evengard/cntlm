@@ -250,6 +250,7 @@ int proxy_authenticate(int *sd, rr_data_t request, rr_data_t response, struct au
 	if (so_closed(*sd)) {
 		if (debug)
 			printf("Proxy closed on us, reconnect.\n");
+		close(*sd);
 		*sd = proxy_connect(credentials);
 		if (*sd < 0) {
 			rc = 0;
@@ -772,54 +773,33 @@ bailout:
 	return rc;
 }
 
-/*
- * Another thread-create function. This one does the tunneling/forwarding
- * for the -L parameter. We receive malloced structure (pthreads pass only
- * one pointer arg) containing accepted client socket and a string with
- * remote server:port address.
- *
- * The -L is obviously better tunneling solution than using extra tools like
- * "corkscrew" which after all require us for authentication and tunneling
- *  their HTTP CONNECT in the end.
- */
-void *tunnel_thread(void *thread_data) {
-	int sd;
+void forward_tunnel(void *thread_data) {
 	struct auth_s *tcreds;
+	int sd;
 
 	int cd = ((struct thread_arg_s *)thread_data)->fd;
 	char *thost = ((struct thread_arg_s *)thread_data)->target;
 	struct sockaddr_in caddr = ((struct thread_arg_s *)thread_data)->addr;
-	free(thread_data);
 
 	tcreds = new_auth();
 	sd = proxy_connect(tcreds);
 
-	if (sd <= 0) {
-		close(cd);
-		free(tcreds);
-		return NULL;
-	}
+	if (sd <= 0)
+		goto bailout;
 
+	syslog(LOG_DEBUG, "%s TUNNEL %s", inet_ntoa(caddr.sin_addr), thost);
 	if (debug)
 		printf("Tunneling to %s for client %d...\n", thost, cd);
-	syslog(LOG_DEBUG, "%s TUNNEL %s", inet_ntoa(caddr.sin_addr), thost);
 
-	if (prepare_http_connect(sd, tcreds, thost)) {
+	if (prepare_http_connect(sd, tcreds, thost))
 		tunnel(cd, sd);
-	}
 
+bailout:
 	close(sd);
 	close(cd);
 	free(tcreds);
 
-	/*
-	 * Add ourself to the "threads to join" list.
-	 */
-	pthread_mutex_lock(&threads_mtx);
-	threads_list = plist_add(threads_list, (unsigned long)pthread_self(), NULL);
-	pthread_mutex_unlock(&threads_mtx);
-
-	return NULL;
+	return;
 }
 
 void *socks5_thread(void *thread_data) {

@@ -231,7 +231,7 @@ void tunnel_add(plist_t *list, char *spec, int gateway) {
 	pos = 0;
 	if (count == 4) {
 		if (!so_resolv(&source, field[pos])) {
-                        syslog(LOG_ERR, "Cannot resolve tunel listen address: %s\n", field[pos]);
+                        syslog(LOG_ERR, "Cannot resolve tunel bind address: %s\n", field[pos]);
                         myexit(1);
                 }
 		pos++;
@@ -286,10 +286,31 @@ plist_t noproxy_add(plist_t list, char *spec) {
 	return list;
 }
 
+int noproxy_match(const char *addr) {
+	plist_t list;
+
+	list = noproxy_list;
+	while (list) {
+		if (list->aux && strlen(list->aux)
+				&& fnmatch(list->aux, addr, 0) == 0) {
+			if (debug)
+				printf("MATCH: %s (%s)\n", addr, (char *)list->aux);
+			return 1;
+		} else if (debug)
+			printf("   NO: %s (%s)\n", addr, (char *)list->aux);
+
+		list = list->next;
+	}
+
+	return 0;
+}
+
+/*
+ * Proxy thread - decide between direct and forward based on NoProxy
+ */
 void *proxy_thread(void *thread_data) {
 	rr_data_t request, ret;
-	plist_t list;
-	int direct, keep_alive;				/* Proxy-Connection */
+	int keep_alive;				/* Proxy-Connection */
 
 	int cd = ((struct thread_arg_s *)thread_data)->fd;
 
@@ -317,22 +338,9 @@ void *proxy_thread(void *thread_data) {
 				request = ret;
 			}
 
-			direct = 0;
-			list = noproxy_list;
-			while (list) {
-				if (list->aux && strlen(list->aux)
-						&& fnmatch(list->aux, request->hostname, 0) == 0) {
-					if (debug)
-						printf("MATCH: %s (%s)\n", request->hostname, (char *)list->aux);
-					direct = 1;
-					break;
-				}
-				list = list->next;
-			}
-
 			keep_alive = hlist_subcmp(request->headers, "Proxy-Connection", "keep-alive");
 
-			if (direct)
+			if (noproxy_match(request->hostname))
 				ret = direct_request(thread_data, request);
 			else
 				ret = forward_request(thread_data, request);
@@ -359,6 +367,37 @@ void *proxy_thread(void *thread_data) {
 
 	free(thread_data);
 	close(cd);
+
+	return NULL;
+}
+
+/*
+ * Tunnel/port forward thread - this method is obviously better solution than using extra
+ * tools like "corkscrew" which after all require us for authentication and tunneling
+ * their HTTP CONNECT in the first place.
+ */
+void *tunnel_thread(void *thread_data) {
+	char *hostname, *pos;
+	char *thost = ((struct thread_arg_s *)thread_data)->target;
+
+	hostname = strdup(thost);
+	if ((pos = strchr(hostname, ':')) != NULL)
+		*pos = 0;
+
+	if (noproxy_match(hostname))
+		direct_tunnel(thread_data);
+	else
+		forward_tunnel(thread_data);
+
+	free(hostname);
+	free(thread_data);
+
+	/*
+	 * Add ourself to the "threads to join" list.
+	 */
+	pthread_mutex_lock(&threads_mtx);
+	threads_list = plist_add(threads_list, (unsigned long)pthread_self(), NULL);
+	pthread_mutex_unlock(&threads_mtx);
 
 	return NULL;
 }
