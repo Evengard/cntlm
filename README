@@ -34,7 +34,6 @@ fakeroot. However, to install your packages you have to be root.
 	$ dpkg-source -x cntlm_0.XX-Y.dsc
 	$ cd cntlm-0.XX/
 	$ dpkg-buildpackage -b -rfakeroot
-	# dpkg -i ../cntlm_0.XX-Y_arch.deb	# Install as root
 
 	Upon installation, the package takes care of creating a dedicated user for
 	cntlm, init script integration, manages eventual configuration file updates
@@ -57,7 +56,7 @@ fakeroot. However, to install your packages you have to be root.
 	Copy there all files from cntlm's rpm/ directory plus appropriate version of
 	the source tar.bz2 (see SOURCE TARBALL section above) and type:
 
-	# rpmbuild -ba cntlm.spec
+	$ rpmbuild -ba cntlm.spec
 
 	Shortly after, you'll have source and binary RPMs ready in your ../SRPMS, resp.
 	../RPMS directories.
@@ -70,7 +69,7 @@ fakeroot. However, to install your packages you have to be root.
 
 	If you just want to create a binary package from src.rpm, as root type:
 
-	# rpmbuild --rebuild pkgname.src.rpm
+	$ rpmbuild --rebuild pkgname.src.rpm
 
 	Resulting binary RPM will be at /usr/src/..../RPMS
 
@@ -78,6 +77,25 @@ fakeroot. However, to install your packages you have to be root.
 	broken RPM build environment. You should add this to your ~/.rpmmacros:
 	%_sysconfdir	/etc
 
+*** WINDOWS INSTALLER ***
+
+	Traditional compilation steps:
+
+	$ ./configure
+	$ make
+
+	Prepare all binaries, manuals, config templates, Start Menu links and InnoSetup
+	project definition file:
+
+	$ make win
+
+	Then run InnoSetup compiler to pack it all into an automatic installer EXE:
+
+	$ /your/path/to/ISCC.exe win/setup.iss
+	or
+	Open folder "win" in explorer, right click "setup.iss" and select "Compile".
+
+	Both with generate an installer in the "win" folder.
 
 Traditional installation
 ~~~~~~~~~~~~~~~~~~~~~~~~
