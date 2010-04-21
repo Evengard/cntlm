@@ -28,14 +28,14 @@ $(NAME): configure-stamp $(OBJS)
 main.o: main.c
 	@echo "Compiling $<"
 	@if [ -z "$(SYSCONFDIR)" ]; then \
-		$(CC) $(CFLAGS) -c main.c -o $@; \
+		$(CC) $(CFLAGS) -w -c main.c -o $@; \
 	else \
-		$(CC) $(CFLAGS) -DSYSCONFDIR=\"$(SYSCONFDIR)\" -c main.c -o $@; \
+		$(CC) $(CFLAGS) -DSYSCONFDIR=\"$(SYSCONFDIR)\" -w -c main.c -o $@; \
 	fi
 
 .c.o:
 	@echo "Compiling $<"
-	@$(CC) $(CFLAGS) -c -o $@ $<
+	@$(CC) $(CFLAGS) -w -c -o $@ $<
 
 install: $(NAME)
 	# AIX?
