@@ -38,8 +38,6 @@
 #include "scanner.h"
 #include "pages.h"
 
-#define MAGIC_TESTS	11
-
 int parent_curr = 0;
 pthread_mutex_t parent_mtx = PTHREAD_MUTEX_INITIALIZER;
 
@@ -128,8 +126,10 @@ int proxy_authenticate(int *sd, rr_data_t request, rr_data_t response, struct au
 
 	strcpy(buf, "NTLM ");
 	len = ntlm_request(&tmp, credentials);
-	to_base64(MEM(buf, unsigned char, 5), MEM(tmp, unsigned char, 0), len, BUFSIZE-5);
-	free(tmp);
+	if (len) {
+		to_base64(MEM(buf, unsigned char, 5), MEM(tmp, unsigned char, 0), len, BUFSIZE-5);
+		free(tmp);
+	}
 
 	auth = dup_rr_data(request);
 	auth->headers = hlist_mod(auth->headers, "Proxy-Authorization", buf, 1);
@@ -802,6 +802,8 @@ bailout:
 	return;
 }
 
+#define MAGIC_TESTS	4
+
 void magic_auth_detect(const char *url) {
 	int i, nc, c, ign = 0, found = -1;
 	rr_data_t req, res;
@@ -812,16 +814,9 @@ void magic_auth_detect(const char *url) {
 	int prefs[MAGIC_TESTS][5] = {
 		/* NT, LM, NTLMv2, Flags, index to authstr[] */
 		{ 0, 0, 1, 0, 0 },
-		{ 0, 0, 1, 0xa208b207, 0 },
-		{ 0, 0, 1, 0xa2088207, 0 },
-		{ 2, 0, 0, 0, 1 },
-		{ 2, 0, 0, 0x88207, 1 },
-		{ 1, 0, 0, 0, 2 },
-		{ 1, 0, 0, 0x8205, 2 },
 		{ 1, 1, 0, 0, 3 },
-		{ 1, 1, 0, 0x8207, 3 },
 		{ 0, 1, 0, 0, 4 },
-		{ 0, 1, 0, 0x8206, 4 }
+		{ 2, 0, 0, 0, 1 }
 	};
 
 	tcreds = new_auth();
@@ -886,7 +881,12 @@ void magic_auth_detect(const char *url) {
 			printf("Connection closed\n");
 		} else {
 			if (res->code == 407) {
-				printf("Credentials rejected\n");
+				if (hlist_subcmp_all(res->headers, "Proxy-Authenticate", "NTLM") || hlist_subcmp_all(res->headers, "Proxy-Authenticate", "BASIC")) {
+					printf("Credentials rejected\n");
+				} else {
+					printf("Proxy doesn't offer NTLM or BASIC\n");
+					break;
+				}
 			} else {
 				printf("OK (HTTP code: %d)\n", res->code);
 				if (found < 0) {
@@ -923,9 +923,9 @@ void magic_auth_detect(const char *url) {
 		}
 		printf("------------------------------------------------\n");
 	} else if (ign == MAGIC_TESTS) {
-		printf("\nYour proxy looks open, you don't need Cntlm proxy.\n");
+		printf("\nYour proxy is open, you don't need another proxy.\n");
 	} else
-		printf("\nWrong credentials, unauthorized URL, or the proxy doesn't support NTLM.\n");
+		printf("\nWrong credentials, invalid URL or proxy doesn't support NTLM nor BASIC.\n");
 
 	if (host)
 		free(host);

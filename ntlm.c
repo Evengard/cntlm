@@ -212,6 +212,7 @@ int ntlm_request(char **dst, struct auth_s *creds) {
 	int dlen, hlen;
 	uint32_t flags = 0xb206;
 
+	*dst = NULL;
 	dlen = strlen(creds->domain);
 	hlen = strlen(creds->workstation);
 
@@ -226,8 +227,13 @@ int ntlm_request(char **dst, struct auth_s *creds) {
 			flags = 0xb205;
 		else if (creds->hashlm)
 			flags = 0xb206;
-		else
+		else {
+			if (debug) {
+				printf("You're requesting with empty auth_s?!\n");
+				dump_auth(creds);
+			}
 			return 0;
+		}
 	} else
 		flags = creds->flags;
 

@@ -63,8 +63,10 @@ int www_authenticate(int sd, rr_data_t request, rr_data_t response, struct auth_
 
 	strcpy(buf, "NTLM ");
 	len = ntlm_request(&tmp, creds);
-	to_base64(MEM(buf, unsigned char, 5), MEM(tmp, unsigned char, 0), len, BUFSIZE-5);
-	free(tmp);
+	if (len) {
+		to_base64(MEM(buf, unsigned char, 5), MEM(tmp, unsigned char, 0), len, BUFSIZE-5);
+		free(tmp);
+	}
 
 	auth = dup_rr_data(request);
 	auth->headers = hlist_mod(auth->headers, "Connection", "keep-alive", 1);
@@ -416,18 +418,19 @@ bailout:
 
 void direct_tunnel(void *thread_data) {
 	int sd, port = 0;
-	char *pos;
+	char *pos, *hostname;
 
 	int cd = ((struct thread_arg_s *)thread_data)->fd;
 	char *thost = ((struct thread_arg_s *)thread_data)->target;
 	struct sockaddr_in caddr = ((struct thread_arg_s *)thread_data)->addr;
 
-	if ((pos = strchr(thost, ':')) != NULL) {
+	hostname = strdup(thost);
+	if ((pos = strchr(hostname, ':')) != NULL) {
 		*pos = 0;
 		port = atoi(++pos);
 	}
 
-	sd = host_connect(thost, port);
+	sd = host_connect(hostname, port);
 	if (sd <= 0)
 		goto bailout;
 
@@ -438,6 +441,7 @@ void direct_tunnel(void *thread_data) {
 	tunnel(cd, sd);
 
 bailout:
+	free(hostname);
 	close(sd);
 	close(cd);
 
