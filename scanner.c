@@ -183,7 +183,7 @@ int scanner_hook(rr_data_t request, rr_data_t response, struct auth_s *credentia
 				uurl = urlencode(request->url);
 
 				post = new(BUFSIZE);
-				snprintf(post, bsize, "%surl=%s&%sSaveToDisk=YES&%sOrig=%s", isaid, pos, isaid, isaid, uurl);
+				snprintf(post, BUFSIZE-1, "%surl=%s&%sSaveToDisk=YES&%sOrig=%s", isaid, pos, isaid, isaid, uurl);
 
 				if (debug)
 					printf("scanner_hook: Getting file with URL data = %s\n", request->url);

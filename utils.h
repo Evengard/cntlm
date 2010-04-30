@@ -30,7 +30,7 @@
 
 #include "config/config.h"
 
-#define BUFSIZE			1024
+#define BUFSIZE			4096
 #define MINIBUF_SIZE		50
 #define VAL(var, type, offset)	*((type *)(var+offset))
 #define MEM(var, type, offset)	(type *)(var+offset)
