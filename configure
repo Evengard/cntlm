@@ -16,7 +16,7 @@ CCS="xlc_r gcc"
 # Look for supported compilers
 #
 for c in $CCS; do
-	if CCPATH=`which $c 2>&1` && [ `expr substr "$CCPATH" 1 1` = "/" ]; then
+	if CCPATH=`which $c 2>&1` && [ -z "${CCPATH%%/*}" ]; then
 		CC="$c"
 		break
 	fi
