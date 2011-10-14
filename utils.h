@@ -158,6 +158,8 @@ extern long int random(void);
 #if config_gethostname == 1
 extern int gethostname(char *name, size_t len);
 #endif
+#ifndef strdup
 extern char *strdup(const char *src);
+#endif
 
 #endif /* _UTILS_H */

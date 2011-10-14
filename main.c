@@ -346,7 +346,7 @@ void *proxy_thread(void *thread_data) {
 				ret = forward_request(thread_data, request);
 
 			if (debug)
-				printf("proxy_thread: request rc = %x\n", (int)ret);
+				printf("proxy_thread: request rc = %p\n", (void *)ret);
 		} while (ret != NULL && ret != (void *)-1);
 
 		free_rr_data(request);

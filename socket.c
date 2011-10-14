@@ -41,6 +41,7 @@ extern int debug;
  * gethostbyname() wrapper. Return 1 if OK, otherwise 0.
  */
 int so_resolv(struct in_addr *host, const char *name) {
+/*
 	struct hostent *resolv;
 
 	resolv = gethostbyname(name);
@@ -48,6 +49,41 @@ int so_resolv(struct in_addr *host, const char *name) {
 		return 0;
 
 	memcpy(host, resolv->h_addr_list[0], resolv->h_length);
+	return 1;
+*/
+	struct addrinfo hints, *res, *p;
+
+	memset(&hints, 0, sizeof(hints));
+	hints.ai_family = AF_INET;
+	hints.ai_socktype = SOCK_STREAM;
+	int rc = getaddrinfo(name, NULL, &hints, &res);
+	if (rc != 0) {
+		if (debug)
+			printf("so_resolv: %s failed (%d: %s)\n", name, rc, gai_strerror(rc));
+		return 0;
+	}
+
+	if (debug)
+		printf("Resolve %s:\n", name);
+	int addr_set = 0;
+	for (p = res; p != NULL; p = p->ai_next) {
+		struct sockaddr_in *ad = (struct sockaddr_in*)(p->ai_addr);
+		if (ad == NULL) {
+			freeaddrinfo(res);
+			return 0;
+		}
+		if (!addr_set) {
+			memcpy(host, &ad->sin_addr, p->ai_addrlen);
+			addr_set = 1;
+			if (debug)
+				printf("  -> %s\n", inet_ntoa(ad->sin_addr));
+		} else
+			if (debug)
+				printf("     %s\n", inet_ntoa(ad->sin_addr));
+	}
+
+	freeaddrinfo(res);
+
 	return 1;
 }
 

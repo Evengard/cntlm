@@ -59,7 +59,7 @@ start() {
 
 stop() {
 	echo -n "Stopping $DESC: "
-	start-stop-daemon --oknodo --quiet --stop --retry -HUP/$TIMEOUT/-HUP/2/-KILL/forever --pidfile $PIDFILE --name $NAME 2>/dev/null
+	start-stop-daemon --oknodo --quiet --stop --retry -HUP/$TIMEOUT/-KILL/2 --pidfile $PIDFILE --name $NAME 2>/dev/null
 	if [ $? -eq 0 ]; then
 		echo "$NAME."
 	else
