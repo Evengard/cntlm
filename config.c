@@ -28,6 +28,7 @@
 #include "config.h"
 #include "utils.h"
 
+/*
 static const char *globals[] = {
 	"Allow",
 	"Deny",
@@ -37,6 +38,7 @@ static const char *globals[] = {
 	"SOCKS5User",
 	"NTLMToBasic",
 	"Tunnel" };
+*/
 
 config_t config_open(const char *fname) {
 	config_t rc;

@@ -518,6 +518,9 @@ int http_has_body(rr_data_t request, rr_data_t response) {
 	} else
 		length = (tmp == NULL || nobody ? 0 : atol(tmp));
 
+	if (current == request && length == -1)
+		length = 0;
+
 	return length;
 }
 

@@ -1437,7 +1437,7 @@ int main(int argc, char **argv) {
 	 * after the first kill) and a "forced" one (user insists and
 	 * killed us twice).
 	 */
-	while (quit < 1 || tc != tj) {
+	while (quit == 0 || (tc != tj && quit < 2)) {
 		struct thread_arg_s *data;
 		struct sockaddr_in caddr;
 		struct timeval tv;

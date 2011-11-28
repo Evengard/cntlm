@@ -140,7 +140,7 @@ void plist_dump(plist_t list) {
 
 	t = list;
 	while (t) {
-		printf("List data: %lu => 0x%08x\n", (unsigned long int)t->key, (unsigned int)t->aux);
+		printf("List data: %lu => 0x%8p\n", (unsigned long int)t->key, t->aux);
 		t = t->next;
 	}
 }
