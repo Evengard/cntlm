@@ -38,11 +38,16 @@ main.o: main.c
 	@$(CC) $(CFLAGS) -c -o $@ $<
 
 install: $(NAME)
-	# AIX?
-	if [ -f /usr/bin/oslevel ]; then \
+	# Special handling for install(1)
+	if [ "`uname -s`" = "AIX" ]; then \
 		install -M 755 -S -f $(BINDIR) $(NAME); \
 		install -M 644 -f $(MANDIR)/man1 doc/$(NAME).1; \
 		install -M 600 -c $(SYSCONFDIR) doc/$(NAME).conf; \
+	elif [ "`uname -s`" = "Darwin" ]; then \
+		install -d -m 755 -s $(NAME) $(BINDIR)/$(NAME); \
+		install -d -m 644 doc/$(NAME).1 $(MANDIR)/man1/$(NAME).1; \
+		[ -f $(SYSCONFDIR)/$(NAME).conf -o -z "$(SYSCONFDIR)" ] \
+			|| install -d -m 600 doc/$(NAME).conf $(SYSCONFDIR)/$(NAME).conf; \
 	else \
 		install -D -m 755 -s $(NAME) $(BINDIR)/$(NAME); \
 		install -D -m 644 doc/$(NAME).1 $(MANDIR)/man1/$(NAME).1; \
