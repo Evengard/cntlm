@@ -22,6 +22,8 @@
 #ifndef _HTTP_H
 #define _HTTP_H
 
+#include <stdint.h>
+
 #include "utils.h"
 #include "auth.h"
 
@@ -32,6 +34,8 @@
 #define HEAD(data)	((data) && (data)->req && !strcasecmp("HEAD", (data)->method))
 #define GET(data)	((data) && (data)->req && !strcasecmp("GET", (data)->method))
 
+typedef long long int length_t;
+
 extern int is_http_header(const char *src);
 extern char *get_http_header_name(const char *src);
 extern char *get_http_header_value(const char *src);
@@ -39,7 +43,7 @@ extern int http_parse_basic(hlist_t headers, const char *header, struct auth_s *
 extern int headers_recv(int fd, rr_data_t data);
 extern int headers_send(int fd, rr_data_t data);
 extern int tunnel(int cd, int sd);
-extern int http_has_body(rr_data_t request, rr_data_t response);
+extern length_t http_has_body(rr_data_t request, rr_data_t response);
 extern int http_body_send(int writefd, int readfd, rr_data_t request, rr_data_t response);
 extern int http_body_drop(int fd, rr_data_t response);
 

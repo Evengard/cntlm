@@ -315,26 +315,26 @@ int headers_send(int fd, rr_data_t data) {
  * forwarding until src reaches EOF.
  * If dst == -1, data is discarded.
  */
-int data_send(int dst, int src, int size) {
+int data_send(int dst, int src, length_t len) {
 	char *buf;
 	int i, block;
 	int c = 0;
 	int j = 1;
 
-	if (!size)
+	if (!len)
 		return 1;
 
 	buf = new(BLOCK);
 
 	do {
-		block = (size == -1 || size-c > BLOCK ? BLOCK : size-c);
+		block = (len == -1 || len-c > BLOCK ? BLOCK : len-c);
 		i = read(src, buf, block);
 		
 		if (i > 0)
 			c += i;
 
 		if (dst >= 0 && debug)
-			printf("data_send: read %d of %d / %d of %d (errno = %s)\n", i, block, c, size, i < 0 ? strerror(errno) : "ok");
+			printf("data_send: read %d of %d / %d of %lld (errno = %s)\n", i, block, c, len, i < 0 ? strerror(errno) : "ok");
 
 		if (dst >= 0 && so_closed(dst)) {
 			i = -999;
@@ -347,12 +347,12 @@ int data_send(int dst, int src, int size) {
 				printf("data_send: wrote %d of %d\n", j, i);
 		}
 
-	} while (i > 0 && j > 0 && (size == -1 || c <  size));
+	} while (i > 0 && j > 0 && (len == -1 || c <  len));
 
 	free(buf);
 
 	if (i <= 0 || j <= 0) {
-		if (i == 0 && j > 0 && (size == -1 || c == size))
+		if (i == 0 && j > 0 && (len == -1 || c == len))
 			return 1;
 
 		if (debug)
@@ -470,9 +470,10 @@ int tunnel(int cd, int sd) {
  * Return 0 if no body, -1 if body until EOF, number if size known
  * One of request/response can be NULL
  */
-int http_has_body(rr_data_t request, rr_data_t response) {
+length_t http_has_body(rr_data_t request, rr_data_t response) {
 	rr_data_t current;
-	int length, nobody;
+	length_t length;
+	int nobody;
 	char *tmp;
 
 	/*
@@ -516,7 +517,7 @@ int http_has_body(rr_data_t request, rr_data_t response) {
 		else
 			length = -1;
 	} else
-		length = (tmp == NULL || nobody ? 0 : atol(tmp));
+		length = (tmp == NULL || nobody ? 0 : atoll(tmp));
 
 	if (current == request && length == -1)
 		length = 0;
@@ -528,7 +529,7 @@ int http_has_body(rr_data_t request, rr_data_t response) {
  * Send a HTTP body (if any) between descriptors readfd and writefd
  */
 int http_body_send(int writefd, int readfd, rr_data_t request, rr_data_t response) {
-	int bodylen;
+	length_t bodylen;
 	int rc = 1;
 	rr_data_t current;
 
@@ -555,7 +556,7 @@ int http_body_send(int writefd, int readfd, rr_data_t request, rr_data_t respons
 				printf(rc ? "Chunked body sent.\n" : "Could not chunk send whole body\n");
 		} else {
 			if (debug)
-				printf("Body included. Lenght: %d\n", bodylen);
+				printf("Body included. Length: %lld\n", bodylen);
 
 			rc = data_send(writefd, readfd, bodylen);
 			if (debug)
@@ -572,7 +573,8 @@ int http_body_send(int writefd, int readfd, rr_data_t request, rr_data_t respons
  * Return 0 if connection closed or EOF, 1 if OK to continue
  */
 int http_body_drop(int fd, rr_data_t response) {
-	int bodylen, rc = 1;
+	length_t bodylen;
+	int rc = 1;
 
 	bodylen = http_has_body(NULL, response);
 	if (bodylen) {
@@ -582,7 +584,7 @@ int http_body_drop(int fd, rr_data_t response) {
 			rc = chunked_data_send(-1, fd);
 		} else {
 			if (debug)
-				printf("Discarding %d bytes.\n", bodylen);
+				printf("Discarding %lld bytes.\n", bodylen);
 			rc = data_send(-1, fd, bodylen);
 		}
 	}
