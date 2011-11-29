@@ -59,20 +59,36 @@ int proxy_connect(struct auth_s *credentials) {
 	pthread_mutex_lock(&parent_mtx);
 	if (parent_curr == 0) {
 		aux = (proxy_t *)plist_get(parent_list, ++parent_curr);
-		syslog(LOG_INFO, "Using proxy %s:%d\n", inet_ntoa(aux->host), aux->port);
+		syslog(LOG_INFO, "Using proxy %s:%d\n", aux->hostname, aux->port);
 	}
 	pthread_mutex_unlock(&parent_mtx);
 
 	do {
 		aux = (proxy_t *)plist_get(parent_list, parent_curr);
-		i = so_connect(aux->host, aux->port);
+		if (aux->resolved == 0) {
+			if (debug)
+				syslog(LOG_INFO, "Resolving proxy %s...\n", aux->hostname);
+			if (so_resolv(&aux->host, aux->hostname)) {
+				aux->resolved = 1;
+			} else {
+				syslog(LOG_ERR, "Cannot resolve proxy %s\n", aux->hostname);
+			}
+		}
+
+		i = 0;
+		if (aux->resolved != 0)
+			i = so_connect(aux->host, aux->port);
+
+		/*
+		 * Resolve or connect failed?
+		 */
 		if (i <= 0) {
 			pthread_mutex_lock(&parent_mtx);
 			if (parent_curr >= parent_count)
 				parent_curr = 0;
 			aux = (proxy_t *)plist_get(parent_list, ++parent_curr);
 			pthread_mutex_unlock(&parent_mtx);
-			syslog(LOG_ERR, "Proxy connect failed, will try %s:%d\n", inet_ntoa(aux->host), aux->port);
+			syslog(LOG_ERR, "Proxy connect failed, will try %s:%d\n", aux->hostname, aux->port);
 		}
 	} while (i <= 0 && ++loop < parent_count);
 

@@ -59,7 +59,7 @@ int so_resolv(struct in_addr *host, const char *name) {
 	int rc = getaddrinfo(name, NULL, &hints, &res);
 	if (rc != 0) {
 		if (debug)
-			printf("so_resolv: %s failed (%d: %s)\n", name, rc, gai_strerror(rc));
+			printf("so_resolv: %s failed: %s (%d)\n", name, gai_strerror(rc), rc);
 		return 0;
 	}
 
@@ -73,7 +73,7 @@ int so_resolv(struct in_addr *host, const char *name) {
 			return 0;
 		}
 		if (!addr_set) {
-			memcpy(host, &ad->sin_addr, p->ai_addrlen);
+			memcpy(host, &ad->sin_addr, sizeof(ad->sin_addr));
 			addr_set = 1;
 			if (debug)
 				printf("  -> %s\n", inet_ntoa(ad->sin_addr));

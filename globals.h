@@ -52,9 +52,11 @@ extern plist_t parent_list;
  * just malloc/free sizeof(proxy_t)
  */
 typedef struct {
+	char hostname[64];
 	struct auth_s creds;
 	struct in_addr host;
 	int port;
+	int resolved;
 } proxy_t;
 
 extern hlist_t header_list;			/* forward_request() */
