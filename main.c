@@ -1194,7 +1194,7 @@ int main(int argc, char **argv) {
 	/*
 	 * Last chance to get password from the user
 	 */
-	if (interactivehash || (interactivepwd && !ntlmbasic)) {
+	if (interactivehash || magic_detect || (interactivepwd && !ntlmbasic)) {
 		printf("Password: ");
 		tcgetattr(0, &termold);
 		termnew = termold;
