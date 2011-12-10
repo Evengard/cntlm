@@ -108,13 +108,11 @@ int headers_recv(int fd, rr_data_t data) {
 	orig = strdup(buf);
 	len = strlen(buf);
 	tok = strtok_r(buf, " ", &s3);
-	if (!strncasecmp(buf, "HTTP/", 5) && tok) {
+	if (tok && (!strncasecmp(buf, "HTTP/", 5) || !strncasecmp(tok, "ICY", 3))) {
 		data->req = 0;
 		data->empty = 0;
-		data->http = NULL;
+		data->http = strdup(tok);
 		data->msg = NULL;
-
-		data->http = substr(tok, 7, 1);
 
 		tok = strtok_r(NULL, " ", &s3);
 		if (tok) {
@@ -130,7 +128,7 @@ int headers_recv(int fd, rr_data_t data) {
 		if (!data->msg)
 			data->msg = strdup("");
 
-		if (!ccode || strlen(ccode) != 3 || (data->code = atoi(ccode)) == 0 || !data->http) {
+		if (!ccode || strlen(ccode) != 3 || (data->code = atoi(ccode)) == 0) {
 			i = -2;
 			goto bailout;
 		}
@@ -151,7 +149,7 @@ int headers_recv(int fd, rr_data_t data) {
 
 		tok = strtok_r(NULL, " ", &s3);
 		if (tok)
-			data->http = substr(tok, 7, 1);
+			data->http = strdup(tok);
 
 		if (!data->url || !data->http) {
 			i = -3;
@@ -273,9 +271,9 @@ int headers_send(int fd, rr_data_t data) {
 	 */
 	len = 0;
 	if (data->req)
-		len = sprintf(buf, "%s %s HTTP/1.%s\r\n", data->method, data->url, data->http);
+		len = sprintf(buf, "%s %s %s\r\n", data->method, data->url, data->http);
 	else if (!data->skip_http)
-		len = sprintf(buf, "HTTP/1.%s %03d %s\r\n", data->http, data->code, data->msg);
+		len = sprintf(buf, "%s %03d %s\r\n", data->http, data->code, data->msg);
 
 	/*
 	 * Now add all headers.

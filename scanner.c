@@ -151,7 +151,7 @@ int scanner_hook(rr_data_t request, rr_data_t response, struct auth_s *credentia
 						 */
 						headers_initiated = 1;
 						tmp = new(MINIBUF_SIZE);
-						snprintf(tmp, MINIBUF_SIZE, "HTTP/1.%s 200 OK\r\n", request->http);
+						snprintf(tmp, MINIBUF_SIZE, "%s 200 OK\r\n", request->http);
 						w = write(cd, tmp, strlen(tmp));
 						free(tmp);
 					}

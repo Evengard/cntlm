@@ -729,7 +729,7 @@ int prepare_http_connect(int sd, struct auth_s *credentials, const char *thost) 
 	data1->req = 1;
 	data1->method = strdup("CONNECT");
 	data1->url = strdup(thost);
-	data1->http = strdup("1");
+	data1->http = strdup("HTTP/1.1");
 	data1->headers = hlist_mod(data1->headers, "Proxy-Connection", "keep-alive", 1);
 
 	/*
@@ -859,7 +859,7 @@ void magic_auth_detect(const char *url) {
 		req->req = 1;
 		req->method = strdup("GET");
 		req->url = strdup(url);
-		req->http = strdup("1");
+		req->http = strdup("HTTP/1.1");
 		req->headers = hlist_add(req->headers, "Proxy-Connection", "keep-alive", HLIST_ALLOC, HLIST_ALLOC);
 		if (host)
 			req->headers = hlist_add(req->headers, "Host", host, HLIST_ALLOC, HLIST_ALLOC);

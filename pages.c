@@ -29,10 +29,10 @@
 char *gen_407_page(const char *http) {
 	char *tmp;
 	if (http == NULL)
-		http = "0";
+		http = "HTTP/1.0";
 	tmp = new(BUFSIZE);
 	snprintf(tmp, BUFSIZE-1,
-		"HTTP/1.%s 407 Access denied\r\n"
+		"%s 407 Access denied\r\n"
 		"Proxy-Authenticate: Basic realm=\"Cntlm Proxy\"\r\n"
 		"Content-Type: text/html\r\n\r\n"
 		"<html><body><h1>407 Access denied</h1><p><a href='http://cntlm.sf.net/'>Cntlm</a> requests your credentials for proxy access.</p></body></html>",
@@ -43,10 +43,10 @@ char *gen_407_page(const char *http) {
 char *gen_401_page(const char *http, const char *host, int port) {
 	char *tmp;
 	if (http == NULL)
-		http = "0";
+		http = "HTTP/1.0";
 	tmp = new(BUFSIZE);
 	snprintf(tmp, BUFSIZE-1,
-		"HTTP/1.%s 401 Access denied\r\n"
+		"%s 401 Access denied\r\n"
 		"WWW-Authenticate: Basic realm=\"%s:%d\"\r\n"
 		"Content-Type: text/html\r\n\r\n"
 		"<html><body><h1>401 Access denied</h1><p><a href='http://cntlm.sf.net/'>Cntlm</a> proxy requests your credentials for this URL.</p></body></html>",
@@ -70,12 +70,12 @@ char *gen_denied_page(const char *ip) {
 char *gen_502_page(const char *http, const char *msg) {
 	char *tmp;
 	if (http == NULL)
-		http = "0";
+		http = "HTTP/1.0";
 	if (msg == NULL)
 		msg = "Proxy error";
 	tmp = new(BUFSIZE);
 	snprintf(tmp, BUFSIZE-1,
-		"HTTP/1.%s 502 %s\r\n"
+		"%s 502 %s\r\n"
 		"Content-Type: text/html\r\n\r\n"
 		"<html><body><h1>502 %s</h1><p><a href='http://cntlm.sf.net/'>Cntlm</a> proxy failed to complete the request.</p></body></html>",
 		http, msg, msg);
