@@ -949,14 +949,16 @@ int main(int argc, char **argv) {
 #ifdef SYSCONFDIR
 	if (!cf) {
 #ifdef __CYGWIN__
-		tmp = getenv("PROGRAMFILES");
+		tmp = getenv("PROGRAMFILES(X86)");
+		if (tmp == NULL || strlen(tmp) == 0)
+			tmp = getenv("PROGRAMFILES");
 		if (tmp == NULL) {
 			tmp = "C:\\Program Files";
 		}
 
 		head = new(MINIBUF_SIZE);
 		strlcpy(head, tmp, MINIBUF_SIZE);
-		strlcat(head, "\\cntlm\\cntlm.ini", MINIBUF_SIZE);
+		strlcat(head, "\\Cntlm\\cntlm.ini", MINIBUF_SIZE);
 		cf = config_open(head);
 #else
 		cf = config_open(SYSCONFDIR "/cntlm.conf");
