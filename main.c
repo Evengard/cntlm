@@ -952,9 +952,8 @@ int main(int argc, char **argv) {
 		tmp = getenv("PROGRAMFILES(X86)");
 		if (tmp == NULL || strlen(tmp) == 0)
 			tmp = getenv("PROGRAMFILES");
-		if (tmp == NULL) {
+		if (tmp == NULL)
 			tmp = "C:\\Program Files";
-		}
 
 		head = new(MINIBUF_SIZE);
 		strlcpy(head, tmp, MINIBUF_SIZE);
@@ -1205,8 +1204,12 @@ int main(int argc, char **argv) {
 		tcsetattr(0, TCSADRAIN, &termnew);
 		tmp = fgets(cpassword, MINIBUF_SIZE, stdin);
 		tcsetattr(0, TCSADRAIN, &termold);
-		i = strlen(cpassword)-1;
-		trimr(cpassword);
+		i = strlen(cpassword) - 1;
+		if (cpassword[i] == '\n') {
+			cpassword[i] = 0;
+			if (cpassword[i - 1] == '\r')
+				cpassword[i - 1] = 0;
+		}
 		printf("\n");
 	}
 
