@@ -365,8 +365,8 @@ Configuration file is basically an INI file, except there are no "=" between key
 whitespace delimited keyword and value pairs. Apart from that, there are sections as well, they have the usual
 "[section_name]" syntax. Comment begins with a hash "#" or a semicolon ";" and can be anywhere in the file.
 Everything after the mark up until EOL is a comment. Values can contain any characters, including whitespace.
-You \fIcan\fP use double quotes to set a value ending/beginning with a "space" character or containing a
-comment mark, but otherwise it's not necessary. There are no escape sequences or characters.
+You \fIcan\fP use double quotes around the value to set a string containing special characters like spaces,
+pound signs, etc. No escape sequences are allowed in quoted strings.
 
 There are two types of keywords, \fIlocal\fP and \fIglobal\fP. Local options specify authentication details
 per domain (or location). Global keywords apply to all sections and proxies. They should be placed before all
@@ -423,7 +423,8 @@ Local port number for the \fBcntlm\fP's proxy service. See \fB-l\fP for more.
 
 .TP
 .B Password <password>
-Proxy account password.
+Proxy account password. As with any other option, the value (password) can be enclosed in double quotes (")
+in case it contains special characters like spaces, pound signs, etc.
 
 .ne 11
 .TP
