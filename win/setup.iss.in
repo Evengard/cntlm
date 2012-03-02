@@ -18,6 +18,7 @@ OutputDir=.
 [Files]
 Source: "cntlm.exe"; DestDir: "{app}"
 Source: "cygrunsrv.exe"; DestDir: "{app}"
+Source: "cyggcc_s-1.dll"; DestDir: "{app}"
 Source: "cygwin1.dll"; DestDir: "{app}"
 Source: "cntlm.ini"; DestDir: "{app}"; Flags: uninsneveruninstall confirmoverwrite
 Source: "cntlm_manual.pdf"; DestDir: "{app}"
