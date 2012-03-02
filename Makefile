@@ -20,10 +20,10 @@ OS=$(shell uname -s)
 OSLDFLAGS=$(shell [ $(OS) = "SunOS" ] && echo "-lrt -lsocket -lnsl")
 LDFLAGS:=-lpthread $(OSLDFLAGS)
 
-ifeq ($(filter CYGWIN,$(OS)),)
-	OBJS=utils.o ntlm.o xcrypt.o config.o socket.o acl.o auth.o http.o forward.o direct.o scanner.o pages.o main.o win/resources.o
-else
+ifeq ($(findstring CYGWIN,$(OS)),)
 	OBJS=utils.o ntlm.o xcrypt.o config.o socket.o acl.o auth.o http.o forward.o direct.o scanner.o pages.o main.o
+else
+	OBJS=utils.o ntlm.o xcrypt.o config.o socket.o acl.o auth.o http.o forward.o direct.o scanner.o pages.o main.o win/resources.o
 endif
 
 $(NAME): configure-stamp $(OBJS)
