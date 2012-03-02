@@ -114,6 +114,9 @@ buildwin:
 	cp /bin/cygwin1.dll /bin/cyggcc_s-1.dll /bin/cygrunsrv.exe win/
 	cp cntlm.exe win/
 	strip win/cntlm.exe
+	ln -s win $(NAME)-$(VER)
+	zip -9 $(NAME)-$(VER).zip $(NAME)-$(VER)/cntlm.exe $(NAME)-$(VER)/cyggcc_s-1.dll $(NAME)-$(VER)/cygwin1.dll $(NAME)-$(VER)/cygrunsrv.exe $(NAME)-$(VER)/cntlm.ini $(NAME)-$(VER)/README.txt $(NAME)-$(VER)/license.txt
+	rm -f $(NAME)-$(VER)
 	@echo
 	@echo Now open folder "win", right-click "setup.iss", then "Compile".
 	@echo InnoSetup will generate a new installer cntlm-X.XX-setup.exe
