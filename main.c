@@ -223,7 +223,7 @@ void tunnel_add(plist_t *list, char *spec, int gateway) {
 	spec = strdup(spec);
 	len = strlen(spec);
 	field[0] = spec;
-	for (count = 1, i = 0; i < len; ++i)
+	for (count = 1, i = 0; count < 4 && i < len; ++i)
 		if (spec[i] == ':') {
 			spec[i] = 0;
 			field[count++] = spec+i+1;
