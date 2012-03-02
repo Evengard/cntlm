@@ -15,7 +15,7 @@ MANDIR=$(DESTDIR)/usr/share/man
 NAME=cntlm
 CC=gcc
 VER=`cat VERSION`
-CFLAGS+=$(FLAGS) -std=c99 -Wall -pedantic -O3 -D__BSD_VISIBLE -D_ALL_SOURCE -D_XOPEN_SOURCE=600 -D_POSIX_C_SOURCE=200112 -D_ISOC99_SOURCE -D_REENTRANT -D_BSD_SOURCE -DVERSION=\"`cat VERSION`\"
+CFLAGS+=$(FLAGS) -std=c99 -Wall -Wno-unused-but-set-variable -pedantic -O3 -D__BSD_VISIBLE -D_ALL_SOURCE -D_XOPEN_SOURCE=600 -D_POSIX_C_SOURCE=200112 -D_ISOC99_SOURCE -D_REENTRANT -D_BSD_SOURCE -DVERSION=\"`cat VERSION`\"
 OS=$(shell uname -s)
 OSLDFLAGS=$(shell [ $(OS) = "SunOS" ] && echo "-lrt -lsocket -lnsl")
 LDFLAGS:=-lpthread $(OSLDFLAGS)
