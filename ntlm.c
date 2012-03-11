@@ -310,7 +310,7 @@ int ntlm_response(char **dst, char *challenge, int challen, struct auth_s *creds
 		printf("\t    Flags: 0x%X\n", U32LE(VAL(challenge, uint32_t, 20)));
 	}
 
-	if (challen > 48) {
+	if (challen >= NTLM_CHALLENGE_MIN) {
 		tbofs = tpos = U16LE(VAL(challenge, uint16_t, 44));
 		while (tpos+4 <= challen && (ttype = U16LE(VAL(challenge, uint16_t, tpos)))) {
 			tlen = U16LE(VAL(challenge, uint16_t, tpos+2));
