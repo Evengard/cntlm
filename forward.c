@@ -822,7 +822,7 @@ bailout:
 	return;
 }
 
-#define MAGIC_TESTS	4
+#define MAGIC_TESTS	5
 
 void magic_auth_detect(const char *url) {
 	int i, nc, c, ign = 0, found = -1;
@@ -830,13 +830,14 @@ void magic_auth_detect(const char *url) {
 	char *tmp, *pos, *host = NULL;
 
 	struct auth_s *tcreds;
-	char *authstr[5] = { "NTLMv2", "NTLM2SR", "NT", "NTLM", "LM" };
+	char *authstr[5] = { "NTLMv2", "NTLM", "LM", "NT", "NTLM2SR" };
 	int prefs[MAGIC_TESTS][5] = {
 		/* NT, LM, NTLMv2, Flags, index to authstr[] */
-		{ 0, 0, 1, 0, 0 },
-		{ 1, 1, 0, 0, 3 },
-		{ 0, 1, 0, 0, 4 },
-		{ 2, 0, 0, 0, 1 }
+		{  0,  0,  1,      0,     0 },
+		{  1,  1,  0,      0,     1 },
+		{  0,  1,  0,      0,     2 },
+		{  1,  0,  0,      0,     3 },
+		{  2,  0,  0,      0,     4 }
 	};
 
 	tcreds = new_auth();
