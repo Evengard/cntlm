@@ -1,6 +1,22 @@
- CNTLM - Authenticating HTTP Proxy
- Copyright (C) 2007-2010 David Kubicek
+ CNTLM - Authenticating NTLMv2 Web Proxy for Corporate Environment
+ Copyright (C) 2007-2012 David Kubicek
 
+
+ ===================================
+ IF YOU USE CNTLM, CONSIDER DONATING
+ ===================================
+ That's all I have in the way of supporting any further development,
+ performing involved analyses of users' network issues, bug fixing,
+ implementing new features and keeping the AWK.cz VPS and file servers
+ up and running.
+ The names of any and all significant benefactors will be immortalized
+ on Cntlm's home page and in the PDF manual forever.
+ This was originally a project about freedom, created for the greater
+ good alone, but my current situation changes many things and I may
+ even be forced to close-source it (against every fiber of my being).
+
+
+ ____________________________________________________________________
  This program is free software; you can redistribute it and/or modify
  it under the terms of the GNU General Public License as published by
  the Free Software Foundation; either version 2 of the License, or
@@ -12,10 +28,10 @@
  GNU General Public License for more details.
 
  You should have received a copy of the GNU General Public License
- along with this program; if not, write to the Free Software
- Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+ along with this program; if not, write to the Free Software Foundation,
+ Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 
  If you would like to negotiate alternate licensing terms, you may do
- so by contacting: David Kubicek <dave@awk.cz>, <kubicek@gedas.cz>
+ so by contacting: David Kubicek <cntlm@awk.cz>
 
 

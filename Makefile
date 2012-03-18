@@ -2,29 +2,30 @@
 # You can tweak these three variables to make things install where you
 # like, but do not touch more unless you know what you are doing. ;)
 #
-DESTDIR=
-SYSCONFDIR=$(DESTDIR)/etc
-BINDIR=$(DESTDIR)/usr/sbin
-MANDIR=$(DESTDIR)/usr/share/man
+DESTDIR    	:=
+SYSCONFDIR 	:= $(DESTDIR)/etc
+BINDIR     	:= $(DESTDIR)/usr/sbin
+MANDIR     	:= $(DESTDIR)/usr/share/man
 
 #
 # Careful now...
 # __BSD_VISIBLE is for FreeBSD AF_* constants
 # _ALL_SOURCE is for AIX 5.3 LOG_PERROR constant
 #
-NAME=cntlm
-CC=gcc
-VER=`cat VERSION`
-CFLAGS+=$(FLAGS) -std=c99 -Wall -Wno-unused-but-set-variable -pedantic -O3 -D__BSD_VISIBLE -D_ALL_SOURCE -D_XOPEN_SOURCE=600 -D_POSIX_C_SOURCE=200112 -D_ISOC99_SOURCE -D_REENTRANT -D_BSD_SOURCE -DVERSION=\"`cat VERSION`\"
-OS=$(shell uname -s)
-OSLDFLAGS=$(shell [ $(OS) = "SunOS" ] && echo "-lrt -lsocket -lnsl")
-LDFLAGS:=-lpthread $(OSLDFLAGS)
+NAME		:= cntlm
+CC		:= gcc
+VER		:= $(shell cat VERSION)
+CFLAGS		:= $(FLAGS) -std=c99 -Wall -Wno-unused-but-set-variable -pedantic -O3 -D__BSD_VISIBLE -D_ALL_SOURCE -D_XOPEN_SOURCE=600 -D_POSIX_C_SOURCE=200112 -D_ISOC99_SOURCE -D_REENTRANT -D_BSD_SOURCE -DVERSION=\"`cat VERSION`\"
+OS		:= $(shell uname -s)
+OSLDFLAGS	:= $(shell [ $(OS) = "SunOS" ] && echo "-lrt -lsocket -lnsl")
+LDFLAGS		:=-lpthread $(OSLDFLAGS)
 
-ifeq ($(findstring CYGWIN,$(OS)),)
-	OBJS=utils.o ntlm.o xcrypt.o config.o socket.o acl.o auth.o http.o forward.o direct.o scanner.o pages.o main.o
-else
+ifneq ($(findstring CYGWIN,$(OS)),)
 	OBJS=utils.o ntlm.o xcrypt.o config.o socket.o acl.o auth.o http.o forward.o direct.o scanner.o pages.o main.o win/resources.o
+else
+	OBJS=utils.o ntlm.o xcrypt.o config.o socket.o acl.o auth.o http.o forward.o direct.o scanner.o pages.o main.o
 endif
+CYGWIN_REQS=cygwin1.dll cyggcc_s-1.dll cygstdc++-6.dll cygrunsrv.exe 
 
 $(NAME): configure-stamp $(OBJS)
 	@echo "Linking $@"
@@ -38,9 +39,13 @@ main.o: main.c
 		$(CC) $(CFLAGS) -DSYSCONFDIR=\"$(SYSCONFDIR)\" -c main.c -o $@; \
 	fi
 
-.c.o:
+%.o: %.c
 	@echo "Compiling $<"
 	@$(CC) $(CFLAGS) -c -o $@ $<
+
+win/resources.o: win/resources.rc
+	@echo Adding EXE resources
+	@windres $^ -o $@
 
 install: $(NAME)
 	# Special handling for install(1)
@@ -77,8 +82,7 @@ tbz2:
 	rm -rf tmp/$(NAME)-$(VER)
 	rmdir tmp 2>/dev/null || true
 
-deb: builddeb
-builddeb:
+deb:
 	sed -i "s/^\(cntlm *\)([^)]*)/\1($(VER))/g" debian/changelog
 	if [ `id -u` = 0 ]; then \
 		debian/rules binary; \
@@ -89,8 +93,7 @@ builddeb:
 	fi
 	mv ../cntlm_$(VER)*.deb .
 
-rpm: buildrpm
-buildrpm:
+rpm:
 	sed -i "s/^\(Version:[\t ]*\)\(.*\)/\1$(VER)/g" rpm/cntlm.spec
 	if [ `id -u` = 0 ]; then \
 		rpm/rules binary; \
@@ -100,42 +103,52 @@ buildrpm:
 		fakeroot rpm/rules clean; \
 	fi
 
-win: buildwin
-buildwin:
+win: win/setup.iss $(NAME) win/cntlm_manual.pdf win/cntlm.ini win/LICENSE.txt $(NAME)-$(VER)-win32.exe $(NAME)-$(VER)-win32.zip
+
+$(NAME)-$(VER)-win32.exe:
+	@echo - preparing binaries for GUI installer
+	@cp $(patsubst %, /bin/%, $(CYGWIN_REQS)) win/
+	@strip -o win/cntlm.exe cntlm.exe
+	@echo - generating GUI installer
+	@win/Inno5/ISCC.exe /Q win/setup.iss #/Q win/setup.iss
+
+$(NAME)-$(VER)-win32.zip: 
+	@echo - creating ZIP release for manual installs
+	@ln -s win $(NAME)-$(VER)
+	zip -9 $(NAME)-$(VER)-win32.zip $(patsubst %, $(NAME)-$(VER)/%, $(CYGWIN_REQS) cntlm.ini LICENSE.txt cntlm_manual.pdf) 
+	@rm -f $(NAME)-$(VER)
+
+win/cntlm.ini: doc/cntlm.conf 
+	@cat doc/cntlm.conf | unix2dos > win/cntlm.ini
+
+win/LICENSE.txt: COPYRIGHT LICENSE
+	@cat COPYRIGHT LICENSE | unix2dos > win/LICENSE.txt
+
+win/cntlm_manual.pdf: doc/cntlm.1 
+	@echo - generating PDF manual
+	@rm -f win/cntlm_manual.pdf
+	@groff -t -e -mandoc -Tps doc/cntlm.1 | ps2pdf - win/cntlm_manual.pdf
+
+win/setup.iss: win/setup.iss.in
+ifeq ($(findstring CYGWIN,$(OS)),)
 	@echo
 	@echo "* This build target must be run from a Cywgin shell on Windows *"
-	@echo "* and you also need InnoSetup installed                        *"
 	@echo
-	rm -f win/cntlm_manual.pdf
-	groff -t -e -mandoc -Tps doc/cntlm.1 | ps2pdf - win/cntlm_manual.pdf
-	cat doc/cntlm.conf | unix2dos > win/cntlm.ini
-	cat COPYRIGHT LICENSE | unix2dos > win/license.txt
-	sed "s/\$$VERSION/$(VER)/g" win/setup.iss.in > win/setup.iss
-	cp /bin/cygwin1.dll /bin/cyggcc_s-1.dll /bin/cygrunsrv.exe win/
-	cp cntlm.exe win/
-	strip win/cntlm.exe
-	ln -s win $(NAME)-$(VER)
-	zip -9 $(NAME)-$(VER)-win32.zip $(NAME)-$(VER)/cntlm.exe $(NAME)-$(VER)/cyggcc_s-1.dll $(NAME)-$(VER)/cygwin1.dll $(NAME)-$(VER)/cygrunsrv.exe $(NAME)-$(VER)/cntlm.ini $(NAME)-$(VER)/README.txt $(NAME)-$(VER)/license.txt
-	rm -f $(NAME)-$(VER)
-	@echo
-	@echo Now open folder "win", right-click "setup.iss", then "Compile".
-	@echo InnoSetup will generate a new installer cntlm-X.XX-setup.exe
-	@echo
-
-win/resources.o: win/resources.rc
-	@echo Adding EXE resources
-	@windres $^ -o $@
+	@exit 1
+endif
+	@sed "s/\$$VERSION/$(VER)/g" $^ > $@
 
 uninstall:
 	rm -f $(BINDIR)/$(NAME) $(MANDIR)/man1/$(NAME).1 2>/dev/null || true
 
 clean:
-	@rm -f *.o cntlm cntlm.exe configure-stamp build-stamp config/config.h 2>/dev/null
-	@rm -f win/*.exe win/*.dll win/*.iss win/*.pdf win/cntlm.ini win/license.txt win/resouces.o 2>/dev/null
 	@rm -f config/endian config/gethostname config/strdup config/socklen_t config/*.exe
+	@rm -f *.o cntlm cntlm.exe configure-stamp build-stamp config/config.h
+	rm -f $(patsubst %, win/%, $(CYGWIN_REQS) cntlm.exe cntlm.ini LICENSE.txt setup.iss cntlm_manual.pdf)
 	@if [ -h Makefile ]; then rm -f Makefile; mv Makefile.gcc Makefile; fi
 
 distclean: clean
+ifeq ($(findstring CYGWIN,$(OS)),)
 	if [ `id -u` = 0 ]; then \
 		debian/rules clean; \
 		rpm/rules clean; \
@@ -143,4 +156,5 @@ distclean: clean
 		fakeroot debian/rules clean; \
 		fakeroot rpm/rules clean; \
 	fi
-	@rm -f *.exe *.deb *.rpm *.tgz *.tar.gz *.tar.bz2 tags ctags pid 2>/dev/null
+endif
+	@rm -f *.exe *.deb *.rpm *.tgz *.tar.gz *.tar.bz2 *.zip *.exe tags ctags pid 2>/dev/null

@@ -2,18 +2,19 @@
 AppId={{4D753458-961F-45DA-B5E3-7B44D4E368B4}
 AppName=Cntlm
 AppVerName=Cntlm v$VERSION
-AppCopyright=Copyright (C) 2007-2010 David Kubicek
+AppCopyright=Copyright (C) 2007-2012 David Kubicek
+AppContact=cntlm@awk.cz
 AppPublisher=David Kubicek
 AppPublisherURL=http://cntlm.sf.net/
-LicenseFile=license.txt
+LicenseFile=LICENSE.txt
 
 DefaultDirName={pf}\Cntlm
 DefaultGroupName=Cntlm
 SetupIconFile=cntlm.ico
 UninstallDisplayIcon={app}\cntlm.ico
 Uninstallable=yes
-OutputBaseFileName=cntlm-$VERSION-setup
-OutputDir=.
+OutputBaseFileName=cntlm-$VERSION-win32
+OutputDir=..
 
 [Files]
 Source: "cntlm.exe"; DestDir: "{app}"
@@ -23,7 +24,8 @@ Source: "cyggcc_s-1.dll"; DestDir: "{app}"
 Source: "cygstdc++-6.dll"; DestDir: "{app}"
 Source: "cntlm.ini"; DestDir: "{app}"; Flags: uninsneveruninstall confirmoverwrite
 Source: "cntlm_manual.pdf"; DestDir: "{app}"
-Source: "README.txt"; DestDir: "{app}"; Flags: isreadme
+Source: "LICENSE.txt"; DestDir: "{app}";
+Source: "README.txt"; DestDir: "{app}";
 Source: "Cntlm Homepage.url"; DestDir: "{app}"
 Source: "Software Updates.url"; DestDir: "{app}"
 Source: "Support Website.url"; DestDir: "{app}"
