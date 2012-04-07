@@ -89,6 +89,7 @@ struct rr_data_s {
 	int body_len;
 	int empty;
 	int port;
+	int http_version;
 	char *method;
 	char *url;
 	char *rel_url;

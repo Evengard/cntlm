@@ -188,6 +188,7 @@ int proxy_authenticate(int *sd, rr_data_t request, rr_data_t response, struct au
 
 	if (debug) {
 		printf("\nSending PROXY auth request...\n");
+		printf("HEAD: %s %s %s\n", auth->method, auth->url, auth->http);
 		hlist_dump(auth->headers);
 	}
 
@@ -316,7 +317,7 @@ bailout:
  * request is NOT freed
  */
 rr_data_t forward_request(void *thread_data, rr_data_t request) {
-	int i, w, loop, plugin, retry = 0;
+	int i, loop, plugin, retry = 0;
 	int *rsocket[2], *wsocket[2];
 	rr_data_t data[2], rc = NULL;
 	hlist_t tl;
@@ -368,7 +369,7 @@ beginning:
 		sd = proxy_connect(tcreds);
 		if (sd <= 0) {
 			tmp = gen_502_page(request->http, "Parent proxy unreacheable");
-			w = write(cd, tmp, strlen(tmp));
+			i = write(cd, tmp, strlen(tmp));
 			free(tmp);
 			rc = (void *)-1;
 			goto bailout;
@@ -446,7 +447,9 @@ beginning:
 					&& strcasecmp(hostname, data[0]->hostname)) {
 				if (debug)
 					printf("\n******* F RETURN: %s *******\n", data[0]->url);
-				if (authok)
+				if (authok && data[0]->http_version >= 11
+						&& (hlist_subcmp(data[0]->headers, "Proxy-Connection", "keep-alive")
+							|| hlist_subcmp(data[0]->headers, "Connection", "keep-alive")))
 					proxy_alive = 1;
 
 				rc = dup_rr_data(data[0]);
@@ -465,7 +468,7 @@ shortcut:
 			/*
 			 * Modify request headers.
 			 *
-			 * Try to request keep-alive for every connection. We keep them in a pool
+			 * Try to request keep-alive for every client supporting HTTP/1.1+. We keep them in a pool
 			 * for future reuse.
 			 */
 			if (loop == 0 && data[0]->req) {
@@ -474,13 +477,14 @@ shortcut:
 				 */
 				if (http_parse_basic(data[loop]->headers, "Proxy-Authorization", tcreds) > 0) {
 					if (debug)
-						printf("NTLM-to-basic: Credentials parsed: %s\\%s at %s\n", tcreds->domain, tcreds->user, tcreds->workstation);
+						printf("NTLM-to-basic: Credentials parsed: %s\\%s at %s\n",
+								tcreds->domain, tcreds->user, tcreds->workstation);
 				} else if (ntlmbasic) {
 					if (debug)
 						printf("NTLM-to-basic: Returning client auth request.\n");
 
 					tmp = gen_407_page(data[loop]->http);
-					w = write(cd, tmp, strlen(tmp));
+					i = write(cd, tmp, strlen(tmp));
 					free(tmp);
 
 					free_rr_data(data[0]);
@@ -499,13 +503,14 @@ shortcut:
 				}
 
 				/*
-				 * Also remove runaway P-A from the client (e.g. Basic from N-t-B), which might 
-				 * cause some ISAs to deny us, even if the connection is already auth'd.
+				 * Force proxy keep-alive if the client can handle it (HTTP >= 1.1)
 				 */
-				data[0]->headers = hlist_mod(data[0]->headers, "Proxy-Connection", "keep-alive", 1);
+				if (data[0]->http_version >= 11)
+					data[0]->headers = hlist_mod(data[0]->headers, "Proxy-Connection", "keep-alive", 1);
 
 				/*
-				 * Remove all Proxy-Authorization headers from client
+				 * Also remove runaway P-A from the client (e.g. Basic from N-t-B), which might 
+				 * cause some ISAs to deny us, even if the connection is already auth'd.
 				 */
 				while (hlist_get(data[loop]->headers, "Proxy-Authorization")) {
 					data[loop]->headers = hlist_del(data[loop]->headers, "Proxy-Authorization");
@@ -623,8 +628,10 @@ shortcut:
 			if (plugin & PLUG_SENDHEAD) {
 				if (debug) {
 					printf("Sending headers (%d)...\n", *wsocket[loop]);
-					if (loop == 0)
+					if (loop == 0) {
+						printf("HEAD: %s %s %s\n", data[loop]->method, data[loop]->url, data[loop]->http);
 						hlist_dump(data[loop]->headers);
+					}
 				}
 
 				/*
@@ -672,8 +679,14 @@ shortcut:
 			 * This way, we also tell our caller that proxy keep-alive is impossible.
 			 */
 			if (loop == 1) {
-				proxy_alive = hlist_subcmp(data[loop]->headers, "Proxy-Connection", "keep-alive");
-				if (!proxy_alive) {
+				proxy_alive = hlist_subcmp(data[1]->headers, "Proxy-Connection", "keep-alive")
+					&& data[0]->http_version >= 11;
+				if (proxy_alive) {
+					data[1]->headers = hlist_mod(data[1]->headers, "Proxy-Connection", "keep-alive", 1);
+					data[1]->headers = hlist_mod(data[1]->headers, "Connection", "keep-alive", 1);
+				} else {
+					data[1]->headers = hlist_mod(data[1]->headers, "Proxy-Connection", "close", 1);
+					data[1]->headers = hlist_mod(data[1]->headers, "Connection", "close", 1);
 					if (debug)
 						printf("PROXY CLOSING CONNECTION\n");
 					rc = (void *)-1;

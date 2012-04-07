@@ -198,6 +198,8 @@ rr_data_t direct_request(void *cdata, rr_data_t request) {
 		syslog(LOG_WARNING, "Connection failed for %s:%d (%s)", request->hostname, request->port, strerror(errno));
 		tmp = gen_502_page(request->http, strerror(errno));
 		w = write(cd, tmp, strlen(tmp));
+		// We don't really care about the result - shut up GCC warning (unused-but-set-variable)
+		if (!w) w = 1;
 		free(tmp);
 
 		rc = (void *)-1;
@@ -282,8 +284,19 @@ rr_data_t direct_request(void *cdata, rr_data_t request) {
 					data[0]->url = strdup(data[0]->rel_url);
 				}
 
-				data[0]->headers = hlist_mod(data[0]->headers, "Connection", "keep-alive", 1);
-				data[0]->headers = hlist_del(data[0]->headers, "Proxy-Authorization");
+				/*
+				 * Force proxy keep-alive if the client can handle it (HTTP >= 1.1)
+				 */
+				if (data[0]->http_version >= 11)
+					data[0]->headers = hlist_mod(data[0]->headers, "Connection", "keep-alive", 1);
+
+				/*
+				 * Also remove runaway P-A from the client (e.g. Basic from N-t-B), which might 
+				 * cause some ISAs to deny us, even if the connection is already auth'd.
+				 */
+				while (hlist_get(data[loop]->headers, "Proxy-Authorization")) {
+					data[loop]->headers = hlist_del(data[loop]->headers, "Proxy-Authorization");
+				}
 
 				/*
 				 * Try to get auth from client if present
@@ -373,18 +386,25 @@ rr_data_t direct_request(void *cdata, rr_data_t request) {
 			 */
 			if (loop == 1) {
 				conn_alive = !hlist_subcmp(data[1]->headers, "Connection", "close")
-					&& http_has_body(data[0], data[1]) != -1;
+					&& http_has_body(data[0], data[1]) != -1
+					&& data[0]->http_version >= 11;
 				if (conn_alive) {
 					data[1]->headers = hlist_mod(data[1]->headers, "Proxy-Connection", "keep-alive", 1);
 					data[1]->headers = hlist_mod(data[1]->headers, "Connection", "keep-alive", 1);
 				} else {
 					data[1]->headers = hlist_mod(data[1]->headers, "Proxy-Connection", "close", 1);
+					data[1]->headers = hlist_mod(data[1]->headers, "Connection", "close", 1);
 					rc = (void *)-1;
 				}
 			}
 
-			if (debug)
+			if (debug) {
 				printf("Sending headers (%d)...\n", *wsocket[loop]);
+				if (loop == 0) {
+					printf("HEAD: %s %s %s\n", data[loop]->method, data[loop]->url, data[loop]->http);
+					hlist_dump(data[loop]->headers);
+				}
+			}
 
 			/*
 			 * Send headers

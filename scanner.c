@@ -153,6 +153,8 @@ int scanner_hook(rr_data_t request, rr_data_t response, struct auth_s *credentia
 						tmp = new(MINIBUF_SIZE);
 						snprintf(tmp, MINIBUF_SIZE, "%s 200 OK\r\n", request->http);
 						w = write(cd, tmp, strlen(tmp));
+						// We don't really care about the result - shut up GCC warning (unused-but-set-variable)
+						if (!w) w = 1;
 						free(tmp);
 					}
 

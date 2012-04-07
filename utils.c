@@ -508,6 +508,7 @@ rr_data_t new_rr_data(void) {
 	data->body_len = 0;
 	data->empty = 1;
 	data->port = 0;
+	data->http_version = -1;
 	data->headers = NULL;
 	data->method = NULL;
 	data->url = NULL;
@@ -535,6 +536,7 @@ rr_data_t copy_rr_data(rr_data_t dst, rr_data_t src) {
 	dst->body_len = src->body_len;
 	dst->empty = src->empty;
 	dst->port = src->port;
+	dst->http_version = src->http_version;
 
 	if (src->headers)
 		dst->headers = hlist_dup(src->headers);
@@ -584,6 +586,7 @@ rr_data_t reset_rr_data(rr_data_t data) {
 	data->body_len = 0;
 	data->empty = 1;
 	data->port = 0;
+	data->http_version = -1;
 
 	if (data->headers) hlist_free(data->headers);
 	if (data->method) free(data->method);
@@ -623,6 +626,7 @@ void free_rr_data(rr_data_t data) {
 	if (data->http) free(data->http);
 	if (data->msg) free(data->msg);
 	if (data->body) free(data->body);
+	memset(data, 0, sizeof(struct rr_data_s));
 	free(data);
 }
 
