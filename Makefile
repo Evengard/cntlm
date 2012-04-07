@@ -15,17 +15,22 @@ MANDIR     	:= $(DESTDIR)/usr/share/man
 NAME		:= cntlm
 CC		:= gcc
 VER		:= $(shell cat VERSION)
-CFLAGS		:= $(FLAGS) -std=c99 -Wall -pedantic -O3 -D__BSD_VISIBLE -D_ALL_SOURCE -D_XOPEN_SOURCE=600 -D_POSIX_C_SOURCE=200112 -D_ISOC99_SOURCE -D_REENTRANT -D_BSD_SOURCE -DVERSION=\"`cat VERSION`\"
 OS		:= $(shell uname -s)
 OSLDFLAGS	:= $(shell [ $(OS) = "SunOS" ] && echo "-lrt -lsocket -lnsl")
-LDFLAGS		:=-lpthread $(OSLDFLAGS)
+LDFLAGS		:= -lpthread $(OSLDFLAGS)
+CYGWIN_REQS	:= cygwin1.dll cyggcc_s-1.dll cygstdc++-6.dll cygrunsrv.exe 
+
+ifdef $(DEBUG)
+	CFLAGS	+= -g  -std=c99 -Wall -pedantic -D__BSD_VISIBLE -D_ALL_SOURCE -D_XOPEN_SOURCE=600 -D_POSIX_C_SOURCE=200112 -D_ISOC99_SOURCE -D_REENTRANT -D_BSD_SOURCE -DVERSION=\"'$(VER)'\"
+else
+	CFLAGS	+= -O3 -std=c99 -D__BSD_VISIBLE -D_ALL_SOURCE -D_XOPEN_SOURCE=600 -D_POSIX_C_SOURCE=200112 -D_ISOC99_SOURCE -D_REENTRANT -D_BSD_SOURCE -DVERSION=\"'$(VER)'\"
+endif
 
 ifneq ($(findstring CYGWIN,$(OS)),)
 	OBJS=utils.o ntlm.o xcrypt.o config.o socket.o acl.o auth.o http.o forward.o direct.o scanner.o pages.o main.o win/resources.o
 else
 	OBJS=utils.o ntlm.o xcrypt.o config.o socket.o acl.o auth.o http.o forward.o direct.o scanner.o pages.o main.o
 endif
-CYGWIN_REQS=cygwin1.dll cyggcc_s-1.dll cygstdc++-6.dll cygrunsrv.exe 
 
 $(NAME): configure-stamp $(OBJS)
 	@echo "Linking $@"
@@ -42,6 +47,9 @@ main.o: main.c
 %.o: %.c
 	@echo "Compiling $<"
 	@$(CC) $(CFLAGS) -c -o $@ $<
+
+configure-stamp:
+	./configure
 
 win/resources.o: win/resources.rc
 	@echo Adding EXE resources
@@ -108,7 +116,11 @@ win: win/setup.iss $(NAME) win/cntlm_manual.pdf win/cntlm.ini win/LICENSE.txt $(
 $(NAME)-$(VER)-win32.exe:
 	@echo - preparing binaries for GUI installer
 	@cp $(patsubst %, /bin/%, $(CYGWIN_REQS)) win/
+ifdef $(DEBUG)
+	@cp -p cntlm.exe win/
+else
 	@strip -o win/cntlm.exe cntlm.exe
+endif
 	@echo - generating GUI installer
 	@win/Inno5/ISCC.exe /Q win/setup.iss #/Q win/setup.iss
 
