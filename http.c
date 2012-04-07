@@ -640,6 +640,7 @@ int http_parse_basic(hlist_t headers, const char *header, struct auth_s *tcreds)
 		*pos = 0;
 		dom = strchr(buf, '\\');
 		if (dom == NULL) {
+			auth_strcpy(tcreds, domain, "");
 			auth_strcpy(tcreds, user, buf);
 		} else {
 			*dom = 0;

@@ -686,6 +686,7 @@ int main(int argc, char **argv) {
 	int tracefile = 0;
 	int cflags = 0;
 	int asdaemon = 1;
+	char *myconfig = NULL;
 	plist_t tunneld_list = NULL;
 	plist_t proxyd_list = NULL;
 	plist_t socksd_list = NULL;
@@ -713,7 +714,7 @@ int main(int argc, char **argv) {
 	syslog(LOG_INFO, "Starting cntlm version " VERSION " for LITTLE endian\n");
 #endif
 
-	while ((i = getopt(argc, argv, ":-:a:c:d:fghIl:p:r:su:vw:A:BD:F:G:HL:M:N:O:P:R:S:T:U:")) != -1) {
+	while ((i = getopt(argc, argv, ":-:T:a:c:d:fghIl:p:r:su:vw:A:BD:F:G:HL:M:N:O:P:R:S:U:")) != -1) {
 		switch (i) {
 			case 'A':
 			case 'D':
@@ -727,10 +728,7 @@ int main(int argc, char **argv) {
 				ntlmbasic = 1;
 				break;
 			case 'c':
-				if (!(cf = config_open(optarg))) {
-					syslog(LOG_ERR, "Cannot access specified config file: %s\n", optarg);
-					myexit(1);
-				}
+				myconfig = strdup(optarg);
 				break;
 			case 'd':
 				strlcpy(cdomain, optarg, MINIBUF_SIZE);
@@ -825,7 +823,10 @@ int main(int argc, char **argv) {
 				serialize = 1;
 				break;
 			case 'T':
+				debug = 1;
+				asdaemon = 0;
 				tracefile = open(optarg, O_CREAT | O_TRUNC | O_WRONLY, 0600);
+				openlog("cntlm", LOG_CONS | LOG_PERROR, LOG_DAEMON);
 				if (tracefile < 0) {
 					fprintf(stderr, "Cannot create trace file.\n");
 					myexit(1);
@@ -833,14 +834,6 @@ int main(int argc, char **argv) {
 					printf("Redirecting all output to %s\n", optarg);
 					dup2(tracefile, 1);
 					dup2(tracefile, 2);
-					printf("Cntlm debug trace, version " VERSION);
-#ifdef __CYGWIN__
-					printf(" windows/cygwin port");
-#endif
-					printf(".\nCommand line: ");
-					for (i = 0; i < argc; ++i)
-						printf("%s ", argv[i]);
-					printf("\n");
 				}
 				break;
 			case 'U':
@@ -925,6 +918,9 @@ int main(int argc, char **argv) {
 		fprintf(stderr, "\t-S  <size_in_kb>\n"
 				"\t    Enable automation of GFI WebMonitor ISA scanner for files < size_in_kb.\n");
 		fprintf(stderr, "\t-s  Do not use threads, serialize all requests - for debugging only.\n");
+		fprintf(stderr, "\t-T  <file.log>\n"
+				"\t    Redirect all debug information into a trace file for support upload.\n"
+				"\t    MUST be the first argument on the command line, implies -v.\n");
 		fprintf(stderr, "\t-U  <uid>\n"
 				"\t    Run as uid. It is an important security measure not to run as root.\n");
 		fprintf(stderr, "\t-u  <user>[@<domain]\n"
@@ -933,6 +929,25 @@ int main(int argc, char **argv) {
 		fprintf(stderr, "\t-w  <workstation>\n"
 				"\t    Some proxies require correct NetBIOS hostname.\n\n");
 		exit(1);
+	}
+
+	if (debug) {
+		printf("Cntlm debug trace, version " VERSION);
+#ifdef __CYGWIN__
+		printf(" windows/cygwin port");
+#endif
+		printf(".\nCommand line: ");
+		for (i = 0; i < argc; ++i)
+			printf("%s ", argv[i]);
+		printf("\n");
+	}
+
+	if (myconfig) {
+		if (!(cf = config_open(myconfig))) {
+			syslog(LOG_ERR, "Cannot access specified config file: %s\n", myconfig);
+			myexit(1);
+		}
+		free(myconfig);
 	}
 
 	/*

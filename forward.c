@@ -621,7 +621,7 @@ shortcut:
 				 * by our BASIC translation request.
 				 */
 				if (data[1]->code == 407) {
-					data[1]->headers = hlist_mod(data[1]->headers, "Proxy-Authenticate", "Basic realm=\"Cntlm for parent\"", 1);
+					data[1]->headers = hlist_mod(data[1]->headers, "Proxy-Authenticate", "Basic realm=\"Auth failed, you can try other credentials\"", 1);
 				}
 			}
 
@@ -912,13 +912,15 @@ void magic_auth_detect(const char *url) {
 
 		reset_rr_data(res);
 		if (!headers_send(nc, req) || !headers_recv(nc, res)) {
-			printf("Connection closed\n");
+			printf("Connection closed!? Proxy doesn't talk to us.\n");
 		} else {
 			if (res->code == 407) {
-				if (hlist_subcmp_all(res->headers, "Proxy-Authenticate", "NTLM") || hlist_subcmp_all(res->headers, "Proxy-Authenticate", "BASIC")) {
-					printf("Credentials rejected\n");
+				if (hlist_subcmp_all(res->headers, "Proxy-Authenticate", "NTLM") ) {
+					printf("Credentials rejected (NTLM allowed)\n");
+				} else if (hlist_subcmp_all(res->headers, "Proxy-Authenticate", "BASIC")) {
+					printf("Proxy allows BASIC, Cntlm not required so it's not supported\n");
 				} else {
-					printf("Proxy doesn't offer NTLM or BASIC\n");
+					printf("Proxy doesn't allow NTLM, Cntlm won't help\n");
 					break;
 				}
 			} else {
