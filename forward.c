@@ -961,7 +961,7 @@ void magic_auth_detect(const char *url) {
 	} else if (ign == MAGIC_TESTS) {
 		printf("\nYour proxy is open, you don't need another proxy.\n");
 	} else
-		printf("\nWrong credentials, invalid URL or proxy doesn't support NTLM nor BASIC.\n");
+		printf("\nWrong credentials, invalid URL or proxy doesn't support NTLM.\n");
 
 	if (host)
 		free(host);
