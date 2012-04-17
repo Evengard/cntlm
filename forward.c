@@ -498,7 +498,7 @@ shortcut:
 				 */
 				tl = header_list;
 				while (tl) {
-					data[0]->headers = hlist_mod(data[0]->headers, tl->key, tl->value, 0);
+					data[0]->headers = hlist_mod(data[0]->headers, tl->key, tl->value, 1);
 					tl = tl->next;
 				}
 
