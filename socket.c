@@ -187,7 +187,7 @@ int so_listen(int port, struct in_addr source) {
 		return -1;
 	}
 
-	if (listen(fd, 5)) {
+	if (listen(fd, SOMAXCONN)) {
 		close(fd);
 		return -1;
 	}
