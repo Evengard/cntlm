@@ -77,14 +77,14 @@ int proxy_connect(struct auth_s *credentials) {
 			}
 		}
 
-		i = 0;
+		i = -1;
 		if (aux->resolved != 0)
 			i = so_connect(aux->host, aux->port);
 
 		/*
 		 * Resolve or connect failed?
 		 */
-		if (i <= 0) {
+		if (i < 0) {
 			pthread_mutex_lock(&parent_mtx);
 			if (parent_curr >= parent_count)
 				parent_curr = 0;
@@ -92,9 +92,9 @@ int proxy_connect(struct auth_s *credentials) {
 			pthread_mutex_unlock(&parent_mtx);
 			syslog(LOG_ERR, "Proxy connect failed, will try %s:%d\n", aux->hostname, aux->port);
 		}
-	} while (i <= 0 && ++loop < parent_count);
+	} while (i < 0 && ++loop < parent_count);
 
-	if (i <= 0 && loop >= parent_count)
+	if (i < 0 && loop >= parent_count)
 		syslog(LOG_ERR, "No proxy on the list works. You lose.\n");
 
 	/*
@@ -193,6 +193,7 @@ int proxy_authenticate(int *sd, rr_data_t request, rr_data_t response, struct au
 	}
 
 	if (!headers_send(*sd, auth)) {
+		close(*sd);
 		goto bailout;
 	}
 
@@ -210,6 +211,7 @@ int proxy_authenticate(int *sd, rr_data_t request, rr_data_t response, struct au
 
 	reset_rr_data(auth);
 	if (!headers_recv(*sd, auth)) {
+		close(*sd);
 		goto bailout;
 	}
 
@@ -224,6 +226,7 @@ int proxy_authenticate(int *sd, rr_data_t request, rr_data_t response, struct au
 	if (auth->code == 407) {
 		if (!http_body_drop(*sd, auth)) {				// FIXME: if below fails, we should forward what we drop here...
 			rc = 0;
+			close(*sd);
 			goto bailout;
 		}
 		tmp = hlist_get(auth->headers, "Proxy-Authenticate");
@@ -240,11 +243,13 @@ int proxy_authenticate(int *sd, rr_data_t request, rr_data_t response, struct au
 				} else {
 					syslog(LOG_ERR, "No target info block. Cannot do NTLMv2!\n");
 					free(challenge);
+					close(*sd);
 					goto bailout;
 				}
 			} else {
 				syslog(LOG_ERR, "Proxy returning invalid challenge!\n");
 				free(challenge);
+				close(*sd);
 				goto bailout;
 			}
 
@@ -259,6 +264,7 @@ int proxy_authenticate(int *sd, rr_data_t request, rr_data_t response, struct au
 			response->code = 407;				// See explanation above
 		if (!http_body_drop(*sd, auth)) {
 			rc = 0;
+			close(*sd);
 			goto bailout;
 		}
 	}
@@ -367,7 +373,7 @@ beginning:
 	} else {
 		tcreds = new_auth();
 		sd = proxy_connect(tcreds);
-		if (sd <= 0) {
+		if (sd < 0) {
 			tmp = gen_502_page(request->http, "Parent proxy unreacheable");
 			i = write(cd, tmp, strlen(tmp));
 			free(tmp);
@@ -817,7 +823,7 @@ void forward_tunnel(void *thread_data) {
 	tcreds = new_auth();
 	sd = proxy_connect(tcreds);
 
-	if (sd <= 0)
+	if (sd < 0)
 		goto bailout;
 
 	syslog(LOG_DEBUG, "%s TUNNEL %s", inet_ntoa(caddr.sin_addr), thost);
