@@ -123,7 +123,7 @@ static void ntlm2_calc_resp(char **nthash, int *ntlen, char **lmhash, int *lmlen
 	return;
 }
 
-static void ntlm2sr_calc_resp(char **nthash, int *ntlen, char **lmhash, int *lmlen, char *passnt, char *challenge) {
+static void ntlm2sr_calc_rest(char **nthash, int *ntlen, char **lmhash, int *lmlen, char *passnt, char *challenge) {
 	char *sess, *nonce, *buf;
 
 	nonce = new(8 + 1);
@@ -176,9 +176,7 @@ char *ntlm_hash_nt_password(char *password) {
 	int len;
 
 	keys = new(21 + 1);
-	//len = unicode(&u16, password);
-	len = strlen(password);
-	u16 = strdup(password);
+	len = unicode(&u16, password);
 	md4_buffer(u16, len, keys);
 
 	memset(keys+16, 0, 5);
@@ -198,9 +196,7 @@ char *ntlm2_hash_password(char *username, char *domain, char *password) {
 	strcat(buf, username);
 	strcat(buf, domain);
 	uppercase(buf);
-	//len = unicode(&tmp, buf);
-	len = strlen(buf);
-	tmp = strdup(buf);
+	len = unicode(&tmp, buf);
 
 	passnt2 = new(16 + 1);
 	hmac_md5(passnt, 16, tmp, len, passnt2);
@@ -223,13 +219,13 @@ int ntlm_request(char **dst, struct auth_s *creds) {
 
 	if (!creds->flags) {
 		if (creds->hashntlm2)
-			flags = 0xa208b206;
+			flags = 0xa208b205;
 		else if (creds->hashnt == 2)
-			flags = 0xa208b206;
+			flags = 0xa208b207;
 		else if (creds->hashnt && creds->hashlm)
-			flags = 0xb206;
+			flags = 0xb207;
 		else if (creds->hashnt)
-			flags = 0xb206;
+			flags = 0xb205;
 		else if (creds->hashlm)
 			flags = 0xb206;
 		else {
@@ -368,7 +364,7 @@ int ntlm_response(char **dst, char *challenge, int challen, struct auth_s *creds
 	}
 
 	if (creds->hashnt == 2) {
-		ntlm2sr_calc_resp(&nthash, &ntlen, &lmhash, &lmlen, creds->passnt, challenge);
+		ntlm2sr_calc_rest(&nthash, &ntlen, &lmhash, &lmlen, creds->passnt, challenge);
 	}
 
 	if (creds->hashnt == 1) {
@@ -379,7 +375,6 @@ int ntlm_response(char **dst, char *challenge, int challen, struct auth_s *creds
 		lmlen = ntlm_calc_resp(&lmhash, creds->passlm, MEM(challenge, char, 24));
 	}
 
-	/*
 	if (creds->hashnt || creds->hashntlm2) {
 		tmp = uppercase(strdup(creds->domain));
 		dlen = unicode(&udomain, tmp);
@@ -388,7 +383,7 @@ int ntlm_response(char **dst, char *challenge, int challen, struct auth_s *creds
 		tmp = uppercase(strdup(creds->workstation));
 		hlen = unicode(&uhost, tmp);
 		free(tmp);
-	} else */ {
+	} else {
 		udomain = uppercase(strdup(creds->domain));
 		uuser = uppercase(strdup(creds->user));
 		uhost = uppercase(strdup(creds->workstation));
