@@ -1,6 +1,6 @@
 Summary:        Fast NTLM authentication proxy with tunneling
 Name:           cntlm
-Version:		0.93beta4
+Version:		0.93beta5
 Release:        1%{?dist}
 License:        GNU GPL V2
 %if 0%{?suse_version}
