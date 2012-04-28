@@ -52,7 +52,7 @@ configure-stamp:
 	./configure
 
 win/resources.o: win/resources.rc
-	@echo Adding EXE resources
+	@echo Win32: adding ICON resource
 	@windres $^ -o $@
 
 install: $(NAME)
@@ -114,32 +114,34 @@ rpm:
 win: win/setup.iss $(NAME) win/cntlm_manual.pdf win/cntlm.ini win/LICENSE.txt $(NAME)-$(VER)-win32.exe $(NAME)-$(VER)-win32.zip
 
 $(NAME)-$(VER)-win32.exe:
-	@echo - preparing binaries for GUI installer
+	@echo Win32: preparing binaries for GUI installer
 	@cp $(patsubst %, /bin/%, $(CYGWIN_REQS)) win/
 ifeq ($(DEBUG),1)
+	@echo Win32: copy DEBUG executable
 	@cp -p cntlm.exe win/
 else
+	@echo Win32: copy release executable
 	@strip -o win/cntlm.exe cntlm.exe
 endif
-	@echo - generating GUI installer
+	@echo Win32: generating GUI installer
 	@win/Inno5/ISCC.exe /Q win/setup.iss #/Q win/setup.iss
 
 $(NAME)-$(VER)-win32.zip: 
-	@echo - creating ZIP release for manual installs
+	@echo Win32: creating ZIP release for manual installs
 	@ln -s win $(NAME)-$(VER)
-	zip -9 $(NAME)-$(VER)-win32.zip $(patsubst %, $(NAME)-$(VER)/%, $(CYGWIN_REQS) cntlm.ini LICENSE.txt cntlm_manual.pdf) 
+	zip -9 $@ $(patsubst %, $(NAME)-$(VER)/%, cntlm.exe $(CYGWIN_REQS) cntlm.ini LICENSE.txt cntlm_manual.pdf) 
 	@rm -f $(NAME)-$(VER)
 
 win/cntlm.ini: doc/cntlm.conf 
-	@cat doc/cntlm.conf | unix2dos > win/cntlm.ini
+	@cat doc/cntlm.conf | unix2dos > $@
 
 win/LICENSE.txt: COPYRIGHT LICENSE
-	@cat COPYRIGHT LICENSE | unix2dos > win/LICENSE.txt
+	@cat COPYRIGHT LICENSE | unix2dos > $@
 
 win/cntlm_manual.pdf: doc/cntlm.1 
-	@echo - generating PDF manual
-	@rm -f win/cntlm_manual.pdf
-	@groff -t -e -mandoc -Tps doc/cntlm.1 | ps2pdf - win/cntlm_manual.pdf
+	@echo Win32: generating PDF manual
+	@rm -f $@
+	@groff -t -e -mandoc -Tps doc/cntlm.1 | ps2pdf - $@
 
 win/setup.iss: win/setup.iss.in
 ifeq ($(findstring CYGWIN,$(OS)),)
