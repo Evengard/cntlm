@@ -25,24 +25,26 @@
 
 #ifdef __CYGWIN__
 
+#include "utils.h"
+
 #define SECURITY_WIN32
 
 #include <windows.h>
 #include <sspi.h>
 
-// Function pointers
-ACCEPT_SECURITY_CONTEXT_FN       _AcceptSecurityContext     = NULL;
-ACQUIRE_CREDENTIALS_HANDLE_FN    _AcquireCredentialsHandle  = NULL;
-COMPLETE_AUTH_TOKEN_FN           _CompleteAuthToken         = NULL;
-DELETE_SECURITY_CONTEXT_FN       _DeleteSecurityContext     = NULL;
-FREE_CONTEXT_BUFFER_FN           _FreeContextBuffer         = NULL;
-FREE_CREDENTIALS_HANDLE_FN       _FreeCredentialsHandle     = NULL;
-INITIALIZE_SECURITY_CONTEXT_FN   _InitializeSecurityContext = NULL;
-QUERY_SECURITY_PACKAGE_INFO_FN   _QuerySecurityPackageInfo  = NULL;
-QUERY_SECURITY_CONTEXT_TOKEN_FN  _QuerySecurityContextToken = NULL;
+#define TOKEN_BUFSIZE 4096
 
-extern int sspi_request(char **dst);
-extern int sspi_response(char **dst, char *challenge, int challen);
+struct sspi_handle
+{
+	CredHandle credentials;
+	CtxtHandle context;
+};
+
+extern int sspi_enalbed();
+extern int sspi_set(char *mode);
+
+extern int sspi_request(char **dst, struct sspi_handle *sspi);
+extern int sspi_response(char **dst, char *challenge, int challen, struct sspi_handle *sspi);
 
 #endif /*  __CYGWIN__ */
 

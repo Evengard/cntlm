@@ -25,6 +25,7 @@
 #include <stdint.h>
 
 #include "utils.h"
+#include "sspi.h"
 
 /*
  * Although I always prefer structs with pointer refs, I need direct storage
@@ -41,6 +42,7 @@ struct auth_s {
 	int hashntlm2;
 	int hashnt;
 	int hashlm;
+	struct sspi_handle sspi;
 	uint32_t flags;
 };
 

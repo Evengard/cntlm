@@ -59,6 +59,9 @@
 #include "pages.h"
 #include "forward.h"				/* code serving via parent proxy */
 #include "direct.h"				/* code serving directly without proxy */
+#ifdef __CYGWIN__
+#include "sspi.h"				/* code for SSPI management */
+#endif
 
 #define STACK_SIZE	sizeof(void *)*8*1024
 
@@ -714,7 +717,7 @@ int main(int argc, char **argv) {
 	syslog(LOG_INFO, "Starting cntlm version " VERSION " for LITTLE endian\n");
 #endif
 
-	while ((i = getopt(argc, argv, ":-:T:a:c:d:fghIl:p:r:su:vw:A:BD:F:G:HL:M:N:O:P:R:S:U:")) != -1) {
+	while ((i = getopt(argc, argv, ":-:T:a:c:d:fghIl:p:r:su:vw:A:BD:F:G:HL:M:N:O:P:R:S:U:X:")) != -1) {
 		switch (i) {
 			case 'A':
 			case 'D':
@@ -856,6 +859,17 @@ int main(int argc, char **argv) {
 			case 'w':
 				strlcpy(cworkstation, optarg, MINIBUF_SIZE);
 				break;
+			case 'X':
+#ifdef __CYGWIN__
+				if (!sspi_set(strdup(optarg)))
+				{
+					fprintf(stderr, "SSPI initialize failed! Proceeding with SSPI disabled.\n");
+				}
+#else
+				fprintf(stderr, "This feature is available under Windows only!\n");
+				help = 1;
+#endif				
+				break;
 			case 'h':
 			default:
 				help = 1;
@@ -927,7 +941,10 @@ int main(int argc, char **argv) {
 				"\t    Domain/workgroup can be set separately.\n");
 		fprintf(stderr, "\t-v  Print debugging information.\n");
 		fprintf(stderr, "\t-w  <workstation>\n"
-				"\t    Some proxies require correct NetBIOS hostname.\n\n");
+				"\t    Some proxies require correct NetBIOS hostname.\n");
+		fprintf(stderr, "\t-X  <sspi_handle_type>\n"
+				"\t    Use SSPI with specified handle type. Works only under Windows.\n"
+				"\t		Default is negotiate.");
 		exit(1);
 	}
 
@@ -992,6 +1009,22 @@ int main(int argc, char **argv) {
 	 * If any configuration file was successfully opened, parse it.
 	 */
 	if (cf) {
+#ifdef __CYGWIN__
+		/*
+		 * Check if SSPI is enabled and it's type.
+		 */
+		tmp = new(MINIBUF_SIZE);
+		CFG_DEFAULT(cf, "SSPI", tmp, MINIBUF_SIZE);
+		if (strlen(tmp))
+		{
+			if (!sspi_set(strdup(tmp)))
+			{
+				fprintf(stderr, "SSPI initialize failed! Proceeding with SSPI disabled.\n");
+			}
+		}
+		free(tmp);
+#endif
+		
 		/*
 		 * Check if gateway mode is requested before actually binding any ports.
 		 */
