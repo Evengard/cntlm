@@ -944,7 +944,7 @@ int main(int argc, char **argv) {
 				"\t    Some proxies require correct NetBIOS hostname.\n");
 		fprintf(stderr, "\t-X  <sspi_handle_type>\n"
 				"\t    Use SSPI with specified handle type. Works only under Windows.\n"
-				"\t		Default is negotiate.");
+				"\t		Default is negotiate.\n\n");
 		exit(1);
 	}
 
