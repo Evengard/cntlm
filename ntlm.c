@@ -29,6 +29,9 @@
 #include "xcrypt.h"
 #include "utils.h"
 #include "auth.h"
+#ifdef __CYGWIN__
+#include "sspi.h"
+#endif
 
 extern int debug;
 
@@ -209,6 +212,12 @@ char *ntlm2_hash_password(char *username, char *domain, char *password) {
 }
 
 int ntlm_request(char **dst, struct auth_s *creds) {
+#ifdef __CYGWIN__
+	if (sspi_enabled())
+	{
+		return sspi_request(dst, &creds->sspi);
+	}
+#endif
 	char *buf, *tmp;
 	int dlen, hlen;
 	uint32_t flags = 0xb206;
@@ -296,6 +305,12 @@ void dump(char *src, int len) {
 */
 
 int ntlm_response(char **dst, char *challenge, int challen, struct auth_s *creds) {
+#ifdef __CYGWIN__
+	if (sspi_enabled())
+	{
+		return sspi_response(dst, challenge, challen, &creds->sspi);
+	}
+#endif
 	char *buf, *udomain, *uuser, *uhost, *tmp;
 	int dlen, ulen, hlen;
 	uint16_t tpos, tlen, ttype = -1, tbofs = 0, tblen = 0;
