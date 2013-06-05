@@ -1009,21 +1009,6 @@ int main(int argc, char **argv) {
 	 * If any configuration file was successfully opened, parse it.
 	 */
 	if (cf) {
-#ifdef __CYGWIN__
-		/*
-		 * Check if SSPI is enabled and it's type.
-		 */
-		tmp = new(MINIBUF_SIZE);
-		CFG_DEFAULT(cf, "SSPI", tmp, MINIBUF_SIZE);
-		if (strlen(tmp))
-		{
-			if (!sspi_set(strdup(tmp)))
-			{
-				fprintf(stderr, "SSPI initialize failed! Proceeding with SSPI disabled.\n");
-			}
-		}
-		free(tmp);
-#endif
 		
 		/*
 		 * Check if gateway mode is requested before actually binding any ports.
@@ -1121,6 +1106,24 @@ int main(int argc, char **argv) {
 		CFG_DEFAULT(cf, "PassLM", cpasslm, MINIBUF_SIZE);
 		CFG_DEFAULT(cf, "Username", cuser, MINIBUF_SIZE);
 		CFG_DEFAULT(cf, "Workstation", cworkstation, MINIBUF_SIZE);
+		
+#ifdef __CYGWIN__
+		/*
+		 * Check if SSPI is enabled and it's type.
+		 */
+		tmp = new(MINIBUF_SIZE);
+		CFG_DEFAULT(cf, "SSPI", tmp, MINIBUF_SIZE);
+		
+		if (!sspi_enabled() && strlen(tmp))
+		{
+			if (!strcasecmp("NTLM", tmp) && !sspi_set(tmp)) // Only NTLM supported for now
+			{
+				fprintf(stderr, "SSPI initialize failed! Proceeding with SSPI disabled.\n");
+			}
+		}
+		free(tmp);
+		
+#endif
 
 		tmp = new(MINIBUF_SIZE);
 		CFG_DEFAULT(cf, "Flags", tmp, MINIBUF_SIZE);

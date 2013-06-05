@@ -175,22 +175,21 @@ HMODULE LoadSecurityDll() {
 
 int sspi_enabled()
 {
-	if (sspi_mode)
+	if (sspi_mode != NULL)
 		return 1;
 	return 0;
 }
 
 int sspi_set(char* mode)
 {
-	LoadSecurityDll();
+	sspi_dll = LoadSecurityDll();
 	if (sspi_dll)
 	{
 #ifdef UNICODE
 		sspi_mode = new(sizeof(wchar_t) * strlen(mode));
 		mbstowcs(sspi_mode, mode, strlen(mode));
-		free(mode);
 #else
-		sspi_mode = mode;
+		sspi_mode = strdup(mode);
 #endif
 		return 1;	
 	}
