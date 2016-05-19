@@ -39,7 +39,9 @@ struct auth_s *new_auth(void) {
 	memset(tmp->passntlm2, 0, MINIBUF_SIZE);
 	memset(tmp->passnt, 0, MINIBUF_SIZE);
 	memset(tmp->passlm, 0, MINIBUF_SIZE);
+#ifdef __CYGWIN__	
 	memset(&tmp->sspi, 0, sizeof(struct sspi_handle));
+#endif
 	tmp->hashntlm2 = 1;
 	tmp->hashnt = 0;
 	tmp->hashlm = 0;

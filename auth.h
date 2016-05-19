@@ -25,7 +25,9 @@
 #include <stdint.h>
 
 #include "utils.h"
+#ifdef __CYGWIN__
 #include "sspi.h"
+#endif
 
 /*
  * Although I always prefer structs with pointer refs, I need direct storage
@@ -42,7 +44,9 @@ struct auth_s {
 	int hashntlm2;
 	int hashnt;
 	int hashlm;
+#ifdef __CYGWIN__
 	struct sspi_handle sspi;
+#endif
 	uint32_t flags;
 };
 
