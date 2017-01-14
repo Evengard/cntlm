@@ -1,7 +1,7 @@
-#include <stdio.h>
 #include <stdint.h>
+#include <stdio.h>
 
-uint8_t num[] = { 0xEF, 0xBE };
+uint8_t num[] = {0xEF, 0xBE};
 
 /*
  * RC: 1 = LE, 0 = BE

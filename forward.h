@@ -20,8 +20,8 @@
 #ifndef _FORWARD_H
 #define _FORWARD_H
 
-#include "utils.h"
 #include "auth.h"
+#include "utils.h"
 
 extern int proxy_connect(struct auth_s *credentials);
 extern int proxy_authenticate(int *sd, rr_data_t request, rr_data_t response, struct auth_s *creds);

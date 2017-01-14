@@ -17,22 +17,22 @@
  *
  */
 
-#include <sys/types.h>
+#include <ctype.h>
+#include <fnmatch.h>
 #include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <unistd.h>
-#include <ctype.h>
 #include <string.h>
 #include <strings.h>
-#include <fnmatch.h>
+#include <sys/types.h>
+#include <unistd.h>
 
-#include "utils.h"
-#include "socket.h"
-#include "http.h"
-#include "globals.h"
 #include "forward.h"
+#include "globals.h"
+#include "http.h"
 #include "scanner.h"
+#include "socket.h"
+#include "utils.h"
 
 /*
  * This code is a piece of shit, but it works. Cannot rewrite it now, because
@@ -52,10 +52,7 @@ int scanner_hook(rr_data_t request, rr_data_t response, struct auth_s *credentia
 	/*
 	 * Let's limit the responses we examine to an absolute minimum
 	 */
-	if (!request->req || response->code != 200
-		|| http_has_body(request, response) != -1
-		|| hlist_subcmp(response->headers, "Transfer-Encoding", "chunked")
-		|| !hlist_subcmp(response->headers, "Proxy-Connection", "close"))
+	if (!request->req || response->code != 200 || http_has_body(request, response) != -1 || hlist_subcmp(response->headers, "Transfer-Encoding", "chunked") || !hlist_subcmp(response->headers, "Proxy-Connection", "close"))
 		return PLUG_SENDHEAD | PLUG_SENDDATA;
 
 	tmp = hlist_get(request->headers, "User-Agent");
@@ -80,7 +77,7 @@ int scanner_hook(rr_data_t request, rr_data_t response, struct auth_s *credentia
 	}
 
 	bsize = SAMPLE;
-	buf = new(bsize);
+	buf = new (bsize);
 
 	len = 0;
 	do {
@@ -91,10 +88,11 @@ int scanner_hook(rr_data_t request, rr_data_t response, struct auth_s *credentia
 			len += size;
 	} while (size > 0 && len < SAMPLE - 1);
 
-	if (strstr(buf, "<title>Downloading status</title>") && (pos=strstr(buf, "ISAServerUniqueID=")) && (pos = strchr(pos, '"'))) {
+	if (strstr(buf, "<title>Downloading status</title>") && (pos = strstr(buf, "ISAServerUniqueID=")) && (pos = strchr(pos, '"'))) {
 		pos++;
 		c = strlen(pos);
-		for (i = 0; i < c && pos[i] != '"'; ++i);
+		for (i = 0; i < c && pos[i] != '"'; ++i)
+			;
 
 		if (pos[i] == '"') {
 			isaid = substr(pos, 0, i);
@@ -102,7 +100,7 @@ int scanner_hook(rr_data_t request, rr_data_t response, struct auth_s *credentia
 				printf("scanner_hook: ISA id = %s\n", isaid);
 
 			lsize = BUFSIZE;
-			line = new(lsize);
+			line = new (lsize);
 			do {
 				i = so_recvln(*sd, &line, &lsize);
 
@@ -119,28 +117,23 @@ int scanner_hook(rr_data_t request, rr_data_t response, struct auth_s *credentia
 				strcat(buf, line);
 				len += c;
 
-				if (i >= 0 && (
-						((pos = strstr(line, "UpdatePage("))
-						&& isdigit(pos[11]))
-					     ||
-						((pos = strstr(line, "DownloadFinished("))
-						&& isdigit(pos[17])
-						&& (done = 1)) )) {
+				if (i >= 0 && (((pos = strstr(line, "UpdatePage(")) && isdigit(pos[11])) ||
+				               ((pos = strstr(line, "DownloadFinished(")) && isdigit(pos[17]) && (done = 1)))) {
 					if (debug)
 						printf("scanner_hook: %s", line);
 
 					if ((pos = strstr(line, "To be downloaded"))) {
-						filesize = atol(pos+16);
+						filesize = atol(pos + 16);
 						if (debug) {
 							if (filesize > 0) {
-								printf("scanner_hook: file size detected: %ld KiBs (max: %ld)\n", filesize/1024, maxKBs);
+								printf("scanner_hook: file size detected: %ld KiBs (max: %ld)\n", filesize / 1024, maxKBs);
 							} else {
 								printf("scanner_hook: file size unknown -- quitting\n");
 								break;
 							}
 						}
 
-						if (maxKBs && (maxKBs == 1 || filesize/1024 > maxKBs))
+						if (maxKBs && (maxKBs == 1 || filesize / 1024 > maxKBs))
 							break;
 
 						/*
@@ -150,11 +143,12 @@ int scanner_hook(rr_data_t request, rr_data_t response, struct auth_s *credentia
 						 * remember to not include it.
 						 */
 						headers_initiated = 1;
-						tmp = new(MINIBUF_SIZE);
+						tmp = new (MINIBUF_SIZE);
 						snprintf(tmp, MINIBUF_SIZE, "%s 200 OK\r\n", request->http);
 						w = write(cd, tmp, strlen(tmp));
 						// We don't really care about the result - shut up GCC warning (unused-but-set-variable)
-						if (!w) w = 1;
+						if (!w)
+							w = 1;
 						free(tmp);
 					}
 
@@ -168,8 +162,8 @@ int scanner_hook(rr_data_t request, rr_data_t response, struct auth_s *credentia
 					 * Send a notification header to the client, just so it doesn't timeout
 					 */
 					if (!done) {
-						tmp = new(MINIBUF_SIZE);
-						progress = atol(line+12);
+						tmp = new (MINIBUF_SIZE);
+						progress = atol(line + 12);
 						snprintf(tmp, MINIBUF_SIZE, "ISA-Scanner: %ld of %ld\r\n", progress, filesize);
 						w = write(cd, tmp, strlen(tmp));
 						free(tmp);
@@ -178,25 +172,25 @@ int scanner_hook(rr_data_t request, rr_data_t response, struct auth_s *credentia
 					/*
 					 * If download size is unknown beforehand, stop when downloaded amount is over ISAScannerSize
 					 */
-					if (!filesize && maxKBs && maxKBs != 1 && progress/1024 > maxKBs)
+					if (!filesize && maxKBs && maxKBs != 1 && progress / 1024 > maxKBs)
 						break;
 				}
 			} while (i > 0 && !done);
 
-			if (i >= 0 && done && (pos = strstr(line, "\",\"")+3) && (c = strchr(pos, '"') - pos) > 0) {
+			if (i >= 0 && done && (pos = strstr(line, "\",\"") + 3) && (c = strchr(pos, '"') - pos) > 0) {
 				tmp = substr(pos, 0, c);
 				pos = urlencode(tmp);
 				free(tmp);
 
 				uurl = urlencode(request->url);
 
-				post = new(BUFSIZE);
-				snprintf(post, BUFSIZE-1, "%surl=%s&%sSaveToDisk=YES&%sOrig=%s", isaid, pos, isaid, isaid, uurl);
+				post = new (BUFSIZE);
+				snprintf(post, BUFSIZE - 1, "%surl=%s&%sSaveToDisk=YES&%sOrig=%s", isaid, pos, isaid, isaid, uurl);
 
 				if (debug)
 					printf("scanner_hook: Getting file with URL data = %s\n", request->url);
 
-				tmp = new(MINIBUF_SIZE);
+				tmp = new (MINIBUF_SIZE);
 				snprintf(tmp, MINIBUF_SIZE, "%d", (int)strlen(post));
 
 				newres = new_rr_data();
@@ -234,7 +228,7 @@ int scanner_hook(rr_data_t request, rr_data_t response, struct auth_s *credentia
 					 * The clients progress bar doesn't work without it and it stinks!
 					 */
 					if (filesize || progress) {
-						tmp = new(20);
+						tmp = new (20);
 						snprintf(tmp, 20, "%ld", filesize ? filesize : progress);
 						newres->headers = hlist_mod(newres->headers, "Content-Length", tmp, 1);
 					}
@@ -291,4 +285,3 @@ int scanner_hook(rr_data_t request, rr_data_t response, struct auth_s *credentia
 	free(buf);
 	return ok;
 }
-

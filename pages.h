@@ -17,9 +17,9 @@
  *
  */
 
-#include "utils.h"
-#include "string.h"
 #include "stdio.h"
+#include "string.h"
+#include "utils.h"
 
 extern char *gen_407_page(const char *http);
 extern char *gen_401_page(const char *http, const char *host, int port);

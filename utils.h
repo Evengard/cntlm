@@ -23,20 +23,20 @@
 #define _UTILS_H
 
 #if defined(__FreeBSD__) || defined(__NetBSD__) || defined(__OpenBSD__)
-# include <sys/param.h>
+#include <sys/param.h>
 #endif
-#include <pthread.h>
 #include <netinet/in.h>
+#include <pthread.h>
 
 #include "config/config.h"
 
-#define BUFSIZE			4096
-#define MINIBUF_SIZE		50
-#define VAL(var, type, offset)	*((type *)(var+offset))
-#define MEM(var, type, offset)	(type *)(var+offset)
+#define BUFSIZE 4096
+#define MINIBUF_SIZE 50
+#define VAL(var, type, offset) *((type *)(var + offset))
+#define MEM(var, type, offset) (type *)(var + offset)
 
 #if !defined(__FreeBSD__) && !defined(__NetBSD__) && !defined(__OpenBSD__)
-# define MIN(a, b)		((a) < (b) ? (a) : (b))
+#define MIN(a, b) ((a) < (b) ? (a) : (b))
 #endif
 
 /*
@@ -48,7 +48,7 @@
  * Solaris doesn't have LOG_PERROR
  */
 #ifndef LOG_PERROR
-# define LOG_PERROR	LOG_CONS
+#define LOG_PERROR LOG_CONS
 #endif
 
 /*
@@ -140,7 +140,7 @@ extern char *trimr(char *buf);
 extern char *lowercase(char *str);
 extern char *uppercase(char *str);
 extern int unicode(char **dst, char *src);
-extern char *new(size_t size);
+extern char *new (size_t size);
 extern char *urlencode(const char *str);
 
 extern rr_data_t new_rr_data(void);

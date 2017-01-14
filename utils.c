@@ -19,34 +19,34 @@
  *
  */
 
-#include <sys/types.h>
-#include <sys/socket.h>
+#include <ctype.h>
+#include <errno.h>
+#include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <strings.h>
-#include <stdlib.h>
-#include <unistd.h>
-#include <stdio.h>
-#include <errno.h>
-#include <ctype.h>
+#include <sys/socket.h>
+#include <sys/types.h>
 #include <syslog.h>
+#include <unistd.h>
 
 #include "config/config.h"
+#include "socket.h"
 #include "swap.h"
 #include "utils.h"
-#include "socket.h"
 
 char hextab[17] = {'0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'A', 'B', 'C', 'D', 'E', 'F', 0};
-int hexindex[128] = {-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
-	-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
-	-1,-1,-1,-1,-1,-1,-1,-1,-1,0,1,2,3,4,5,6,7,8,9,-1,-1,-1,-1,-1,-1,
-	-1,10,11,12,13,14,15,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
-	-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,10,11,12,13,14,15,-1,-1,-1,-1,-1,
-	-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1};
+int hexindex[128] = {-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+                     -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+                     -1, -1, -1, -1, -1, -1, -1, -1, -1, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, -1, -1, -1, -1, -1, -1,
+                     -1, 10, 11, 12, 13, 14, 15, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+                     -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, 10, 11, 12, 13, 14, 15, -1, -1, -1, -1, -1,
+                     -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1};
 
 void myexit(int rc) {
 	if (rc)
 		fprintf(stderr, "Exitting with error. Check daemon logs or run with -v.\n");
-	
+
 	exit(rc);
 }
 
@@ -55,7 +55,7 @@ void croak(const char *msg, int console) {
 		printf("%s", msg);
 	else
 		syslog(LOG_ERR, "%s", msg);
-	
+
 	myexit(1);
 }
 
@@ -485,12 +485,12 @@ char *substr(const char *src, int pos, int len) {
 	if (len == 0)
 		len = strlen(src);
 
-	l = MIN(len, strlen(src)-pos);
+	l = MIN(len, strlen(src) - pos);
 	if (l <= 0)
-		return new(1);
+		return new (1);
 
-	tmp = new(l+1);
-	strlcpy(tmp, src+pos, l+1);
+	tmp = new (l + 1);
+	strlcpy(tmp, src + pos, l + 1);
 
 	return tmp;
 }
@@ -500,7 +500,7 @@ char *substr(const char *src, int pos, int len) {
  */
 rr_data_t new_rr_data(void) {
 	rr_data_t data;
-	
+
 	data = malloc(sizeof(struct rr_data_s));
 	data->req = 0;
 	data->code = 0;
@@ -517,7 +517,7 @@ rr_data_t new_rr_data(void) {
 	data->http = NULL;
 	data->msg = NULL;
 	data->body = NULL;
-	data->errmsg = NULL; 			/* for static strings - we don't free, dup, nor copy */
+	data->errmsg = NULL; /* for static strings - we don't free, dup, nor copy */
 
 	return data;
 }
@@ -553,10 +553,10 @@ rr_data_t copy_rr_data(rr_data_t dst, rr_data_t src) {
 	if (src->msg)
 		dst->msg = strdup(src->msg);
 	if (src->body && src->body_len > 0) {
-		dst->body = new(src->body_len);
+		dst->body = new (src->body_len);
 		memcpy(dst->body, src->body, src->body_len);
 	}
-	
+
 	return dst;
 }
 
@@ -588,14 +588,22 @@ rr_data_t reset_rr_data(rr_data_t data) {
 	data->port = 0;
 	data->http_version = -1;
 
-	if (data->headers) hlist_free(data->headers);
-	if (data->method) free(data->method);
-	if (data->url) free(data->url);
-	if (data->rel_url) free(data->rel_url);
-	if (data->hostname) free(data->hostname);
-	if (data->http) free(data->http);
-	if (data->msg) free(data->msg);
-	if (data->body) free(data->body);
+	if (data->headers)
+		hlist_free(data->headers);
+	if (data->method)
+		free(data->method);
+	if (data->url)
+		free(data->url);
+	if (data->rel_url)
+		free(data->rel_url);
+	if (data->hostname)
+		free(data->hostname);
+	if (data->http)
+		free(data->http);
+	if (data->msg)
+		free(data->msg);
+	if (data->body)
+		free(data->body);
 
 	data->headers = NULL;
 	data->method = NULL;
@@ -617,15 +625,23 @@ rr_data_t reset_rr_data(rr_data_t data) {
 void free_rr_data(rr_data_t data) {
 	if (data == NULL)
 		return;
-	
-	if (data->headers) hlist_free(data->headers);
-	if (data->method) free(data->method);
-	if (data->url) free(data->url);
-	if (data->rel_url) free(data->rel_url);
-	if (data->hostname) free(data->hostname);
-	if (data->http) free(data->http);
-	if (data->msg) free(data->msg);
-	if (data->body) free(data->body);
+
+	if (data->headers)
+		hlist_free(data->headers);
+	if (data->method)
+		free(data->method);
+	if (data->url)
+		free(data->url);
+	if (data->rel_url)
+		free(data->rel_url);
+	if (data->hostname)
+		free(data->hostname);
+	if (data->http)
+		free(data->http);
+	if (data->msg)
+		free(data->msg);
+	if (data->body)
+		free(data->body);
 	memset(data, 0, sizeof(struct rr_data_s));
 	free(data);
 }
@@ -636,8 +652,9 @@ void free_rr_data(rr_data_t data) {
 char *trimr(char *buf) {
 	int i;
 
-	for (i = strlen(buf)-1; i >= 0 && isspace(buf[i]); --i);
-	buf[i+1] = 0;
+	for (i = strlen(buf) - 1; i >= 0 && isspace(buf[i]); --i)
+		;
+	buf[i + 1] = 0;
 
 	return buf;
 }
@@ -653,9 +670,9 @@ char *strdup(const char *src) {
 	if (!src)
 		return NULL;
 
-	len = strlen(src)+1;
+	len = strlen(src) + 1;
 	tmp = calloc(1, len);
-	memcpy(tmp, src, len-1);
+	memcpy(tmp, src, len - 1);
 
 	return tmp;
 }
@@ -666,26 +683,27 @@ char *strdup(const char *src) {
  * from OpenBSD
  */
 size_t strlcpy(char *dst, const char *src, size_t siz) {
-        char *d = dst;
-        const char *s = src;
-        size_t n = siz;
+	char *d = dst;
+	const char *s = src;
+	size_t n = siz;
 
-        /* Copy as many bytes as will fit */
-        if (n != 0) {
-                while (--n != 0) {
-                        if ((*d++ = *s++) == '\0')
-                                break;
-                }
-        }
+	/* Copy as many bytes as will fit */
+	if (n != 0) {
+		while (--n != 0) {
+			if ((*d++ = *s++) == '\0')
+				break;
+		}
+	}
 
-        /* Not enough room in dst, add NUL and traverse rest of src */
-        if (n == 0) {
-                if (siz != 0)
-                        *d = '\0';                /* NUL-terminate dst */
-                while (*s++);
-        }
+	/* Not enough room in dst, add NUL and traverse rest of src */
+	if (n == 0) {
+		if (siz != 0)
+			*d = '\0'; /* NUL-terminate dst */
+		while (*s++)
+			;
+	}
 
-        return (s - src - 1);        /* count does not include NUL */
+	return (s - src - 1); /* count does not include NUL */
 }
 
 /*
@@ -693,37 +711,37 @@ size_t strlcpy(char *dst, const char *src, size_t siz) {
  * from OpenBSD
  */
 size_t strlcat(char *dst, const char *src, size_t siz) {
-        char *d = dst;
-        const char *s = src;
-        size_t n = siz;
-        size_t dlen;
+	char *d = dst;
+	const char *s = src;
+	size_t n = siz;
+	size_t dlen;
 
-        /* Find the end of dst and adjust bytes left but don't go past end */
-        while (n-- != 0 && *d != '\0')
-                d++;
+	/* Find the end of dst and adjust bytes left but don't go past end */
+	while (n-- != 0 && *d != '\0')
+		d++;
 
-        dlen = d - dst;
-        n = siz - dlen;
+	dlen = d - dst;
+	n = siz - dlen;
 
-        if (n == 0)
-                return(dlen + strlen(s));
+	if (n == 0)
+		return (dlen + strlen(s));
 
-        while (*s != '\0') {
-                if (n != 1) {
-                        *d++ = *s;
-                        n--;
-                }
-                s++;
-        }
-        *d = '\0';
+	while (*s != '\0') {
+		if (n != 1) {
+			*d++ = *s;
+			n--;
+		}
+		s++;
+	}
+	*d = '\0';
 
-        return (dlen + (s - src));        /* count does not include NUL */
+	return (dlen + (s - src)); /* count does not include NUL */
 }
 
 /*
  * Shortcut for malloc/memset zero.
  */
-char *new(size_t size) {
+char *new (size_t size) {
 	char *tmp;
 
 	tmp = malloc(size);
@@ -740,7 +758,7 @@ char *lowercase(char *str) {
 
 	for (i = 0; i < strlen(str); ++i)
 		str[i] = tolower(str[i]);
-	
+
 	return str;
 }
 
@@ -752,7 +770,7 @@ char *uppercase(char *str) {
 
 	for (i = 0; i < strlen(str); ++i)
 		str[i] = toupper(str[i]);
-	
+
 	return str;
 }
 
@@ -766,24 +784,24 @@ int unicode(char **dst, char *src) {
 	}
 
 	l = MIN(64, strlen(src));
-	tmp = new(2*l);
+	tmp = new (2 * l);
 	for (i = 0; i < l; ++i)
-		tmp[2*i] = src[i];
+		tmp[2 * i] = src[i];
 
 	*dst = tmp;
-	return 2*l;
+	return 2 * l;
 }
 
 char *urlencode(const char *str) {
 	char *tmp;
 	int i, pos;
 
-	tmp = new(strlen(str)*3 + 1);
+	tmp = new (strlen(str) * 3 + 1);
 	for (pos = 0, i = 0; i < strlen(str); ++i) {
 		if (isdigit(str[i]) || (tolower(str[i]) >= 'a' && tolower(str[i]) <= 'z') || str[i] == '.' || str[i] == '-' || str[i] == '_' || str[i] == '~') {
 			tmp[pos++] = str[i];
 		} else {
-			sprintf(tmp+pos, "%%%X", (unsigned char)str[i]);
+			sprintf(tmp + pos, "%%%X", (unsigned char)str[i]);
 			pos += 3;
 		}
 	}
@@ -795,10 +813,10 @@ char *printmem(char *src, size_t len, int bitwidth) {
 	char *tmp;
 	int i;
 
-	tmp = new(2*len+1);
+	tmp = new (2 * len + 1);
 	for (i = 0; i < len; ++i) {
-		tmp[i*2] = hextab[((uint8_t)src[i] ^ (uint8_t)(7-bitwidth)) >> 4];
-		tmp[i*2+1] = hextab[(src[i] ^ (uint8_t)(7-bitwidth)) & 0x0F];
+		tmp[i * 2] = hextab[((uint8_t)src[i] ^ (uint8_t)(7 - bitwidth)) >> 4];
+		tmp[i * 2 + 1] = hextab[(src[i] ^ (uint8_t)(7 - bitwidth)) & 0x0F];
 	}
 
 	return tmp;
@@ -811,23 +829,21 @@ char *scanmem(char *src, int bitwidth) {
 	if (strlen(src) % 2)
 		return NULL;
 
-	bytes = strlen(src)/2;
-	tmp = new(bytes+1);
+	bytes = strlen(src) / 2;
+	tmp = new (bytes + 1);
 	for (i = 0; i < bytes; ++i) {
-		h = hexindex[(int)src[i*2]];
-		l = hexindex[(int)src[i*2+1]];
+		h = hexindex[(int)src[i * 2]];
+		l = hexindex[(int)src[i * 2 + 1]];
 		if (h < 0 || l < 0) {
 			free(tmp);
 			return NULL;
 		}
-		tmp[i] = ((h << 4) + l) ^ (uint8_t)(7-bitwidth);
+		tmp[i] = ((h << 4) + l) ^ (uint8_t)(7 - bitwidth);
 	}
 	tmp[i] = 0;
 
 	return tmp;
 }
-
-
 
 /* 
  * BASE64 CODE FROM MUTT BEGIN - ORIGINAL COPYRIGHT APPLIES:
@@ -842,26 +858,24 @@ char *scanmem(char *src, int bitwidth) {
  *
  */
 
-#define BAD     	-1
-#define base64val(c)	index64[(unsigned int)(c)]
+#define BAD -1
+#define base64val(c) index64[(unsigned int)(c)]
 
 char base64[64] = {
-	'A','B','C','D','E','F','G','H','I','J','K','L','M','N',
-	'O','P','Q','R','S','T','U','V','W','X','Y','Z','a','b',
-	'c','d','e','f','g','h','i','j','k','l','m','n','o','p',
-	'q','r','s','t','u','v','w','x','y','z','0','1','2','3',
-	'4','5','6','7','8','9','+','/'
-};
+    'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N',
+    'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z', 'a', 'b',
+    'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p',
+    'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z', '0', '1', '2', '3',
+    '4', '5', '6', '7', '8', '9', '+', '/'};
 
 int index64[128] = {
-	-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
-	-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
-	-1,-1,-1,-1,-1,62,-1,-1,-1,63,52,53,54,55,56,57,58,59,60,
-	61,-1,-1,-1,-1,-1,-1,-1,0,1,2,3,4,5,6,7,8,9,10,11,12,13,
-	14,15,16,17,18,19,20,21,22,23,24,25,-1,-1,-1,-1,-1,-1,26,
-	27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,
-	46,47,48,49,50,51,-1,-1,-1,-1,-1
-};
+    -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+    -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+    -1, -1, -1, -1, -1, 62, -1, -1, -1, 63, 52, 53, 54, 55, 56, 57, 58, 59, 60,
+    61, -1, -1, -1, -1, -1, -1, -1, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13,
+    14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, -1, -1, -1, -1, -1, -1, 26,
+    27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45,
+    46, 47, 48, 49, 50, 51, -1, -1, -1, -1, -1};
 
 void to_base64(unsigned char *out, const unsigned char *in, size_t len, size_t olen) {
 	while (len >= 3 && olen > 10) {
@@ -869,9 +883,9 @@ void to_base64(unsigned char *out, const unsigned char *in, size_t len, size_t o
 		*out++ = base64[((in[0] << 4) & 0x30) | (in[1] >> 4)];
 		*out++ = base64[((in[1] << 2) & 0x3c) | (in[2] >> 6)];
 		*out++ = base64[in[2] & 0x3f];
-		olen  -= 4;
-		len   -= 3;
-		in    += 3;
+		olen -= 4;
+		len -= 3;
+		in += 3;
 	}
 
 	/* clean up remainder */
@@ -881,7 +895,7 @@ void to_base64(unsigned char *out, const unsigned char *in, size_t len, size_t o
 		*out++ = base64[in[0] >> 2];
 		fragment = (in[0] << 4) & 0x30;
 		if (len > 1)
-		fragment |= in[1] >> 4;
+			fragment |= in[1] >> 4;
 		*out++ = base64[fragment];
 		*out++ = (len < 2) ? '=' : base64[(in[1] << 2) & 0x3c];
 		*out++ = '=';
@@ -891,26 +905,25 @@ void to_base64(unsigned char *out, const unsigned char *in, size_t len, size_t o
 
 /* Convert '\0'-terminated base 64 string to raw bytes.
  * Returns length of returned buffer, or -1 on error */
-int from_base64(char *out, const char *in)
-{
+int from_base64(char *out, const char *in) {
 	int len = 0;
 	register unsigned char digit1, digit2, digit3, digit4;
 
 	do {
 		digit1 = in[0];
-		if (digit1 > 127 || base64val (digit1) == BAD)
+		if (digit1 > 127 || base64val(digit1) == BAD)
 			return -1;
 
 		digit2 = in[1];
-		if (digit2 > 127 || base64val (digit2) == BAD)
+		if (digit2 > 127 || base64val(digit2) == BAD)
 			return -1;
 
 		digit3 = in[2];
-		if (digit3 > 127 || ((digit3 != '=') && (base64val (digit3) == BAD)))
+		if (digit3 > 127 || ((digit3 != '=') && (base64val(digit3) == BAD)))
 			return -1;
 
 		digit4 = in[3];
-		if (digit4 > 127 || ((digit4 != '=') && (base64val (digit4) == BAD)))
+		if (digit4 > 127 || ((digit4 != '=') && (base64val(digit4) == BAD)))
 			return -1;
 
 		in += 4;

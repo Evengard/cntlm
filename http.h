@@ -24,15 +24,15 @@
 
 #include <stdint.h>
 
-#include "utils.h"
 #include "auth.h"
+#include "utils.h"
 
 /*
  * A couple of shortcuts for if statements
  */
-#define CONNECT(data)	((data) && (data)->req && !strcasecmp("CONNECT", (data)->method))
-#define HEAD(data)	((data) && (data)->req && !strcasecmp("HEAD", (data)->method))
-#define GET(data)	((data) && (data)->req && !strcasecmp("GET", (data)->method))
+#define CONNECT(data) ((data) && (data)->req && !strcasecmp("CONNECT", (data)->method))
+#define HEAD(data) ((data) && (data)->req && !strcasecmp("HEAD", (data)->method))
+#define GET(data) ((data) && (data)->req && !strcasecmp("GET", (data)->method))
 
 typedef long long int length_t;
 

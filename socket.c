@@ -19,19 +19,19 @@
  *
  */
 
-#include <sys/types.h>
-#include <sys/socket.h>
-#include <sys/time.h>
-#include <netinet/in.h>
 #include <arpa/inet.h>
 #include <errno.h>
+#include <fcntl.h>
+#include <netdb.h>
+#include <netinet/in.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <unistd.h>
-#include <fcntl.h>
-#include <netdb.h>
+#include <sys/socket.h>
+#include <sys/time.h>
+#include <sys/types.h>
 #include <syslog.h>
+#include <unistd.h>
 
 #include "utils.h"
 
@@ -41,7 +41,7 @@ extern int debug;
  * gethostbyname() wrapper. Return 1 if OK, otherwise 0.
  */
 int so_resolv(struct in_addr *host, const char *name) {
-/*
+	/*
 	struct hostent *resolv;
 
 	resolv = gethostbyname(name);
@@ -67,7 +67,7 @@ int so_resolv(struct in_addr *host, const char *name) {
 		printf("Resolve %s:\n", name);
 	int addr_set = 0;
 	for (p = res; p != NULL; p = p->ai_next) {
-		struct sockaddr_in *ad = (struct sockaddr_in*)(p->ai_addr);
+		struct sockaddr_in *ad = (struct sockaddr_in *)(p->ai_addr);
 		if (ad == NULL) {
 			freeaddrinfo(res);
 			return 0;
@@ -77,9 +77,8 @@ int so_resolv(struct in_addr *host, const char *name) {
 			addr_set = 1;
 			if (debug)
 				printf("  -> %s\n", inet_ntoa(ad->sin_addr));
-		} else
-			if (debug)
-				printf("     %s\n", inet_ntoa(ad->sin_addr));
+		} else if (debug)
+			printf("     %s\n", inet_ntoa(ad->sin_addr));
 	}
 
 	freeaddrinfo(res);
@@ -235,7 +234,7 @@ int so_closed(int fd) {
 		return 1;
 
 	i = so_recvtest(fd);
-	return (i == 0 || (i == -1 && errno != EAGAIN && errno != ENOENT));   /* ENOENT, you ask? Perhap AIX devels could explain! :-( */
+	return (i == 0 || (i == -1 && errno != EAGAIN && errno != ENOENT)); /* ENOENT, you ask? Perhap AIX devels could explain! :-( */
 }
 
 /*
@@ -255,7 +254,7 @@ int so_recvln(int fd, char **buf, int *size) {
 	char c = 0;
 	char *tmp;
 
-	while (len < *size-1 && c != '\n') {
+	while (len < *size - 1 && c != '\n') {
 		r = read(fd, &c, 1);
 		if (r <= 0)
 			break;
@@ -265,9 +264,9 @@ int so_recvln(int fd, char **buf, int *size) {
 		/*
 		 * End of buffer, still no EOL? Resize the buffer
 		 */
-		if (len == *size-1 && c != '\n') {
+		if (len == *size - 1 && c != '\n') {
 			if (debug)
-				printf("so_recvln(%d): realloc %d\n", fd, *size*2);
+				printf("so_recvln(%d): realloc %d\n", fd, *size * 2);
 			*size *= 2;
 			tmp = realloc(*buf, *size);
 			if (tmp == NULL)
@@ -280,4 +279,3 @@ int so_recvln(int fd, char **buf, int *size) {
 
 	return r;
 }
-

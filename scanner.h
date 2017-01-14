@@ -25,16 +25,16 @@
 /*
  * ISA plugin flags
  */
-#define PLUG_NONE	0x0000
-#define PLUG_SENDHEAD	0x0001
-#define PLUG_SENDDATA	0x0002
-#define PLUG_ERROR	0x8000
-#define PLUG_ALL	0x7FFF
+#define PLUG_NONE 0x0000
+#define PLUG_SENDHEAD 0x0001
+#define PLUG_SENDDATA 0x0002
+#define PLUG_ERROR 0x8000
+#define PLUG_ALL 0x7FFF
 
 /*
  * Plugin download sample size
  */
-#define SAMPLE		4096
+#define SAMPLE 4096
 
 extern int scanner_hook(rr_data_t request, rr_data_t response, struct auth_s *credentials, int cd, int *sd, long maxKBs);
 

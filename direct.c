@@ -17,30 +17,30 @@
  *
  */
 
-#include <sys/types.h>
+#include <arpa/inet.h>
+#include <errno.h>
+#include <netdb.h>
+#include <netinet/in.h>
 #include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <unistd.h>
 #include <string.h>
-#include <syslog.h>
-#include <netinet/in.h>
-#include <arpa/inet.h>
 #include <strings.h>
-#include <errno.h>
-#include <netdb.h>
 #include <sys/socket.h>
+#include <sys/types.h>
+#include <syslog.h>
+#include <unistd.h>
 
 extern int h_errno;
 
-#include "utils.h"
-#include "globals.h"
 #include "auth.h"
-#include "http.h"
-#include "socket.h"
-#include "ntlm.h"
 #include "direct.h"
+#include "globals.h"
+#include "http.h"
+#include "ntlm.h"
 #include "pages.h"
+#include "socket.h"
+#include "utils.h"
 
 int host_connect(const char *hostname, int port) {
 	struct in_addr addr;
@@ -53,22 +53,21 @@ int host_connect(const char *hostname, int port) {
 	}
 
 	return so_connect(addr, port);
-
 }
 
 int www_authenticate(int sd, rr_data_t request, rr_data_t response, struct auth_s *creds) {
 	char *tmp, *buf, *challenge;
 	rr_data_t auth;
 	int len;
-	
+
 	int rc = 0;
 
-	buf = new(BUFSIZE);
+	buf = new (BUFSIZE);
 
 	strcpy(buf, "NTLM ");
 	len = ntlm_request(&tmp, creds);
 	if (len) {
-		to_base64(MEM(buf, uint8_t, 5), MEM(tmp, uint8_t, 0), len, BUFSIZE-5);
+		to_base64(MEM(buf, uint8_t, 5), MEM(tmp, uint8_t, 0), len, BUFSIZE - 5);
 		free(tmp);
 	}
 
@@ -115,13 +114,13 @@ int www_authenticate(int sd, rr_data_t request, rr_data_t response, struct auth_
 
 		tmp = hlist_get(auth->headers, "WWW-Authenticate");
 		if (tmp && strlen(tmp) > 6 + 8) {
-			challenge = new(strlen(tmp) + 5 + 1);
+			challenge = new (strlen(tmp) + 5 + 1);
 			len = from_base64(challenge, tmp + 5);
 			if (len > NTLM_CHALLENGE_MIN) {
 				len = ntlm_response(&tmp, challenge, len, creds);
 				if (len > 0) {
 					strcpy(buf, "NTLM ");
-					to_base64(MEM(buf, uint8_t, 5), MEM(tmp, uint8_t, 0), len, BUFSIZE-5);
+					to_base64(MEM(buf, uint8_t, 5), MEM(tmp, uint8_t, 0), len, BUFSIZE - 5);
 					request->headers = hlist_mod(request->headers, "Authorization", buf, 1);
 					free(tmp);
 				} else {
@@ -199,7 +198,8 @@ rr_data_t direct_request(void *cdata, rr_data_t request) {
 		tmp = gen_502_page(request->http, strerror(errno));
 		w = write(cd, tmp, strlen(tmp));
 		// We don't really care about the result - shut up GCC warning (unused-but-set-variable)
-		if (!w) w = 1;
+		if (!w)
+			w = 1;
 		free(tmp);
 
 		rc = (void *)-1;
@@ -239,9 +239,9 @@ rr_data_t direct_request(void *cdata, rr_data_t request) {
 		conn_alive = 0;
 
 		for (loop = 0; loop < 2; ++loop) {
-			if (data[loop]->empty) {				// Isn't this the first loop with request supplied by caller?
+			if (data[loop]->empty) { // Isn't this the first loop with request supplied by caller?
 				if (debug) {
-					printf("\n******* Round %d C: %d, S: %d *******\n", loop+1, cd, sd);
+					printf("\n******* Round %d C: %d, S: %d *******\n", loop + 1, cd, sd);
 					printf("Reading headers (%d)...\n", *rsocket[loop]);
 				}
 				if (!headers_recv(*rsocket[loop], data[loop])) {
@@ -257,8 +257,7 @@ rr_data_t direct_request(void *cdata, rr_data_t request) {
 			 * If no, return request to caller, he must decide on forward or direct
 			 * approach.
 			 */
-			if (loop == 0 && hostname && data[0]->hostname
-					&& (strcasecmp(hostname, data[0]->hostname) || port != data[0]->port)) {
+			if (loop == 0 && hostname && data[0]->hostname && (strcasecmp(hostname, data[0]->hostname) || port != data[0]->port)) {
 				if (debug)
 					printf("\n******* D RETURN: %s *******\n", data[0]->url);
 
@@ -273,7 +272,7 @@ rr_data_t direct_request(void *cdata, rr_data_t request) {
 
 			if (loop == 0 && data[0]->req) {
 				syslog(LOG_DEBUG, "%s %s %s", inet_ntoa(caddr.sin_addr), data[0]->method, data[0]->url);
-				
+
 				/*
 				 * Convert full proxy request URL into a relative URL
 				 * Host header is already inserted by headers_recv()
@@ -317,7 +316,7 @@ rr_data_t direct_request(void *cdata, rr_data_t request) {
 				data[1]->code = 200;
 				data[1]->msg = strdup("Connection established");
 				data[1]->http = strdup(data[0]->http);
-				
+
 				if (headers_send(cd, data[1]))
 					tunnel(cd, sd);
 
@@ -385,9 +384,7 @@ rr_data_t direct_request(void *cdata, rr_data_t request) {
 			 * (end marked by server closing).
 			 */
 			if (loop == 1) {
-				conn_alive = !hlist_subcmp(data[1]->headers, "Connection", "close")
-					&& http_has_body(data[0], data[1]) != -1
-					&& data[0]->http_version >= 11;
+				conn_alive = !hlist_subcmp(data[1]->headers, "Connection", "close") && http_has_body(data[0], data[1]) != -1 && data[0]->http_version >= 11;
 				if (conn_alive) {
 					data[1]->headers = hlist_mod(data[1]->headers, "Proxy-Connection", "keep-alive", 1);
 					data[1]->headers = hlist_mod(data[1]->headers, "Connection", "keep-alive", 1);
@@ -471,4 +468,3 @@ bailout:
 
 	return;
 }
-

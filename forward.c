@@ -17,26 +17,26 @@
  *
  */
 
-#include <sys/types.h>
+#include <arpa/inet.h>
+#include <netinet/in.h>
 #include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <unistd.h>
 #include <string.h>
-#include <syslog.h>
-#include <netinet/in.h>
-#include <arpa/inet.h>
 #include <strings.h>
+#include <sys/types.h>
+#include <syslog.h>
+#include <unistd.h>
 
-#include "utils.h"
-#include "globals.h"
 #include "auth.h"
-#include "http.h"
-#include "socket.h"
-#include "ntlm.h"
 #include "forward.h"
-#include "scanner.h"
+#include "globals.h"
+#include "http.h"
+#include "ntlm.h"
 #include "pages.h"
+#include "scanner.h"
+#include "socket.h"
+#include "utils.h"
 
 int parent_curr = 0;
 pthread_mutex_t parent_mtx = PTHREAD_MUTEX_INITIALIZER;
@@ -140,12 +140,12 @@ int proxy_authenticate(int *sd, rr_data_t request, rr_data_t response, struct au
 	int pretend407 = 0;
 	int rc = 0;
 
-	buf = new(BUFSIZE);
+	buf = new (BUFSIZE);
 
 	strcpy(buf, "NTLM ");
 	len = ntlm_request(&tmp, credentials);
 	if (len) {
-		to_base64(MEM(buf, uint8_t, 5), MEM(tmp, uint8_t, 0), len, BUFSIZE-5);
+		to_base64(MEM(buf, uint8_t, 5), MEM(tmp, uint8_t, 0), len, BUFSIZE - 5);
 		free(tmp);
 	}
 
@@ -224,20 +224,20 @@ int proxy_authenticate(int *sd, rr_data_t request, rr_data_t response, struct au
 	 * Auth required?
 	 */
 	if (auth->code == 407) {
-		if (!http_body_drop(*sd, auth)) {				// FIXME: if below fails, we should forward what we drop here...
+		if (!http_body_drop(*sd, auth)) { // FIXME: if below fails, we should forward what we drop here...
 			rc = 0;
 			close(*sd);
 			goto bailout;
 		}
 		tmp = hlist_get(auth->headers, "Proxy-Authenticate");
 		if (tmp) {
-			challenge = new(strlen(tmp) + 5 + 1);
+			challenge = new (strlen(tmp) + 5 + 1);
 			len = from_base64(challenge, tmp + 5);
 			if (len > NTLM_CHALLENGE_MIN) {
 				len = ntlm_response(&tmp, challenge, len, credentials);
 				if (len > 0) {
 					strcpy(buf, "NTLM ");
-					to_base64(MEM(buf, uint8_t, 5), MEM(tmp, uint8_t, 0), len, BUFSIZE-5);
+					to_base64(MEM(buf, uint8_t, 5), MEM(tmp, uint8_t, 0), len, BUFSIZE - 5);
 					request->headers = hlist_mod(request->headers, "Proxy-Authorization", buf, 1);
 					free(tmp);
 				} else {
@@ -261,7 +261,7 @@ int proxy_authenticate(int *sd, rr_data_t request, rr_data_t response, struct au
 		if (debug)
 			printf("Client %s - forcing second request.\n", HEAD(request) ? "sent HEAD" : "has a body");
 		if (response)
-			response->code = 407;				// See explanation above
+			response->code = 407; // See explanation above
 		if (!http_body_drop(*sd, auth)) {
 			rc = 0;
 			close(*sd);
@@ -328,7 +328,7 @@ rr_data_t forward_request(void *thread_data, rr_data_t request) {
 	rr_data_t data[2], rc = NULL;
 	hlist_t tl;
 	char *tmp;
-	struct auth_s *tcreds = NULL;						/* Per-thread credentials */
+	struct auth_s *tcreds = NULL; /* Per-thread credentials */
 	char *hostname = NULL;
 	int proxy_alive;
 	int conn_alive;
@@ -412,10 +412,10 @@ beginning:
 		 */
 		if (request) {
 			if (retry)
-				data[0] = request;				// Got from inside the loop = retry (must free ourselves)
+				data[0] = request; // Got from inside the loop = retry (must free ourselves)
 			else
-				data[0] = dup_rr_data(request);			// Got from caller (make a dup, caller will free)
-			request = NULL;						// Next time, just alloc empty structure
+				data[0] = dup_rr_data(request); // Got from caller (make a dup, caller will free)
+			request = NULL;                     // Next time, just alloc empty structure
 		} else {
 			data[0] = new_rr_data();
 		}
@@ -426,9 +426,9 @@ beginning:
 		conn_alive = 0;
 
 		for (loop = 0; loop < 2; ++loop) {
-			if (data[loop]->empty) {				// Isn't this the first loop with request supplied by caller?
+			if (data[loop]->empty) { // Isn't this the first loop with request supplied by caller?
 				if (debug) {
-					printf("\n******* Round %d C: %d, S: %d (authok=%d, noauth=%d) *******\n", loop+1, cd, sd, authok, noauth);
+					printf("\n******* Round %d C: %d, S: %d (authok=%d, noauth=%d) *******\n", loop + 1, cd, sd, authok, noauth);
 					printf("Reading headers (%d)...\n", *rsocket[loop]);
 				}
 				if (!headers_recv(*rsocket[loop], data[loop])) {
@@ -449,13 +449,10 @@ beginning:
 			 * (we're looping only if proxy_alive) or this is the first loop since
 			 * we were called. If former, set proxy_alive=1 to cache the connection.
 			 */
-			if (loop == 0 && hostname && data[0]->hostname
-					&& strcasecmp(hostname, data[0]->hostname)) {
+			if (loop == 0 && hostname && data[0]->hostname && strcasecmp(hostname, data[0]->hostname)) {
 				if (debug)
 					printf("\n******* F RETURN: %s *******\n", data[0]->url);
-				if (authok && data[0]->http_version >= 11
-						&& (hlist_subcmp(data[0]->headers, "Proxy-Connection", "keep-alive")
-							|| hlist_subcmp(data[0]->headers, "Connection", "keep-alive")))
+				if (authok && data[0]->http_version >= 11 && (hlist_subcmp(data[0]->headers, "Proxy-Connection", "keep-alive") || hlist_subcmp(data[0]->headers, "Connection", "keep-alive")))
 					proxy_alive = 1;
 
 				rc = dup_rr_data(data[0]);
@@ -470,7 +467,7 @@ beginning:
 			if (loop == 0 && data[0]->req)
 				syslog(LOG_DEBUG, "%s %s %s", inet_ntoa(caddr.sin_addr), data[0]->method, data[0]->url);
 
-shortcut:
+		shortcut:
 			/*
 			 * Modify request headers.
 			 *
@@ -484,7 +481,7 @@ shortcut:
 				if (http_parse_basic(data[loop]->headers, "Proxy-Authorization", tcreds) > 0) {
 					if (debug)
 						printf("NTLM-to-basic: Credentials parsed: %s\\%s at %s\n",
-								tcreds->domain, tcreds->user, tcreds->workstation);
+						       tcreds->domain, tcreds->user, tcreds->workstation);
 				} else if (ntlmbasic) {
 					if (debug)
 						printf("NTLM-to-basic: Returning client auth request.\n");
@@ -551,7 +548,7 @@ shortcut:
 				 * Let's decide proxy doesn't want any auth if it returns a
 				 * non-error reply. Next rounds will be faster.
 				 */
-				if (data[1]->code != 407) {		// || !hlist_subcmp(data[1]->headers, "Proxy-Connection", "keep-alive")) {
+				if (data[1]->code != 407) { // || !hlist_subcmp(data[1]->headers, "Proxy-Connection", "keep-alive")) {
 					if (debug)
 						printf("Proxy auth not requested - just forwarding.\n");
 					if (data[1]->code < 400)
@@ -685,8 +682,7 @@ shortcut:
 			 * This way, we also tell our caller that proxy keep-alive is impossible.
 			 */
 			if (loop == 1) {
-				proxy_alive = hlist_subcmp(data[1]->headers, "Proxy-Connection", "keep-alive")
-					&& data[0]->http_version >= 11;
+				proxy_alive = hlist_subcmp(data[1]->headers, "Proxy-Connection", "keep-alive") && data[0]->http_version >= 11;
 				if (proxy_alive) {
 					data[1]->headers = hlist_mod(data[1]->headers, "Proxy-Connection", "keep-alive", 1);
 					data[1]->headers = hlist_mod(data[1]->headers, "Connection", "keep-alive", 1);
@@ -703,7 +699,7 @@ shortcut:
 		free_rr_data(data[0]);
 		free_rr_data(data[1]);
 
-	/*
+		/*
 	 * Checking conn_alive && proxy_alive is sufficient,
 	 * so_closed() just eliminates loops that we know would fail.
 	 */
@@ -841,7 +837,7 @@ bailout:
 	return;
 }
 
-#define MAGIC_TESTS	5
+#define MAGIC_TESTS 5
 
 void magic_auth_detect(const char *url) {
 	int i, nc, c, ign = 0, found = -1;
@@ -849,15 +845,14 @@ void magic_auth_detect(const char *url) {
 	char *tmp, *pos, *host = NULL;
 
 	struct auth_s *tcreds;
-	char *authstr[5] = { "NTLMv2", "NTLM", "LM", "NT", "NTLM2SR" };
+	char *authstr[5] = {"NTLMv2", "NTLM", "LM", "NT", "NTLM2SR"};
 	int prefs[MAGIC_TESTS][5] = {
-		/* NT, LM, NTLMv2, Flags, index to authstr[] */
-		{  0,  0,  1,      0,     0 },
-		{  1,  1,  0,      0,     1 },
-		{  0,  1,  0,      0,     2 },
-		{  1,  0,  0,      0,     3 },
-		{  2,  0,  0,      0,     4 }
-	};
+	    /* NT, LM, NTLMv2, Flags, index to authstr[] */
+	    {0, 0, 1, 0, 0},
+	    {1, 1, 0, 0, 1},
+	    {0, 1, 0, 0, 2},
+	    {1, 0, 0, 0, 3},
+	    {2, 0, 0, 0, 4}};
 
 	tcreds = new_auth();
 	copy_auth(tcreds, g_creds, /* fullcopy */ 1);
@@ -869,8 +864,8 @@ void magic_auth_detect(const char *url) {
 
 	pos = strstr(url, "://");
 	if (pos) {
-		tmp = strchr(pos+3, '/');
-		host = substr(pos+3, 0, tmp ? tmp-pos-3 : 0);
+		tmp = strchr(pos + 3, '/');
+		host = substr(pos + 3, 0, tmp ? tmp - pos - 3 : 0);
 	} else {
 		fprintf(stderr, "Invalid URL (%s)\n", url);
 		return;
@@ -893,7 +888,7 @@ void magic_auth_detect(const char *url) {
 		tcreds->hashntlm2 = prefs[i][2];
 		tcreds->flags = prefs[i][3];
 
-		printf("Config profile %2d/%d... ", i+1, MAGIC_TESTS);
+		printf("Config profile %2d/%d... ", i + 1, MAGIC_TESTS);
 
 		nc = proxy_connect(NULL);
 		if (nc <= 0) {
@@ -921,7 +916,7 @@ void magic_auth_detect(const char *url) {
 			printf("Connection closed!? Proxy doesn't talk to us.\n");
 		} else {
 			if (res->code == 407) {
-				if (hlist_subcmp_all(res->headers, "Proxy-Authenticate", "NTLM") ) {
+				if (hlist_subcmp_all(res->headers, "Proxy-Authenticate", "NTLM")) {
 					printf("Credentials rejected (NTLM allowed)\n");
 				} else if (hlist_subcmp_all(res->headers, "Proxy-Authenticate", "BASIC")) {
 					printf("Proxy allows BASIC, Cntlm not required so it's not supported\n");
@@ -952,15 +947,15 @@ void magic_auth_detect(const char *url) {
 		if (prefs[found][3])
 			printf("Flags           0x%x\n", prefs[found][3]);
 		if (prefs[found][0]) {
-			printf("PassNT          %s\n", tmp=printmem(tcreds->passnt, 16, 8));
+			printf("PassNT          %s\n", tmp = printmem(tcreds->passnt, 16, 8));
 			free(tmp);
 		}
 		if (prefs[found][1]) {
-			printf("PassLM          %s\n", tmp=printmem(tcreds->passlm, 16, 8));
+			printf("PassLM          %s\n", tmp = printmem(tcreds->passlm, 16, 8));
 			free(tmp);
 		}
 		if (prefs[found][2]) {
-			printf("PassNTLMv2      %s\n", tmp=printmem(tcreds->passntlm2, 16, 8));
+			printf("PassNTLMv2      %s\n", tmp = printmem(tcreds->passntlm2, 16, 8));
 			free(tmp);
 		}
 		printf("------------------------------------------------\n");
@@ -972,4 +967,3 @@ void magic_auth_detect(const char *url) {
 	if (host)
 		free(host);
 }
-
