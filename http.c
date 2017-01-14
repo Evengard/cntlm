@@ -419,7 +419,7 @@ int chunked_data_send(int dst, int src) {
 		}
 
 		if (dst >= 0)
-			i = write(dst, buf, strlen(buf));
+			write(dst, buf, strlen(buf));
 
 		if (csize)
 			if (!data_send(dst, src, csize + 2)) {
@@ -476,7 +476,7 @@ int tunnel(int cd, int sd) {
 
 			ret = read(from, buf, BUFSIZE);
 			if (ret > 0) {
-				ret = write(to, buf, ret);
+				write(to, buf, ret);
 			} else {
 				free(buf);
 				return (ret == 0);

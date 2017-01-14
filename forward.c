@@ -375,7 +375,7 @@ beginning:
 		sd = proxy_connect(tcreds);
 		if (sd < 0) {
 			tmp = gen_502_page(request->http, "Parent proxy unreacheable");
-			i = write(cd, tmp, strlen(tmp));
+			write(cd, tmp, strlen(tmp));
 			free(tmp);
 			rc = (void *)-1;
 			goto bailout;
@@ -487,7 +487,7 @@ beginning:
 						printf("NTLM-to-basic: Returning client auth request.\n");
 
 					tmp = gen_407_page(data[loop]->http);
-					i = write(cd, tmp, strlen(tmp));
+					write(cd, tmp, strlen(tmp));
 					free(tmp);
 
 					free_rr_data(data[0]);

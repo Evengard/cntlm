@@ -14,6 +14,7 @@ MANDIR     	:= $(DESTDIR)/usr/share/man
 #
 NAME		:= cntlm
 CC		:= gcc
+CFLAGS  += -Wno-unused-result
 VER		:= $(shell cat VERSION)
 OS		:= $(shell uname -s)
 OSLDFLAGS	:= $(shell [ $(OS) = "SunOS" ] && echo "-lrt -lsocket -lnsl")

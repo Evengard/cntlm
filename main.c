@@ -319,7 +319,6 @@ void *proxy_thread(void *thread_data) {
 
 	do {
 		ret = NULL;
-		keep_alive = 0;
 
 		if (debug) {
 			printf("\n******* Round 1 C: %d *******\n", cd);
@@ -411,7 +410,7 @@ void *tunnel_thread(void *thread_data) {
 void *socks5_thread(void *thread_data) {
 	char *tmp, *thost, *tport, *uname, *upass;
 	unsigned short port;
-	int ver, r, c, i, w;
+	int ver, r, c, i;
 
 	struct auth_s *tcreds = NULL;
 	unsigned char *bs = NULL, *auths = NULL, *addr = NULL;
@@ -465,15 +464,12 @@ void *socks5_thread(void *thread_data) {
 	if (found < 0) {
 		bs[0] = 5;
 		bs[1] = 0xFF;
-		w = write(cd, bs, 2);
-		// We don't really care about the result - shut up GCC warning (unused-but-set-variable)
-		if (!w)
-			w = 1;
+		write(cd, bs, 2);
 		goto bailout;
 	} else {
 		bs[0] = 5;
 		bs[1] = found;
-		w = write(cd, bs, 2);
+		write(cd, bs, 2);
 	}
 
 	/*
@@ -487,7 +483,7 @@ void *socks5_thread(void *thread_data) {
 		if (r != 2) {
 			bs[0] = 1;
 			bs[1] = 0xFF; /* Unsuccessful (not supported) */
-			w = write(cd, bs, 2);
+			write(cd, bs, 2);
 			goto bailout;
 		}
 		c = bs[1];
@@ -532,7 +528,7 @@ void *socks5_thread(void *thread_data) {
 		/*
 		 * Send response
 		 */
-		w = write(cd, bs, 2);
+		write(cd, bs, 2);
 		free(upass);
 		free(uname);
 
@@ -559,7 +555,7 @@ void *socks5_thread(void *thread_data) {
 		bs[2] = 0;
 		bs[3] = 1; /* Dummy IPv4 */
 		memset(bs + 4, 0, 6);
-		w = write(cd, bs, 10);
+		write(cd, bs, 10);
 		goto bailout;
 	}
 
@@ -627,7 +623,7 @@ void *socks5_thread(void *thread_data) {
 		bs[2] = 0;
 		bs[3] = 1; /* Dummy IPv4 */
 		memset(bs + 4, 0, 6);
-		w = write(cd, bs, 10);
+		write(cd, bs, 10);
 		goto bailout;
 	} else {
 		/*
@@ -638,7 +634,7 @@ void *socks5_thread(void *thread_data) {
 		bs[2] = 0;
 		bs[3] = 1; /* Dummy IPv4 */
 		memset(bs + 4, 0, 6);
-		w = write(cd, bs, 10);
+		write(cd, bs, 10);
 	}
 
 	syslog(LOG_DEBUG, "%s SOCKS %s", inet_ntoa(caddr.sin_addr), thost);
@@ -1390,7 +1386,7 @@ int main(int argc, char **argv) {
 
 		setsid();
 		umask(0);
-		w = chdir("/");
+		chdir("/");
 		i = open("/dev/null", O_RDWR);
 		if (i >= 0) {
 			dup2(i, 0);
@@ -1573,10 +1569,7 @@ int main(int argc, char **argv) {
 					syslog(LOG_WARNING, "Connection denied for %s:%d\n",
 					       inet_ntoa(caddr.sin_addr), ntohs(caddr.sin_port));
 					tmp = gen_denied_page(inet_ntoa(caddr.sin_addr));
-					w = write(cd, tmp, strlen(tmp));
-					// We don't really care about the result - shut up GCC warning (unused-but-set-variable)
-					if (!w)
-						w = 1;
+					write(cd, tmp, strlen(tmp));
 					free(tmp);
 					close(cd);
 					continue;
