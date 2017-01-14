@@ -26,237 +26,226 @@
 
 // SSPI mode
 #ifdef UNICODE
-wchar_t* sspi_mode = NULL;
+wchar_t *sspi_mode = NULL;
 #else
-char* sspi_mode = NULL;
+char *sspi_mode = NULL;
 #endif
 
 // Security DLL handle
 HMODULE sspi_dll = NULL;
 
 // Function pointers
-ACCEPT_SECURITY_CONTEXT_FN       _AcceptSecurityContext     = NULL;
-ACQUIRE_CREDENTIALS_HANDLE_FN    _AcquireCredentialsHandle  = NULL;
-COMPLETE_AUTH_TOKEN_FN           _CompleteAuthToken         = NULL;
-DELETE_SECURITY_CONTEXT_FN       _DeleteSecurityContext     = NULL;
-FREE_CONTEXT_BUFFER_FN           _FreeContextBuffer         = NULL;
-FREE_CREDENTIALS_HANDLE_FN       _FreeCredentialsHandle     = NULL;
-INITIALIZE_SECURITY_CONTEXT_FN   _InitializeSecurityContext = NULL;
-QUERY_SECURITY_PACKAGE_INFO_FN   _QuerySecurityPackageInfo  = NULL;
-QUERY_SECURITY_CONTEXT_TOKEN_FN  _QuerySecurityContextToken = NULL;
+ACCEPT_SECURITY_CONTEXT_FN _AcceptSecurityContext = NULL;
+ACQUIRE_CREDENTIALS_HANDLE_FN _AcquireCredentialsHandle = NULL;
+COMPLETE_AUTH_TOKEN_FN _CompleteAuthToken = NULL;
+DELETE_SECURITY_CONTEXT_FN _DeleteSecurityContext = NULL;
+FREE_CONTEXT_BUFFER_FN _FreeContextBuffer = NULL;
+FREE_CREDENTIALS_HANDLE_FN _FreeCredentialsHandle = NULL;
+INITIALIZE_SECURITY_CONTEXT_FN _InitializeSecurityContext = NULL;
+QUERY_SECURITY_PACKAGE_INFO_FN _QuerySecurityPackageInfo = NULL;
+QUERY_SECURITY_CONTEXT_TOKEN_FN _QuerySecurityContextToken = NULL;
 
 void UnloadSecurityDll(HMODULE hModule) {
 
-   if (hModule)
-      FreeLibrary(hModule);
-	  
+	if (hModule)
+		FreeLibrary(hModule);
+
 	sspi_dll = NULL;
 
-   _AcceptSecurityContext      = NULL;
-   _AcquireCredentialsHandle   = NULL;
-   _CompleteAuthToken          = NULL;
-   _DeleteSecurityContext      = NULL;
-   _FreeContextBuffer          = NULL;
-   _FreeCredentialsHandle      = NULL;
-   _InitializeSecurityContext  = NULL;
-   _QuerySecurityPackageInfo   = NULL;
-   _QuerySecurityContextToken  = NULL;
+	_AcceptSecurityContext = NULL;
+	_AcquireCredentialsHandle = NULL;
+	_CompleteAuthToken = NULL;
+	_DeleteSecurityContext = NULL;
+	_FreeContextBuffer = NULL;
+	_FreeCredentialsHandle = NULL;
+	_InitializeSecurityContext = NULL;
+	_QuerySecurityPackageInfo = NULL;
+	_QuerySecurityContextToken = NULL;
 }
 
 HMODULE LoadSecurityDll() {
 
-   HMODULE hModule;
-   BOOL    fAllFunctionsLoaded = FALSE;
-   TCHAR   lpszDLL[MAX_PATH];
-   OSVERSIONINFO VerInfo;
+	HMODULE hModule;
+	BOOL fAllFunctionsLoaded = FALSE;
+	TCHAR lpszDLL[MAX_PATH];
+	OSVERSIONINFO VerInfo;
 
-   //
-   //  Find out which security DLL to use, depending on
-   //  whether we are on Windows NT or Windows 95, Windows 2000, Windows XP, or Windows Server 2003
-   //  We have to use security.dll on Windows NT 4.0.
-   //  All other operating systems, we have to use Secur32.dll
-   //
-   VerInfo.dwOSVersionInfoSize = sizeof (OSVERSIONINFO);
-   if (!GetVersionEx (&VerInfo))   // If this fails, something has gone wrong
-   {
-      return FALSE;
-   }
+	//
+	//  Find out which security DLL to use, depending on
+	//  whether we are on Windows NT or Windows 95, Windows 2000, Windows XP, or Windows Server 2003
+	//  We have to use security.dll on Windows NT 4.0.
+	//  All other operating systems, we have to use Secur32.dll
+	//
+	VerInfo.dwOSVersionInfoSize = sizeof(OSVERSIONINFO);
+	if (!GetVersionEx(&VerInfo)) // If this fails, something has gone wrong
+	{
+		return FALSE;
+	}
 
-   if (VerInfo.dwPlatformId == VER_PLATFORM_WIN32_NT &&
-      VerInfo.dwMajorVersion == 4 &&
-      VerInfo.dwMinorVersion == 0)
-   {
-      lstrcpy (lpszDLL, TEXT("security.dll"));
-   }
-   else
-   {
-      lstrcpy (lpszDLL, TEXT("secur32.dll"));
-   }
+	if (VerInfo.dwPlatformId == VER_PLATFORM_WIN32_NT &&
+	    VerInfo.dwMajorVersion == 4 &&
+	    VerInfo.dwMinorVersion == 0) {
+		lstrcpy(lpszDLL, TEXT("security.dll"));
+	} else {
+		lstrcpy(lpszDLL, TEXT("secur32.dll"));
+	}
 
+	hModule = LoadLibrary(lpszDLL);
+	if (!hModule)
+		return NULL;
 
-   hModule = LoadLibrary(lpszDLL);
-   if (!hModule)
-      return NULL;
+	do {
 
-   do {
-
-      _AcceptSecurityContext = (ACCEPT_SECURITY_CONTEXT_FN)
-            GetProcAddress(hModule, "AcceptSecurityContext");
-      if (!_AcceptSecurityContext)
-         break;
+		_AcceptSecurityContext = (ACCEPT_SECURITY_CONTEXT_FN)
+		    GetProcAddress(hModule, "AcceptSecurityContext");
+		if (!_AcceptSecurityContext)
+			break;
 
 #ifdef UNICODE
-      _AcquireCredentialsHandle = (ACQUIRE_CREDENTIALS_HANDLE_FN)
-            GetProcAddress(hModule, "AcquireCredentialsHandleW");
+		_AcquireCredentialsHandle = (ACQUIRE_CREDENTIALS_HANDLE_FN)
+		    GetProcAddress(hModule, "AcquireCredentialsHandleW");
 #else
-      _AcquireCredentialsHandle = (ACQUIRE_CREDENTIALS_HANDLE_FN)
-            GetProcAddress(hModule, "AcquireCredentialsHandleA");
+		_AcquireCredentialsHandle = (ACQUIRE_CREDENTIALS_HANDLE_FN)
+		    GetProcAddress(hModule, "AcquireCredentialsHandleA");
 #endif
-      if (!_AcquireCredentialsHandle)
-         break;
+		if (!_AcquireCredentialsHandle)
+			break;
 
-      // CompleteAuthToken is not present on Windows 9x Secur32.dll
-      // Do not check for the availablity of the function if it is NULL;
-      _CompleteAuthToken = (COMPLETE_AUTH_TOKEN_FN)
-            GetProcAddress(hModule, "CompleteAuthToken");
+		// CompleteAuthToken is not present on Windows 9x Secur32.dll
+		// Do not check for the availablity of the function if it is NULL;
+		_CompleteAuthToken = (COMPLETE_AUTH_TOKEN_FN)
+		    GetProcAddress(hModule, "CompleteAuthToken");
 
-      _DeleteSecurityContext = (DELETE_SECURITY_CONTEXT_FN)
-            GetProcAddress(hModule, "DeleteSecurityContext");
-      if (!_DeleteSecurityContext)
-         break;
+		_DeleteSecurityContext = (DELETE_SECURITY_CONTEXT_FN)
+		    GetProcAddress(hModule, "DeleteSecurityContext");
+		if (!_DeleteSecurityContext)
+			break;
 
-      _FreeContextBuffer = (FREE_CONTEXT_BUFFER_FN)
-            GetProcAddress(hModule, "FreeContextBuffer");
-      if (!_FreeContextBuffer)
-         break;
+		_FreeContextBuffer = (FREE_CONTEXT_BUFFER_FN)
+		    GetProcAddress(hModule, "FreeContextBuffer");
+		if (!_FreeContextBuffer)
+			break;
 
-      _FreeCredentialsHandle = (FREE_CREDENTIALS_HANDLE_FN)
-            GetProcAddress(hModule, "FreeCredentialsHandle");
-      if (!_FreeCredentialsHandle)
-         break;
+		_FreeCredentialsHandle = (FREE_CREDENTIALS_HANDLE_FN)
+		    GetProcAddress(hModule, "FreeCredentialsHandle");
+		if (!_FreeCredentialsHandle)
+			break;
 
 #ifdef UNICODE
-      _InitializeSecurityContext = (INITIALIZE_SECURITY_CONTEXT_FN)
-            GetProcAddress(hModule, "InitializeSecurityContextW");
+		_InitializeSecurityContext = (INITIALIZE_SECURITY_CONTEXT_FN)
+		    GetProcAddress(hModule, "InitializeSecurityContextW");
 #else
-      _InitializeSecurityContext = (INITIALIZE_SECURITY_CONTEXT_FN)
-            GetProcAddress(hModule, "InitializeSecurityContextA");
+		_InitializeSecurityContext = (INITIALIZE_SECURITY_CONTEXT_FN)
+		    GetProcAddress(hModule, "InitializeSecurityContextA");
 #endif
-      if (!_InitializeSecurityContext)
-         break;
+		if (!_InitializeSecurityContext)
+			break;
 
 #ifdef UNICODE
-      _QuerySecurityPackageInfo = (QUERY_SECURITY_PACKAGE_INFO_FN)
-            GetProcAddress(hModule, "QuerySecurityPackageInfoW");
+		_QuerySecurityPackageInfo = (QUERY_SECURITY_PACKAGE_INFO_FN)
+		    GetProcAddress(hModule, "QuerySecurityPackageInfoW");
 #else
-      _QuerySecurityPackageInfo = (QUERY_SECURITY_PACKAGE_INFO_FN)
-            GetProcAddress(hModule, "QuerySecurityPackageInfoA");
+		_QuerySecurityPackageInfo = (QUERY_SECURITY_PACKAGE_INFO_FN)
+		    GetProcAddress(hModule, "QuerySecurityPackageInfoA");
 #endif
-      if (!_QuerySecurityPackageInfo)
-         break;
+		if (!_QuerySecurityPackageInfo)
+			break;
 
+		_QuerySecurityContextToken = (QUERY_SECURITY_CONTEXT_TOKEN_FN)
+		    GetProcAddress(hModule, "QuerySecurityContextToken");
+		if (!_QuerySecurityContextToken)
+			break;
 
-      _QuerySecurityContextToken = (QUERY_SECURITY_CONTEXT_TOKEN_FN)
-            GetProcAddress(hModule, "QuerySecurityContextToken");
-      if (!_QuerySecurityContextToken)
-         break;
+		fAllFunctionsLoaded = TRUE;
 
-      fAllFunctionsLoaded = TRUE;
+	} while (NULL);
 
-   } while (NULL);
-	
 	if (!fAllFunctionsLoaded) {
-         UnloadSecurityDll(hModule);
-         hModule = NULL;
-      }
+		UnloadSecurityDll(hModule);
+		hModule = NULL;
+	}
 
-   return hModule;
+	return hModule;
 }
 
-int sspi_enabled()
-{
+int sspi_enabled() {
 	if (sspi_mode != NULL)
 		return 1;
 	return 0;
 }
 
-int sspi_set(char* mode)
-{
+int sspi_set(char *mode) {
 	sspi_dll = LoadSecurityDll();
-	if (sspi_dll)
-	{
+	if (sspi_dll) {
 #ifdef UNICODE
-		sspi_mode = new(sizeof(wchar_t) * strlen(mode));
+		sspi_mode = new (sizeof(wchar_t) * strlen(mode));
 		mbstowcs(sspi_mode, mode, strlen(mode));
 #else
 		sspi_mode = strdup(mode);
 #endif
-		return 1;	
+		return 1;
 	}
 	sspi_mode = NULL;
 	return 0;
 }
 
-int sspi_request(char **dst, struct sspi_handle *sspi)
-{
+int sspi_request(char **dst, struct sspi_handle *sspi) {
 	SECURITY_STATUS status;
 	TimeStamp expiry;
-	
+
 	status = _AcquireCredentialsHandle(
-		NULL, // Use current principal
-		sspi_mode,
-		SECPKG_CRED_OUTBOUND,
-		NULL,
-		NULL,
-		NULL,
-		NULL, 
-		&sspi->credentials,
-		&expiry);
-		
+	    NULL, // Use current principal
+	    sspi_mode,
+	    SECPKG_CRED_OUTBOUND,
+	    NULL,
+	    NULL,
+	    NULL,
+	    NULL,
+	    &sspi->credentials,
+	    &expiry);
+
 	if (status != SEC_E_OK)
 		return 0;
-	
-	char *tokenBuf = new(TOKEN_BUFSIZE);
-	SecBufferDesc   tokenDesc;
-	SecBuffer       token;
+
+	char *tokenBuf = new (TOKEN_BUFSIZE);
+	SecBufferDesc tokenDesc;
+	SecBuffer token;
 	unsigned long attrs;
-	
+
 	tokenDesc.ulVersion = SECBUFFER_VERSION;
-	tokenDesc.cBuffers  = 1;
-	tokenDesc.pBuffers  = &token;
-	token.cbBuffer   = TOKEN_BUFSIZE;
+	tokenDesc.cBuffers = 1;
+	tokenDesc.pBuffers = &token;
+	token.cbBuffer = TOKEN_BUFSIZE;
 	token.BufferType = SECBUFFER_TOKEN;
-	token.pvBuffer   = tokenBuf;
-	
+	token.pvBuffer = tokenBuf;
+
 	status = _InitializeSecurityContext(
-		&sspi->credentials,
-        NULL,
-		TEXT(""),
-		ISC_REQ_CONFIDENTIALITY | ISC_REQ_REPLAY_DETECT | ISC_REQ_CONNECTION,
-		0,
-        SECURITY_NETWORK_DREP,
-		NULL,
-        0,
-		&sspi->context,
-		&tokenDesc,
-		&attrs,
-		&expiry);
-		
-	if(status == SEC_I_COMPLETE_AND_CONTINUE || status == SEC_I_CONTINUE_NEEDED)
+	    &sspi->credentials,
+	    NULL,
+	    TEXT(""),
+	    ISC_REQ_CONFIDENTIALITY | ISC_REQ_REPLAY_DETECT | ISC_REQ_CONNECTION,
+	    0,
+	    SECURITY_NETWORK_DREP,
+	    NULL,
+	    0,
+	    &sspi->context,
+	    &tokenDesc,
+	    &attrs,
+	    &expiry);
+
+	if (status == SEC_I_COMPLETE_AND_CONTINUE || status == SEC_I_CONTINUE_NEEDED)
 		_CompleteAuthToken(&sspi->context, &tokenDesc);
-	else if(status != SEC_E_OK)
-	{
+	else if (status != SEC_E_OK) {
 		_FreeCredentialsHandle(&sspi->context);
 		return 0;
 	}
-	
+
 	*dst = token.pvBuffer;
 	return token.cbBuffer;
 	return 0;
 }
 
-int sspi_response(char **dst, char *challengeBuf, int challen, struct sspi_handle *sspi)
-{
+int sspi_response(char **dst, char *challengeBuf, int challen, struct sspi_handle *sspi) {
 	SecBuffer challenge;
 	SecBuffer answer;
 	SecBufferDesc challengeDesc;
@@ -264,37 +253,37 @@ int sspi_response(char **dst, char *challengeBuf, int challen, struct sspi_handl
 	SECURITY_STATUS status;
 	unsigned long attrs;
 	TimeStamp expiry;
-	
-	char *answerBuf = new(TOKEN_BUFSIZE);
-	
-	challengeDesc.ulVersion = answerDesc.ulVersion  = SECBUFFER_VERSION;
-	challengeDesc.cBuffers  = answerDesc.cBuffers   = 1;
-	
-	challengeDesc.pBuffers  = &challenge;
-	answerDesc.pBuffers  = &answer;
-	
+
+	char *answerBuf = new (TOKEN_BUFSIZE);
+
+	challengeDesc.ulVersion = answerDesc.ulVersion = SECBUFFER_VERSION;
+	challengeDesc.cBuffers = answerDesc.cBuffers = 1;
+
+	challengeDesc.pBuffers = &challenge;
+	answerDesc.pBuffers = &answer;
+
 	challenge.BufferType = answer.BufferType = SECBUFFER_TOKEN;
-	
-	challenge.pvBuffer   = challengeBuf;
-	challenge.cbBuffer   = challen;
-	answer.pvBuffer   = answerBuf;
-	answer.cbBuffer   = TOKEN_BUFSIZE;
-	
+
+	challenge.pvBuffer = challengeBuf;
+	challenge.cbBuffer = challen;
+	answer.pvBuffer = answerBuf;
+	answer.cbBuffer = TOKEN_BUFSIZE;
+
 	status = _InitializeSecurityContext(
-		&sspi->credentials,
-		&sspi->context,
-		TEXT(""),
-		ISC_REQ_CONFIDENTIALITY | ISC_REQ_REPLAY_DETECT | ISC_REQ_CONNECTION,
-		0,
-		SECURITY_NETWORK_DREP,
-		&challengeDesc,
-		0,
-		&sspi->context,
-		&answerDesc,
-		&attrs,
-		&expiry);
-		
-	if(status != SEC_E_OK)
+	    &sspi->credentials,
+	    &sspi->context,
+	    TEXT(""),
+	    ISC_REQ_CONFIDENTIALITY | ISC_REQ_REPLAY_DETECT | ISC_REQ_CONNECTION,
+	    0,
+	    SECURITY_NETWORK_DREP,
+	    &challengeDesc,
+	    0,
+	    &sspi->context,
+	    &answerDesc,
+	    &attrs,
+	    &expiry);
+
+	if (status != SEC_E_OK)
 		return 0;
 
 	*dst = answer.pvBuffer;

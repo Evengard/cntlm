@@ -19,23 +19,23 @@
  *
  */
 
-#include <sys/types.h>
-#include <sys/select.h>
-#include <sys/time.h>
 #include <ctype.h>
-#include <string.h>
-#include <strings.h>
+#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
+#include <strings.h>
+#include <sys/select.h>
+#include <sys/time.h>
+#include <sys/types.h>
 #include <unistd.h>
-#include <errno.h>
 
-#include "utils.h"
-#include "socket.h"
-#include "ntlm.h"
 #include "http.h"
+#include "ntlm.h"
+#include "socket.h"
+#include "utils.h"
 
-#define BLOCK		2048
+#define BLOCK 2048
 
 extern int debug;
 
@@ -92,7 +92,7 @@ int headers_recv(int fd, rr_data_t data) {
 	char *host = NULL;
 
 	bsize = BUFSIZE;
-	buf = new(bsize);
+	buf = new (bsize);
 
 	i = so_recvln(fd, &buf, &bsize);
 	if (i <= 0)
@@ -129,7 +129,8 @@ int headers_recv(int fd, rr_data_t data) {
 			ccode = strdup(tok);
 
 			tok += strlen(ccode);
-			while (tok < buf+len && *tok++ == ' ');
+			while (tok < buf + len && *tok++ == ' ')
+				;
 
 			if (strlen(tok))
 				data->msg = strdup(tok);
@@ -184,7 +185,7 @@ int headers_recv(int fd, rr_data_t data) {
 
 		s3 = strchr(tok, '/');
 		if (s3) {
-			host = substr(tok, 0, s3-tok);
+			host = substr(tok, 0, s3 - tok);
 			data->rel_url = strdup(s3);
 		} else {
 			host = substr(tok, 0, strlen(tok));
@@ -229,7 +230,7 @@ int headers_recv(int fd, rr_data_t data) {
 		 */
 		if (data->hostname && (tok = strchr(data->hostname, ':'))) {
 			*tok = 0;
-			data->port = atoi(tok+1);
+			data->port = atoi(tok + 1);
 		} else if (data->url) {
 			if (!strncasecmp(data->url, "https", 5))
 				data->port = 443;
@@ -244,9 +245,12 @@ int headers_recv(int fd, rr_data_t data) {
 	}
 
 bailout:
-	if (orig) free(orig);
-	if (ccode) free(ccode);
-	if (host) free(host);
+	if (orig)
+		free(orig);
+	if (ccode)
+		free(ccode);
+	if (host)
+		free(host);
 	free(buf);
 
 	if (i <= 0) {
@@ -284,7 +288,7 @@ int headers_send(int fd, rr_data_t data) {
 	/*
 	 * We know how much memory we need now...
 	 */
-	buf = new(len);
+	buf = new (len);
 
 	/*
 	 * Prepare the first request/response line
@@ -300,7 +304,7 @@ int headers_send(int fd, rr_data_t data) {
 	 */
 	t = data->headers;
 	while (t) {
-		len += sprintf(buf+len, "%s: %s\r\n", t->key, t->value);
+		len += sprintf(buf + len, "%s: %s\r\n", t->key, t->value);
 		t = t->next;
 	}
 
@@ -313,13 +317,13 @@ int headers_send(int fd, rr_data_t data) {
 	 * Flush it all down the toilet
 	 */
 	if (!so_closed(fd))
-		i = write(fd, buf, len+2);
+		i = write(fd, buf, len + 2);
 	else
 		i = -999;
 
 	free(buf);
 
-	if (i <= 0 || i != len+2) {
+	if (i <= 0 || i != len + 2) {
 		if (debug)
 			printf("headers_send: fd %d warning %d (connection closed)\n", fd, i);
 		return 0;
@@ -342,12 +346,12 @@ int data_send(int dst, int src, length_t len) {
 	if (!len)
 		return 1;
 
-	buf = new(BLOCK);
+	buf = new (BLOCK);
 
 	do {
-		block = (len == -1 || len-c > BLOCK ? BLOCK : len-c);
+		block = (len == -1 || len - c > BLOCK ? BLOCK : len - c);
 		i = read(src, buf, block);
-		
+
 		if (i > 0)
 			c += i;
 
@@ -365,7 +369,7 @@ int data_send(int dst, int src, length_t len) {
 				printf("data_send: wrote %d of %d\n", j, i);
 		}
 
-	} while (i > 0 && j > 0 && (len == -1 || c <  len));
+	} while (i > 0 && j > 0 && (len == -1 || c < len));
 
 	free(buf);
 
@@ -393,7 +397,7 @@ int chunked_data_send(int dst, int src) {
 	char *err = NULL;
 
 	bsize = BUFSIZE;
-	buf = new(bsize);
+	buf = new (bsize);
 
 	/* Take care of all chunks */
 	do {
@@ -415,10 +419,10 @@ int chunked_data_send(int dst, int src) {
 		}
 
 		if (dst >= 0)
-			i = write(dst, buf, strlen(buf));
+			write(dst, buf, strlen(buf));
 
 		if (csize)
-			if (!data_send(dst, src, csize+2)) {
+			if (!data_send(dst, src, csize + 2)) {
 				if (debug)
 					printf("chunked_data_send: aborting, data_send failed\n");
 
@@ -450,7 +454,7 @@ int tunnel(int cd, int sd) {
 	int from, to, ret, sel;
 	char *buf;
 
-	buf = new(BUFSIZE);
+	buf = new (BUFSIZE);
 
 	if (debug)
 		printf("tunnel: select cli: %d, srv: %d\n", cd, sd);
@@ -472,7 +476,7 @@ int tunnel(int cd, int sd) {
 
 			ret = read(from, buf, BUFSIZE);
 			if (ret > 0) {
-				ret = write(to, buf, ret);
+				write(to, buf, ret);
 			} else {
 				free(buf);
 				return (ret == 0);
@@ -510,9 +514,9 @@ length_t http_has_body(rr_data_t request, rr_data_t response) {
 	 */
 	if (current == response) {
 		nobody = (HEAD(request) ||
-			(response->code >= 100 && response->code < 200) ||
-			response->code == 204 ||
-			response->code == 304);
+		          (response->code >= 100 && response->code < 200) ||
+		          response->code == 204 ||
+		          response->code == 304);
 	} else {
 		nobody = GET(request) || HEAD(request);
 	}
@@ -528,12 +532,9 @@ length_t http_has_body(rr_data_t request, rr_data_t response) {
 	 * No C-L, no T-E, no C-T == no body.
 	 */
 	tmp = hlist_get(current->headers, "Content-Length");
-	if (!nobody && tmp == NULL && (hlist_in(current->headers, "Content-Type")
-			|| hlist_in(current->headers, "Transfer-Encoding")
-			|| hlist_subcmp(current->headers, "Connection", "close"))) {
-			// || (response->code == 200) 
-		if (hlist_in(current->headers, "Transfer-Encoding")
-				&& hlist_subcmp(current->headers, "Transfer-Encoding", "chunked"))
+	if (!nobody && tmp == NULL && (hlist_in(current->headers, "Content-Type") || hlist_in(current->headers, "Transfer-Encoding") || hlist_subcmp(current->headers, "Connection", "close"))) {
+		// || (response->code == 200)
+		if (hlist_in(current->headers, "Transfer-Encoding") && hlist_subcmp(current->headers, "Transfer-Encoding", "chunked"))
 			length = 1;
 		else
 			length = -1;
@@ -626,14 +627,15 @@ int http_parse_basic(hlist_t headers, const char *header, struct auth_s *tcreds)
 		return 0;
 
 	tmp = hlist_get(headers, header);
-	buf = new(strlen(tmp) + 1);
+	buf = new (strlen(tmp) + 1);
 	i = 5;
-	while (i < strlen(tmp) && tmp[++i] == ' ');
-	from_base64(buf, tmp+i);
+	while (i < strlen(tmp) && tmp[++i] == ' ')
+		;
+	from_base64(buf, tmp + i);
 	pos = strchr(buf, ':');
 
 	if (pos == NULL) {
-		memset(buf, 0, strlen(buf));		/* clean password memory */
+		memset(buf, 0, strlen(buf)); /* clean password memory */
 		free(buf);
 		return -1;
 	} else {
@@ -645,23 +647,23 @@ int http_parse_basic(hlist_t headers, const char *header, struct auth_s *tcreds)
 		} else {
 			*dom = 0;
 			auth_strcpy(tcreds, domain, buf);
-			auth_strcpy(tcreds, user, dom+1);
+			auth_strcpy(tcreds, user, dom + 1);
 		}
 
 		if (tcreds->hashntlm2) {
-			tmp = ntlm2_hash_password(tcreds->user, tcreds->domain, pos+1);
+			tmp = ntlm2_hash_password(tcreds->user, tcreds->domain, pos + 1);
 			auth_memcpy(tcreds, passntlm2, tmp, 16);
 			free(tmp);
 		}
 
 		if (tcreds->hashnt) {
-			tmp = ntlm_hash_nt_password(pos+1);
+			tmp = ntlm_hash_nt_password(pos + 1);
 			auth_memcpy(tcreds, passnt, tmp, 21);
 			free(tmp);
 		}
 
 		if (tcreds->hashlm) {
-			tmp = ntlm_hash_lm_password(pos+1);
+			tmp = ntlm_hash_lm_password(pos + 1);
 			auth_memcpy(tcreds, passlm, tmp, 21);
 			free(tmp);
 		}

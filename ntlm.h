@@ -22,11 +22,11 @@
 #ifndef _NTLM_H
 #define _NTLM_H
 
-#include "xcrypt.h"
 #include "auth.h"
+#include "xcrypt.h"
 
-#define NTLM_BUFSIZE		1024
-#define NTLM_CHALLENGE_MIN	40
+#define NTLM_BUFSIZE 1024
+#define NTLM_CHALLENGE_MIN 40
 
 extern char *ntlm_hash_lm_password(char *password);
 extern char *ntlm_hash_nt_password(char *password);

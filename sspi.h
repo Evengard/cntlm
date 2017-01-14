@@ -29,13 +29,12 @@
 
 #define SECURITY_WIN32
 
-#include <windows.h>
 #include <sspi.h>
+#include <windows.h>
 
 #define TOKEN_BUFSIZE 4096
 
-struct sspi_handle
-{
+struct sspi_handle {
 	CredHandle credentials;
 	CtxtHandle context;
 };

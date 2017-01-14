@@ -19,13 +19,13 @@
  *
  */
 
-#include <sys/types.h>
-#include <sys/socket.h>
-#include <syslog.h>
-#include <string.h>
-#include <stdlib.h>
-#include <netinet/in.h>
 #include <arpa/inet.h>
+#include <netinet/in.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/socket.h>
+#include <sys/types.h>
+#include <syslog.h>
 
 #include "acl.h"
 #include "socket.h"
@@ -43,17 +43,17 @@ int acl_add(plist_t *rules, char *spec, enum acl_t acl) {
 	network_t *aux;
 	int i, mask = 32;
 	char *tmp;
-	
+
 	if (rules == NULL)
 		return 0;
 
 	spec = strdup(spec);
-	aux = (network_t *)new(sizeof(network_t));
+	aux = (network_t *)new (sizeof(network_t));
 	i = strcspn(spec, "/");
 	if (i < strlen(spec)) {
 		spec[i] = 0;
-		mask = strtol(spec+i+1, &tmp, 10);
-		if (mask < 0 || mask > 32 || spec[i+1] == 0 || *tmp != 0) {
+		mask = strtol(spec + i + 1, &tmp, 10);
+		if (mask < 0 || mask > 32 || spec[i + 1] == 0 || *tmp != 0) {
 			syslog(LOG_ERR, "ACL netmask for %s is invalid\n", spec);
 			free(aux);
 			free(spec);
@@ -77,7 +77,7 @@ int acl_add(plist_t *rules, char *spec, enum acl_t acl) {
 
 	aux->ip = source.s_addr;
 	aux->mask = mask;
-	mask = swap32(~(((uint64_t)1 << (32-mask)) - 1));
+	mask = swap32(~(((uint64_t)1 << (32 - mask)) - 1));
 	if ((source.s_addr & mask) != source.s_addr)
 		syslog(LOG_WARNING, "Subnet definition might be incorrect: %s/%d\n", inet_ntoa(source), aux->mask);
 
@@ -104,7 +104,7 @@ enum acl_t acl_check(plist_t rules, struct in_addr naddr) {
 
 	while (rules) {
 		aux = (network_t *)rules->aux;
-		mask = swap32(~(((uint64_t)1 << (32-aux->mask)) - 1));
+		mask = swap32(~(((uint64_t)1 << (32 - aux->mask)) - 1));
 
 		if ((naddr.s_addr & mask) == (aux->ip & mask))
 			return rules->key;

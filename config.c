@@ -19,13 +19,13 @@
  *
  */
 
-#include <stdio.h>
 #include <ctype.h>
-#include <string.h>
+#include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
-#include "globals.h"
 #include "config.h"
+#include "globals.h"
 #include "utils.h"
 
 /*
@@ -52,9 +52,9 @@ config_t config_open(const char *fname) {
 	fp = fopen(fname, "r");
 	if (!fp)
 		return NULL;
-	
-	buf = new(BUFSIZE);
-	rc = (config_t)new(sizeof(struct config_s));
+
+	buf = new (BUFSIZE);
+	rc = (config_t) new (sizeof(struct config_s));
 	rc->options = NULL;
 
 	while (!feof(fp)) {
@@ -70,7 +70,8 @@ config_t config_open(const char *fname) {
 		/*
 		 * Find first non-empty character
 		 */
-		for (i = j = 0; j < len && isspace(buf[j]); ++j);
+		for (j = 0; j < len && isspace(buf[j]); ++j)
+			;
 
 		/*
 		 * Comment?
@@ -81,7 +82,8 @@ config_t config_open(const char *fname) {
 		/*
 		 * Find end of keyword
 		 */
-		for (i = j; j < len && isalnum(buf[j]); ++j);
+		for (i = j; j < len && isalnum(buf[j]); ++j)
+			;
 
 		/*
 		 * Malformed?
@@ -93,10 +95,12 @@ config_t config_open(const char *fname) {
 		 * Is it a section?
 		 */
 		if (buf[j] == '[') {
-			for (++j; j < len && isspace(buf[j]); ++j);
-			for (slen = j; j < len && j-slen < MINIBUF_SIZE-1 && buf[j] != ']' && !isspace(buf[j]); ++j);
-			if (j-slen > 0) {
-				strlcpy(section, buf+slen, j-slen+1);
+			for (++j; j < len && isspace(buf[j]); ++j)
+				;
+			for (slen = j; j < len && j - slen < MINIBUF_SIZE - 1 && buf[j] != ']' && !isspace(buf[j]); ++j)
+				;
+			if (j - slen > 0) {
+				strlcpy(section, buf + slen, j - slen + 1);
 			}
 			continue;
 		}
@@ -104,12 +108,13 @@ config_t config_open(const char *fname) {
 		/*
 		 * It's an OK keyword
 		 */
-		key = substr(buf, i, j-i);
+		key = substr(buf, i, j - i);
 
 		/*
 		 * Find next non-empty character
 		 */
-		for (i = j; j < len && isspace(buf[j]); ++j);
+		for (; j < len && isspace(buf[j]); ++j)
+			;
 		if (j >= len || buf[j] == '#' || buf[j] == ';')
 			continue;
 
@@ -118,7 +123,8 @@ config_t config_open(const char *fname) {
 		 */
 		if (buf[j] == '"') {
 			quote = 1;
-			for (i = ++j; j < len && buf[i] != '"'; ++i);
+			for (i = ++j; j < len && buf[i] != '"'; ++i)
+				;
 			if (i >= len)
 				continue;
 		} else
@@ -127,7 +133,7 @@ config_t config_open(const char *fname) {
 		/*
 		 * Get value as quoted or until EOL/comment
 		 */
-		value = substr(buf, j, i-j);
+		value = substr(buf, j, i - j);
 		if (!quote) {
 			i = strcspn(value, "#");
 			if (i != strlen(value))
@@ -158,7 +164,7 @@ char *config_pop(config_t cf, const char *option) {
 		tmp = strdup(tmp);
 		cf->options = hlist_del(cf->options, option);
 	}
-	
+
 	return tmp;
 }
 

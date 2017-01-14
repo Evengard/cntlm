@@ -19,63 +19,63 @@
  *
  */
 
-#include <sys/types.h>
-#include <sys/time.h>
-#include <sys/select.h>
-#include <sys/stat.h>
-#include <sys/socket.h>
-#include <pthread.h>
-#include <stdio.h>
-#include <errno.h>
-#include <netinet/in.h>
 #include <arpa/inet.h>
+#include <ctype.h>
+#include <errno.h>
+#include <fcntl.h>
+#include <fnmatch.h>
+#include <netdb.h>
+#include <netinet/in.h>
+#include <pthread.h>
+#include <pwd.h>
 #include <signal.h>
-#include <unistd.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
-#include <netdb.h>
-#include <ctype.h>
-#include <pwd.h>
-#include <fcntl.h>
+#include <sys/select.h>
+#include <sys/socket.h>
+#include <sys/stat.h>
+#include <sys/time.h>
+#include <sys/types.h>
 #include <syslog.h>
 #include <termios.h>
-#include <fnmatch.h>
+#include <unistd.h>
 
 /*
  * Some helping routines like linked list manipulation substr(), memory
  * allocation, NTLM authentication routines, etc.
  */
-#include "config/config.h"
-#include "socket.h"
-#include "utils.h"
-#include "ntlm.h"
-#include "swap.h"
-#include "config.h"
 #include "acl.h"
 #include "auth.h"
-#include "http.h"
+#include "config.h"
+#include "config/config.h"
+#include "direct.h"  /* code serving directly without proxy */
+#include "forward.h" /* code serving via parent proxy */
 #include "globals.h"
+#include "http.h"
+#include "ntlm.h"
 #include "pages.h"
-#include "forward.h"				/* code serving via parent proxy */
-#include "direct.h"				/* code serving directly without proxy */
+#include "socket.h"
+#include "swap.h"
+#include "utils.h"
 #ifdef __CYGWIN__
-#include "sspi.h"				/* code for SSPI management */
+#include "sspi.h" /* code for SSPI management */
 #endif
 
-#define STACK_SIZE	sizeof(void *)*8*1024
+#define STACK_SIZE sizeof(void *) * 8 * 1024
 
 /*
  * Global "read-only" data initialized in main(). Comments list funcs. which use
  * them. Having these global avoids the need to pass them to each thread and
  * from there again a few times to inner calls.
  */
-int debug = 0;					/* all debug printf's and possibly external modules */
+int debug = 0; /* all debug printf's and possibly external modules */
 
-struct auth_s *g_creds = NULL;			/* throughout the whole module */
+struct auth_s *g_creds = NULL; /* throughout the whole module */
 
-int quit = 0;					/* sighandler() */
-int ntlmbasic = 0;				/* forward_request() */
+int quit = 0;      /* sighandler() */
+int ntlmbasic = 0; /* forward_request() */
 int serialize = 0;
 int scanner_plugin = 0;
 long scanner_plugin_maxsize = 0;
@@ -103,10 +103,10 @@ plist_t parent_list = NULL;
  * List of custom header substitutions, SOCKS5 proxy users and 
  * UserAgents for the scanner plugin.
  */
-hlist_t header_list = NULL;			/* forward_request() */
-hlist_t users_list = NULL;			/* socks5_thread() */
-plist_t scanner_agent_list = NULL;		/* scanner_hook() */
-plist_t noproxy_list = NULL;			/* proxy_thread() */
+hlist_t header_list = NULL;        /* forward_request() */
+hlist_t users_list = NULL;         /* socks5_thread() */
+plist_t scanner_agent_list = NULL; /* scanner_hook() */
+plist_t noproxy_list = NULL;       /* proxy_thread() */
 
 /*
  * General signal handler. If in debug mode, quit immediately.
@@ -145,7 +145,7 @@ int parent_add(char *parent, int port) {
 			return 0;
 		}
 
-		port = atoi(proxy+i);
+		port = atoi(proxy + i);
 	}
 
 	/*
@@ -169,7 +169,7 @@ int parent_add(char *parent, int port) {
 	}
 	*/
 
-	aux = (proxy_t *)new(sizeof(proxy_t));
+	aux = (proxy_t *)new (sizeof(proxy_t));
 	strlcpy(aux->hostname, proxy, sizeof(aux->hostname));
 	aux->port = port;
 	aux->resolved = 0;
@@ -189,14 +189,14 @@ void listen_add(const char *service, plist_t *list, char *spec, int gateway) {
 
 	len = strlen(spec);
 	p = strcspn(spec, ":");
-	if (p < len-1) {
+	if (p < len - 1) {
 		tmp = substr(spec, 0, p);
 		if (!so_resolv(&source, tmp)) {
 			syslog(LOG_ERR, "Cannot resolve listen address %s\n", tmp);
 			myexit(1);
 		}
 		free(tmp);
-		port = atoi(tmp = spec+p+1);
+		port = atoi(tmp = spec + p + 1);
 	} else {
 		source.s_addr = htonl(gateway ? INADDR_ANY : INADDR_LOOPBACK);
 		port = atoi(tmp = spec);
@@ -229,35 +229,35 @@ void tunnel_add(plist_t *list, char *spec, int gateway) {
 	for (count = 1, i = 0; count < 4 && i < len; ++i)
 		if (spec[i] == ':') {
 			spec[i] = 0;
-			field[count++] = spec+i+1;
+			field[count++] = spec + i + 1;
 		}
 
 	pos = 0;
 	if (count == 4) {
 		if (!so_resolv(&source, field[pos])) {
-                        syslog(LOG_ERR, "Cannot resolve tunel bind address: %s\n", field[pos]);
-                        myexit(1);
-                }
+			syslog(LOG_ERR, "Cannot resolve tunel bind address: %s\n", field[pos]);
+			myexit(1);
+		}
 		pos++;
 	} else
 		source.s_addr = htonl(gateway ? INADDR_ANY : INADDR_LOOPBACK);
 
-	if (count-pos == 3) {
+	if (count - pos == 3) {
 		port = atoi(field[pos]);
 		if (port == 0) {
 			syslog(LOG_ERR, "Invalid tunnel local port: %s\n", field[pos]);
 			myexit(1);
 		}
 
-		if (!strlen(field[pos+1]) || !strlen(field[pos+2])) {
-			syslog(LOG_ERR, "Invalid tunnel target: %s:%s\n", field[pos+1], field[pos+2]);
+		if (!strlen(field[pos + 1]) || !strlen(field[pos + 2])) {
+			syslog(LOG_ERR, "Invalid tunnel target: %s:%s\n", field[pos + 1], field[pos + 2]);
 			myexit(1);
 		}
 
-		tmp = new(strlen(field[pos+1]) + strlen(field[pos+2]) + 2 + 1);
-		strcpy(tmp, field[pos+1]);
+		tmp = new (strlen(field[pos + 1]) + strlen(field[pos + 2]) + 2 + 1);
+		strcpy(tmp, field[pos + 1]);
 		strcat(tmp, ":");
-		strcat(tmp, field[pos+2]);
+		strcat(tmp, field[pos + 2]);
 
 		i = so_listen(port, source);
 		if (i > 0) {
@@ -280,7 +280,7 @@ plist_t noproxy_add(plist_t list, char *spec) {
 	char *tok, *save;
 
 	tok = strtok_r(spec, ", ", &save);
-	while ( tok != NULL ) {
+	while (tok != NULL) {
 		if (debug)
 			printf("Adding no-proxy for: '%s'\n", tok);
 		list = plist_add(list, 0, strdup(tok));
@@ -295,8 +295,7 @@ int noproxy_match(const char *addr) {
 
 	list = noproxy_list;
 	while (list) {
-		if (list->aux && strlen(list->aux)
-				&& fnmatch(list->aux, addr, 0) == 0) {
+		if (list->aux && strlen(list->aux) && fnmatch(list->aux, addr, 0) == 0) {
 			if (debug)
 				printf("MATCH: %s (%s)\n", addr, (char *)list->aux);
 			return 1;
@@ -314,13 +313,12 @@ int noproxy_match(const char *addr) {
  */
 void *proxy_thread(void *thread_data) {
 	rr_data_t request, ret;
-	int keep_alive;				/* Proxy-Connection */
+	int keep_alive; /* Proxy-Connection */
 
 	int cd = ((struct thread_arg_s *)thread_data)->fd;
 
 	do {
 		ret = NULL;
-		keep_alive = 0;
 
 		if (debug) {
 			printf("\n******* Round 1 C: %d *******\n", cd);
@@ -354,7 +352,7 @@ void *proxy_thread(void *thread_data) {
 		} while (ret != NULL && ret != (void *)-1);
 
 		free_rr_data(request);
-	/*
+		/*
 	 * If client asked for proxy keep-alive, loop unless the last server response
 	 * requested (Proxy-)Connection: close.
 	 */
@@ -412,7 +410,7 @@ void *tunnel_thread(void *thread_data) {
 void *socks5_thread(void *thread_data) {
 	char *tmp, *thost, *tport, *uname, *upass;
 	unsigned short port;
-	int ver, r, c, i, w;
+	int ver, r, c, i;
 
 	struct auth_s *tcreds = NULL;
 	unsigned char *bs = NULL, *auths = NULL, *addr = NULL;
@@ -427,9 +425,9 @@ void *socks5_thread(void *thread_data) {
 	/*
 	 * Check client's version, possibly fuck'em
 	 */
-	bs = (unsigned char *)new(10);
-	thost = new(MINIBUF_SIZE);
-	tport = new(MINIBUF_SIZE);
+	bs = (unsigned char *)new (10);
+	thost = new (MINIBUF_SIZE);
+	tport = new (MINIBUF_SIZE);
 	r = read(cd, bs, 2);
 	if (r != 2 || bs[0] != 5)
 		goto bailout;
@@ -438,7 +436,7 @@ void *socks5_thread(void *thread_data) {
 	 * Read offered auth schemes
 	 */
 	c = bs[1];
-	auths = (unsigned char *)new(c+1);
+	auths = (unsigned char *)new (c + 1);
 	r = read(cd, auths, c);
 	if (r != c)
 		goto bailout;
@@ -447,14 +445,16 @@ void *socks5_thread(void *thread_data) {
 	 * Are we wide open and client is OK with no auth?
 	 */
 	if (open) {
-		for (i = 0; i < c && (auths[i] || (found = 0)); ++i);
+		for (i = 0; i < c && (auths[i] || (found = 0)); ++i)
+			;
 	}
 
 	/*
 	 * If not, accept plain auth if offered
 	 */
 	if (found < 0) {
-		for (i = 0; i < c && (auths[i] != 2 || !(found = 2)); ++i);
+		for (i = 0; i < c && (auths[i] != 2 || !(found = 2)); ++i)
+			;
 	}
 
 	/*
@@ -464,14 +464,12 @@ void *socks5_thread(void *thread_data) {
 	if (found < 0) {
 		bs[0] = 5;
 		bs[1] = 0xFF;
-		w = write(cd, bs, 2);
-		// We don't really care about the result - shut up GCC warning (unused-but-set-variable)
-		if (!w) w = 1;
+		write(cd, bs, 2);
 		goto bailout;
 	} else {
 		bs[0] = 5;
 		bs[1] = found;
-		w = write(cd, bs, 2);
+		write(cd, bs, 2);
 	}
 
 	/*
@@ -484,8 +482,8 @@ void *socks5_thread(void *thread_data) {
 		r = read(cd, bs, 2);
 		if (r != 2) {
 			bs[0] = 1;
-			bs[1] = 0xFF;		/* Unsuccessful (not supported) */
-			w = write(cd, bs, 2);
+			bs[1] = 0xFF; /* Unsuccessful (not supported) */
+			write(cd, bs, 2);
 			goto bailout;
 		}
 		c = bs[1];
@@ -493,9 +491,9 @@ void *socks5_thread(void *thread_data) {
 		/*
 		 * Read username and pass len
 		 */
-		uname = new(c+1);
-		r = read(cd, uname, c+1);
-		if (r != c+1) {
+		uname = new (c + 1);
+		r = read(cd, uname, c + 1);
+		if (r != c + 1) {
 			free(uname);
 			goto bailout;
 		}
@@ -506,7 +504,7 @@ void *socks5_thread(void *thread_data) {
 		/*
 		 * Read pass
 		 */
-		upass = new(c+1);
+		upass = new (c + 1);
 		r = read(cd, upass, c);
 		if (r != c) {
 			free(upass);
@@ -521,16 +519,16 @@ void *socks5_thread(void *thread_data) {
 		tmp = hlist_get(users_list, uname);
 		if (!hlist_count(users_list) || (tmp && !strcmp(tmp, upass))) {
 			bs[0] = 1;
-			bs[1] = 0;		/* Success */
+			bs[1] = 0; /* Success */
 		} else {
 			bs[0] = 1;
-			bs[1] = 0xFF;		/* Failed */
+			bs[1] = 0xFF; /* Failed */
 		}
 
 		/*
 		 * Send response
 		 */
-		w = write(cd, bs, 2);
+		write(cd, bs, 2);
 		free(upass);
 		free(uname);
 
@@ -553,11 +551,11 @@ void *socks5_thread(void *thread_data) {
 	 */
 	if (bs[1] != 1 || (bs[3] != 1 && bs[3] != 3)) {
 		bs[0] = 5;
-		bs[1] = 2;			/* Not allowed */
+		bs[1] = 2; /* Not allowed */
 		bs[2] = 0;
-		bs[3] = 1;			/* Dummy IPv4 */
-		memset(bs+4, 0, 6);
-		w = write(cd, bs, 10);
+		bs[3] = 1; /* Dummy IPv4 */
+		memset(bs + 4, 0, 6);
+		write(cd, bs, 10);
 		goto bailout;
 	}
 
@@ -566,17 +564,17 @@ void *socks5_thread(void *thread_data) {
 	 * Let's read dest address
 	 */
 	if (bs[3] == 1) {
-		ver = 1;			/* IPv4, we know the length */
+		ver = 1; /* IPv4, we know the length */
 		c = 4;
 	} else if (bs[3] == 3) {
-		ver = 2;			/* FQDN, get string length */
+		ver = 2; /* FQDN, get string length */
 		r = read(cd, &c, 1);
 		if (r != 1)
 			goto bailout;
 	} else
 		goto bailout;
 
-	addr = (unsigned char *)new(c+10 + 1);
+	addr = (unsigned char *)new (c + 10 + 1);
 	r = read(cd, addr, c);
 	if (r != c)
 		goto bailout;
@@ -586,7 +584,7 @@ void *socks5_thread(void *thread_data) {
 	 * Convert the address to character string
 	 */
 	if (ver == 1) {
-		sprintf(thost, "%d.%d.%d.%d", addr[0], addr[1], addr[2], addr[3]);	/* It's in network byte order */
+		sprintf(thost, "%d.%d.%d.%d", addr[0], addr[1], addr[2], addr[3]); /* It's in network byte order */
 	} else {
 		strlcpy(thost, (char *)addr, MINIBUF_SIZE);
 	}
@@ -621,22 +619,22 @@ void *socks5_thread(void *thread_data) {
 		 * Connect/tunnel failed, report
 		 */
 		bs[0] = 5;
-		bs[1] = 1;			/* General failure */
+		bs[1] = 1; /* General failure */
 		bs[2] = 0;
-		bs[3] = 1;			/* Dummy IPv4 */
-		memset(bs+4, 0, 6);
-		w = write(cd, bs, 10);
+		bs[3] = 1; /* Dummy IPv4 */
+		memset(bs + 4, 0, 6);
+		write(cd, bs, 10);
 		goto bailout;
 	} else {
 		/*
 		 * All right
 		 */
 		bs[0] = 5;
-		bs[1] = 0;			/* Success */
+		bs[1] = 0; /* Success */
 		bs[2] = 0;
-		bs[3] = 1;			/* Dummy IPv4 */
-		memset(bs+4, 0, 6);
-		w = write(cd, bs, 10);
+		bs[3] = 1; /* Dummy IPv4 */
+		memset(bs + 4, 0, 6);
+		write(cd, bs, 10);
 	}
 
 	syslog(LOG_DEBUG, "%s SOCKS %s", inet_ntoa(caddr.sin_addr), thost);
@@ -698,16 +696,16 @@ int main(int argc, char **argv) {
 	char *magic_detect = NULL;
 
 	g_creds = new_auth();
-	cuser = new(MINIBUF_SIZE);
-	cdomain = new(MINIBUF_SIZE);
-	cpassword = new(MINIBUF_SIZE);
-	cpassntlm2 = new(MINIBUF_SIZE);
-	cpassnt = new(MINIBUF_SIZE);
-	cpasslm = new(MINIBUF_SIZE);
-	cworkstation = new(MINIBUF_SIZE);
-	cpidfile = new(MINIBUF_SIZE);
-	cuid = new(MINIBUF_SIZE);
-	cauth = new(MINIBUF_SIZE);
+	cuser = new (MINIBUF_SIZE);
+	cdomain = new (MINIBUF_SIZE);
+	cpassword = new (MINIBUF_SIZE);
+	cpassntlm2 = new (MINIBUF_SIZE);
+	cpassnt = new (MINIBUF_SIZE);
+	cpasslm = new (MINIBUF_SIZE);
+	cworkstation = new (MINIBUF_SIZE);
+	cpidfile = new (MINIBUF_SIZE);
+	cuid = new (MINIBUF_SIZE);
+	cauth = new (MINIBUF_SIZE);
 
 	openlog("cntlm", LOG_CONS, LOG_DAEMON);
 
@@ -719,160 +717,159 @@ int main(int argc, char **argv) {
 
 	while ((i = getopt(argc, argv, ":-:T:a:c:d:fghIl:p:r:su:vw:A:BD:F:G:HL:M:N:O:P:R:S:U:X:")) != -1) {
 		switch (i) {
-			case 'A':
-			case 'D':
-				if (!acl_add(&rules, optarg, (i == 'A' ? ACL_ALLOW : ACL_DENY)))
-					myexit(1);
-				break;
-			case 'a':
-				strlcpy(cauth, optarg, MINIBUF_SIZE);
-				break;
-			case 'B':
-				ntlmbasic = 1;
-				break;
-			case 'c':
-				myconfig = strdup(optarg);
-				break;
-			case 'd':
-				strlcpy(cdomain, optarg, MINIBUF_SIZE);
-				break;
-			case 'F':
-				cflags = swap32(strtoul(optarg, &tmp, 0));
-				break;
-			case 'f':
-				asdaemon = 0;
-				break;
-			case 'G':
-				if (strlen(optarg)) {
-					scanner_plugin = 1;
-					if (!scanner_plugin_maxsize)
-						scanner_plugin_maxsize = 1;
-					i = strlen(optarg) + 3;
-					tmp = new(i);
-					snprintf(tmp, i, "*%s*", optarg);
-					scanner_agent_list = plist_add(scanner_agent_list, 0, tmp);
-				}
-				break;
-			case 'g':
-				gateway = 1;
-				break;
-			case 'H':
-				interactivehash = 1;
-				break;
-			case 'I':
-				interactivepwd = 1;
-				break;
-			case 'L':
-				/*
+		case 'A':
+		case 'D':
+			if (!acl_add(&rules, optarg, (i == 'A' ? ACL_ALLOW : ACL_DENY)))
+				myexit(1);
+			break;
+		case 'a':
+			strlcpy(cauth, optarg, MINIBUF_SIZE);
+			break;
+		case 'B':
+			ntlmbasic = 1;
+			break;
+		case 'c':
+			myconfig = strdup(optarg);
+			break;
+		case 'd':
+			strlcpy(cdomain, optarg, MINIBUF_SIZE);
+			break;
+		case 'F':
+			cflags = swap32(strtoul(optarg, &tmp, 0));
+			break;
+		case 'f':
+			asdaemon = 0;
+			break;
+		case 'G':
+			if (strlen(optarg)) {
+				scanner_plugin = 1;
+				if (!scanner_plugin_maxsize)
+					scanner_plugin_maxsize = 1;
+				i = strlen(optarg) + 3;
+				tmp = new (i);
+				snprintf(tmp, i, "*%s*", optarg);
+				scanner_agent_list = plist_add(scanner_agent_list, 0, tmp);
+			}
+			break;
+		case 'g':
+			gateway = 1;
+			break;
+		case 'H':
+			interactivehash = 1;
+			break;
+		case 'I':
+			interactivepwd = 1;
+			break;
+		case 'L':
+			/*
 				 * Parse and validate the argument.
 				 * Create a listening socket for tunneling.
 				 */
-				tunnel_add(&tunneld_list, optarg, gateway);
-				break;
-			case 'l':
-				/*
+			tunnel_add(&tunneld_list, optarg, gateway);
+			break;
+		case 'l':
+			/*
 				 * Create a listening socket for proxy function.
 				 */
-				listen_add("Proxy", &proxyd_list, optarg, gateway);
-				break;
-			case 'M':
-				magic_detect = strdup(optarg);
-				break;
-			case 'N':
-				noproxy_list = noproxy_add(noproxy_list, tmp=strdup(optarg));
-				free(tmp);
-				break;
-			case 'O':
-				listen_add("SOCKS5 proxy", &socksd_list, optarg, gateway);
-				break;
-			case 'P':
-				strlcpy(cpidfile, optarg, MINIBUF_SIZE);
-				break;
-			case 'p':
-				/*
+			listen_add("Proxy", &proxyd_list, optarg, gateway);
+			break;
+		case 'M':
+			magic_detect = strdup(optarg);
+			break;
+		case 'N':
+			noproxy_list = noproxy_add(noproxy_list, tmp = strdup(optarg));
+			free(tmp);
+			break;
+		case 'O':
+			listen_add("SOCKS5 proxy", &socksd_list, optarg, gateway);
+			break;
+		case 'P':
+			strlcpy(cpidfile, optarg, MINIBUF_SIZE);
+			break;
+		case 'p':
+			/*
 				 * Overwrite the password parameter with '*'s to make it
 				 * invisible in "ps", /proc, etc.
 				 */
-				strlcpy(cpassword, optarg, MINIBUF_SIZE);
-				for (i = strlen(optarg)-1; i >= 0; --i)
-					optarg[i] = '*';
-				break;
-			case 'R':
-				tmp = strdup(optarg);
-				head = strchr(tmp, ':');
-				if (!head) {
-					fprintf(stderr, "Invalid username:password format for -R: %s\n", tmp);
-				} else {
-					head[0] = 0;
-					users_list = hlist_add(users_list, tmp, head+1,
-						HLIST_ALLOC, HLIST_ALLOC);
-				}
-				break;
-			case 'r':
-				if (is_http_header(optarg))
-					header_list = hlist_add(header_list,
-						get_http_header_name(optarg),
-						get_http_header_value(optarg),
-						HLIST_NOALLOC, HLIST_NOALLOC);
-				break;
-			case 'S':
-				scanner_plugin = 1;
-				scanner_plugin_maxsize = atol(optarg);
-				break;
-			case 's':
-				/*
+			strlcpy(cpassword, optarg, MINIBUF_SIZE);
+			for (i = strlen(optarg) - 1; i >= 0; --i)
+				optarg[i] = '*';
+			break;
+		case 'R':
+			tmp = strdup(optarg);
+			head = strchr(tmp, ':');
+			if (!head) {
+				fprintf(stderr, "Invalid username:password format for -R: %s\n", tmp);
+			} else {
+				head[0] = 0;
+				users_list = hlist_add(users_list, tmp, head + 1,
+				                       HLIST_ALLOC, HLIST_ALLOC);
+			}
+			break;
+		case 'r':
+			if (is_http_header(optarg))
+				header_list = hlist_add(header_list,
+				                        get_http_header_name(optarg),
+				                        get_http_header_value(optarg),
+				                        HLIST_NOALLOC, HLIST_NOALLOC);
+			break;
+		case 'S':
+			scanner_plugin = 1;
+			scanner_plugin_maxsize = atol(optarg);
+			break;
+		case 's':
+			/*
 				 * Do not use threads - for debugging purposes only
 				 */
-				serialize = 1;
-				break;
-			case 'T':
-				debug = 1;
-				asdaemon = 0;
-				tracefile = open(optarg, O_CREAT | O_TRUNC | O_WRONLY, 0600);
-				openlog("cntlm", LOG_CONS | LOG_PERROR, LOG_DAEMON);
-				if (tracefile < 0) {
-					fprintf(stderr, "Cannot create trace file.\n");
-					myexit(1);
-				} else {
-					printf("Redirecting all output to %s\n", optarg);
-					dup2(tracefile, 1);
-					dup2(tracefile, 2);
-				}
-				break;
-			case 'U':
-				strlcpy(cuid, optarg, MINIBUF_SIZE);
-				break;
-			case 'u':
-				i = strcspn(optarg, "@");
-				if (i != strlen(optarg)) {
-					strlcpy(cuser, optarg, MIN(MINIBUF_SIZE, i+1));
-					strlcpy(cdomain, optarg+i+1, MINIBUF_SIZE);
-				} else {
-					strlcpy(cuser, optarg, MINIBUF_SIZE);
-				}
-				break;
-			case 'v':
-				debug = 1;
-				asdaemon = 0;
-				openlog("cntlm", LOG_CONS | LOG_PERROR, LOG_DAEMON);
-				break;
-			case 'w':
-				strlcpy(cworkstation, optarg, MINIBUF_SIZE);
-				break;
-			case 'X':
+			serialize = 1;
+			break;
+		case 'T':
+			debug = 1;
+			asdaemon = 0;
+			tracefile = open(optarg, O_CREAT | O_TRUNC | O_WRONLY, 0600);
+			openlog("cntlm", LOG_CONS | LOG_PERROR, LOG_DAEMON);
+			if (tracefile < 0) {
+				fprintf(stderr, "Cannot create trace file.\n");
+				myexit(1);
+			} else {
+				printf("Redirecting all output to %s\n", optarg);
+				dup2(tracefile, 1);
+				dup2(tracefile, 2);
+			}
+			break;
+		case 'U':
+			strlcpy(cuid, optarg, MINIBUF_SIZE);
+			break;
+		case 'u':
+			i = strcspn(optarg, "@");
+			if (i != strlen(optarg)) {
+				strlcpy(cuser, optarg, MIN(MINIBUF_SIZE, i + 1));
+				strlcpy(cdomain, optarg + i + 1, MINIBUF_SIZE);
+			} else {
+				strlcpy(cuser, optarg, MINIBUF_SIZE);
+			}
+			break;
+		case 'v':
+			debug = 1;
+			asdaemon = 0;
+			openlog("cntlm", LOG_CONS | LOG_PERROR, LOG_DAEMON);
+			break;
+		case 'w':
+			strlcpy(cworkstation, optarg, MINIBUF_SIZE);
+			break;
+		case 'X':
 #ifdef __CYGWIN__
-				if (!sspi_set(strdup(optarg)))
-				{
-					fprintf(stderr, "SSPI initialize failed! Proceeding with SSPI disabled.\n");
-				}
+			if (!sspi_set(strdup(optarg))) {
+				fprintf(stderr, "SSPI initialize failed! Proceeding with SSPI disabled.\n");
+			}
 #else
-				fprintf(stderr, "This feature is available under Windows only!\n");
-				help = 1;
-#endif				
-				break;
-			case 'h':
-			default:
-				help = 1;
+			fprintf(stderr, "This feature is available under Windows only!\n");
+			help = 1;
+#endif
+			break;
+		case 'h':
+		default:
+			help = 1;
 		}
 	}
 
@@ -882,69 +879,69 @@ int main(int argc, char **argv) {
 	if (help) {
 		printf("CNTLM - Accelerating NTLM Authentication Proxy version " VERSION "\n");
 		printf("Copyright (c) 2oo7-2o1o David Kubicek\n\n"
-			"This program comes with NO WARRANTY, to the extent permitted by law. You\n"
-			"may redistribute copies of it under the terms of the GNU GPL Version 2 or\n"
-			"newer. For more information about these matters, see the file LICENSE.\n"
-			"For copyright holders of included encryption routines see headers.\n\n");
+		       "This program comes with NO WARRANTY, to the extent permitted by law. You\n"
+		       "may redistribute copies of it under the terms of the GNU GPL Version 2 or\n"
+		       "newer. For more information about these matters, see the file LICENSE.\n"
+		       "For copyright holders of included encryption routines see headers.\n\n");
 
 		fprintf(stderr, "Usage: %s [-AaBcDdFfgHhILlMPpSsTUuvw] <proxy_host>[:]<proxy_port> ...\n", argv[0]);
 		fprintf(stderr, "\t-A  <address>[/<net>]\n"
-				"\t    ACL allow rule. IP or hostname, net must be a number (CIDR notation)\n");
+		                "\t    ACL allow rule. IP or hostname, net must be a number (CIDR notation)\n");
 		fprintf(stderr, "\t-a  ntlm | nt | lm\n"
-				"\t    Authentication type - combined NTLM, just LM, or just NT. Default NTLM.\n"
-				"\t    It is the most versatile setting and likely to work for you.\n");
+		                "\t    Authentication type - combined NTLM, just LM, or just NT. Default NTLM.\n"
+		                "\t    It is the most versatile setting and likely to work for you.\n");
 		fprintf(stderr, "\t-B  Enable NTLM-to-basic authentication.\n");
 		fprintf(stderr, "\t-c  <config_file>\n"
-				"\t    Configuration file. Other arguments can be used as well, overriding\n"
-				"\t    config file settings.\n");
+		                "\t    Configuration file. Other arguments can be used as well, overriding\n"
+		                "\t    config file settings.\n");
 		fprintf(stderr, "\t-D  <address>[/<net>]\n"
-				"\t    ACL deny rule. Syntax same as -A.\n");
+		                "\t    ACL deny rule. Syntax same as -A.\n");
 		fprintf(stderr, "\t-d  <domain>\n"
-				"\t    Domain/workgroup can be set separately.\n");
+		                "\t    Domain/workgroup can be set separately.\n");
 		fprintf(stderr, "\t-f  Run in foreground, do not fork into daemon mode.\n");
 		fprintf(stderr, "\t-F  <flags>\n"
-				"\t    NTLM authentication flags.\n");
+		                "\t    NTLM authentication flags.\n");
 		fprintf(stderr, "\t-G  <pattern>\n"
-				"\t    User-Agent matching for the trans-isa-scan plugin.\n");
+		                "\t    User-Agent matching for the trans-isa-scan plugin.\n");
 		fprintf(stderr, "\t-g  Gateway mode - listen on all interfaces, not only loopback.\n");
 		fprintf(stderr, "\t-H  Print password hashes for use in config file (NTLMv2 needs -u and -d).\n");
 		fprintf(stderr, "\t-h  Print this help info along with version number.\n");
 		fprintf(stderr, "\t-I  Prompt for the password interactively.\n");
 		fprintf(stderr, "\t-L  [<saddr>:]<lport>:<rhost>:<rport>\n"
-				"\t    Forwarding/tunneling a la OpenSSH. Same syntax - listen on lport\n"
-				"\t    and forward all connections through the proxy to rhost:rport.\n"
-				"\t    Can be used for direct tunneling without corkscrew, etc.\n");
+		                "\t    Forwarding/tunneling a la OpenSSH. Same syntax - listen on lport\n"
+		                "\t    and forward all connections through the proxy to rhost:rport.\n"
+		                "\t    Can be used for direct tunneling without corkscrew, etc.\n");
 		fprintf(stderr, "\t-l  [<saddr>:]<lport>\n"
-				"\t    Main listening port for the NTLM proxy.\n");
+		                "\t    Main listening port for the NTLM proxy.\n");
 		fprintf(stderr, "\t-M  <testurl>\n"
-				"\t    Magic autodetection of proxy's NTLM dialect.\n");
+		                "\t    Magic autodetection of proxy's NTLM dialect.\n");
 		fprintf(stderr, "\t-N  \"<hostname_wildcard1>[, <hostname_wildcardN>\"\n"
-				"\t    List of URL's to serve direcly as stand-alone proxy (e.g. '*.local')\n");
+		                "\t    List of URL's to serve direcly as stand-alone proxy (e.g. '*.local')\n");
 		fprintf(stderr, "\t-O  [<saddr>:]<lport>\n"
-				"\t    Enable SOCKS5 proxy on port lport (binding to address saddr)\n");
+		                "\t    Enable SOCKS5 proxy on port lport (binding to address saddr)\n");
 		fprintf(stderr, "\t-P  <pidfile>\n"
-				"\t    Create a PID file upon successful start.\n");
+		                "\t    Create a PID file upon successful start.\n");
 		fprintf(stderr, "\t-p  <password>\n"
-				"\t    Account password. Will not be visible in \"ps\", /proc, etc.\n");
+		                "\t    Account password. Will not be visible in \"ps\", /proc, etc.\n");
 		fprintf(stderr, "\t-r  \"HeaderName: value\"\n"
-				"\t    Add a header substitution. All such headers will be added/replaced\n"
-				"\t    in the client's requests.\n");
+		                "\t    Add a header substitution. All such headers will be added/replaced\n"
+		                "\t    in the client's requests.\n");
 		fprintf(stderr, "\t-S  <size_in_kb>\n"
-				"\t    Enable automation of GFI WebMonitor ISA scanner for files < size_in_kb.\n");
+		                "\t    Enable automation of GFI WebMonitor ISA scanner for files < size_in_kb.\n");
 		fprintf(stderr, "\t-s  Do not use threads, serialize all requests - for debugging only.\n");
 		fprintf(stderr, "\t-T  <file.log>\n"
-				"\t    Redirect all debug information into a trace file for support upload.\n"
-				"\t    MUST be the first argument on the command line, implies -v.\n");
+		                "\t    Redirect all debug information into a trace file for support upload.\n"
+		                "\t    MUST be the first argument on the command line, implies -v.\n");
 		fprintf(stderr, "\t-U  <uid>\n"
-				"\t    Run as uid. It is an important security measure not to run as root.\n");
+		                "\t    Run as uid. It is an important security measure not to run as root.\n");
 		fprintf(stderr, "\t-u  <user>[@<domain]\n"
-				"\t    Domain/workgroup can be set separately.\n");
+		                "\t    Domain/workgroup can be set separately.\n");
 		fprintf(stderr, "\t-v  Print debugging information.\n");
 		fprintf(stderr, "\t-w  <workstation>\n"
-				"\t    Some proxies require correct NetBIOS hostname.\n");
+		                "\t    Some proxies require correct NetBIOS hostname.\n");
 		fprintf(stderr, "\t-X  <sspi_handle_type>\n"
-				"\t    Use SSPI with specified handle type. Works only under Windows.\n"
-				"\t		Default is negotiate.\n\n");
+		                "\t    Use SSPI with specified handle type. Works only under Windows.\n"
+		                "\t		Default is negotiate.\n\n");
 		exit(1);
 	}
 
@@ -973,11 +970,11 @@ int main(int argc, char **argv) {
 	i = optind;
 	while (i < argc) {
 		tmp = strchr(argv[i], ':');
-		parent_add(argv[i], !tmp && i+1 < argc ? atoi(argv[i+1]) : 0);
+		parent_add(argv[i], !tmp && i + 1 < argc ? atoi(argv[i + 1]) : 0);
 		i += (!tmp ? 2 : 1);
 	}
 
-	/*
+/*
 	 * No configuration file yet? Load the default.
 	 */
 #ifdef SYSCONFDIR
@@ -989,7 +986,7 @@ int main(int argc, char **argv) {
 		if (tmp == NULL)
 			tmp = "C:\\Program Files";
 
-		head = new(MINIBUF_SIZE);
+		head = new (MINIBUF_SIZE);
 		strlcpy(head, tmp, MINIBUF_SIZE);
 		strlcat(head, "\\Cntlm\\cntlm.ini", MINIBUF_SIZE);
 		cf = config_open(head);
@@ -1009,11 +1006,11 @@ int main(int argc, char **argv) {
 	 * If any configuration file was successfully opened, parse it.
 	 */
 	if (cf) {
-		
+
 		/*
 		 * Check if gateway mode is requested before actually binding any ports.
 		 */
-		tmp = new(MINIBUF_SIZE);
+		tmp = new (MINIBUF_SIZE);
 		CFG_DEFAULT(cf, "Gateway", tmp, MINIBUF_SIZE);
 		if (!strcasecmp("yes", tmp))
 			gateway = 1;
@@ -1022,7 +1019,7 @@ int main(int argc, char **argv) {
 		/*
 		 * Check for NTLM-to-basic settings
 		 */
-		tmp = new(MINIBUF_SIZE);
+		tmp = new (MINIBUF_SIZE);
 		CFG_DEFAULT(cf, "NTLMToBasic", tmp, MINIBUF_SIZE);
 		if (!strcasecmp("yes", tmp))
 			ntlmbasic = 1;
@@ -1061,7 +1058,7 @@ int main(int argc, char **argv) {
 				head = get_http_header_name(tmp);
 				if (!hlist_in(header_list, head))
 					header_list = hlist_add(header_list, head, get_http_header_value(tmp),
-						HLIST_ALLOC, HLIST_NOALLOC);
+					                        HLIST_ALLOC, HLIST_NOALLOC);
 				free(head);
 			} else
 				syslog(LOG_ERR, "Invalid header format: %s\n", tmp);
@@ -1083,7 +1080,7 @@ int main(int argc, char **argv) {
 		if (rules == NULL) {
 			list = cf->options;
 			while (list) {
-				if (!(i=strcasecmp("Allow", list->key)) || !strcasecmp("Deny", list->key))
+				if (!(i = strcasecmp("Allow", list->key)) || !strcasecmp("Deny", list->key))
 					if (!acl_add(&rules, list->value, i ? ACL_DENY : ACL_ALLOW))
 						myexit(1);
 				list = list->next;
@@ -1106,32 +1103,31 @@ int main(int argc, char **argv) {
 		CFG_DEFAULT(cf, "PassLM", cpasslm, MINIBUF_SIZE);
 		CFG_DEFAULT(cf, "Username", cuser, MINIBUF_SIZE);
 		CFG_DEFAULT(cf, "Workstation", cworkstation, MINIBUF_SIZE);
-		
+
 #ifdef __CYGWIN__
 		/*
 		 * Check if SSPI is enabled and it's type.
 		 */
-		tmp = new(MINIBUF_SIZE);
+		tmp = new (MINIBUF_SIZE);
 		CFG_DEFAULT(cf, "SSPI", tmp, MINIBUF_SIZE);
-		
-		if (!sspi_enabled() && strlen(tmp))
-		{
+
+		if (!sspi_enabled() && strlen(tmp)) {
 			if (!strcasecmp("NTLM", tmp) && !sspi_set(tmp)) // Only NTLM supported for now
 			{
 				fprintf(stderr, "SSPI initialize failed! Proceeding with SSPI disabled.\n");
 			}
 		}
 		free(tmp);
-		
+
 #endif
 
-		tmp = new(MINIBUF_SIZE);
+		tmp = new (MINIBUF_SIZE);
 		CFG_DEFAULT(cf, "Flags", tmp, MINIBUF_SIZE);
 		if (!cflags)
 			cflags = swap32(strtoul(tmp, NULL, 0));
 		free(tmp);
 
-		tmp = new(MINIBUF_SIZE);
+		tmp = new (MINIBUF_SIZE);
 		CFG_DEFAULT(cf, "ISAScannerSize", tmp, MINIBUF_SIZE);
 		if (!scanner_plugin_maxsize && strlen(tmp)) {
 			scanner_plugin = 1;
@@ -1152,10 +1148,9 @@ int main(int argc, char **argv) {
 				syslog(LOG_ERR, "Invalid username:password format for SOCKS5User: %s\n", tmp);
 			} else {
 				head[0] = 0;
-				users_list = hlist_add(users_list, tmp, head+1, HLIST_ALLOC, HLIST_ALLOC);
+				users_list = hlist_add(users_list, tmp, head + 1, HLIST_ALLOC, HLIST_ALLOC);
 			}
 		}
-					
 
 		/*
 		 * Add User-Agent matching patterns.
@@ -1166,8 +1161,8 @@ int main(int argc, char **argv) {
 				scanner_plugin_maxsize = 1;
 
 			if ((i = strlen(tmp))) {
-				head = new(i + 3);
-				snprintf(head, i+3, "*%s*", tmp);
+				head = new (i + 3);
+				snprintf(head, i + 3, "*%s*", tmp);
 				scanner_agent_list = plist_add(scanner_agent_list, 0, head);
 			}
 			free(tmp);
@@ -1239,7 +1234,7 @@ int main(int argc, char **argv) {
 
 	if (!magic_detect)
 		syslog(LOG_INFO, "Using following NTLM hashes: NTLMv2(%d) NT(%d) LM(%d)\n",
-			g_creds->hashntlm2, g_creds->hashnt, g_creds->hashlm);
+		       g_creds->hashntlm2, g_creds->hashnt, g_creds->hashlm);
 
 	if (cflags) {
 		syslog(LOG_INFO, "Using manual NTLM flags: 0x%X\n", swap32(cflags));
@@ -1306,11 +1301,13 @@ int main(int argc, char **argv) {
 			tmp = ntlm_hash_nt_password(cpassword);
 			auth_memcpy(g_creds, passnt, tmp, 21);
 			free(tmp);
-		} if (g_creds->hashlm || magic_detect || interactivehash) {
+		}
+		if (g_creds->hashlm || magic_detect || interactivehash) {
 			tmp = ntlm_hash_lm_password(cpassword);
 			auth_memcpy(g_creds, passlm, tmp, 21);
 			free(tmp);
-		} if (g_creds->hashntlm2 || magic_detect || interactivehash) {
+		}
+		if (g_creds->hashntlm2 || magic_detect || interactivehash) {
 			tmp = ntlm2_hash_password(cuser, cdomain, cpassword);
 			auth_memcpy(g_creds, passntlm2, tmp, 16);
 			free(tmp);
@@ -1356,7 +1353,7 @@ int main(int argc, char **argv) {
 		if (g_creds->passntlm2) {
 			tmp = printmem(g_creds->passntlm2, 16, 8);
 			printf("PassNTLMv2      %s    # Only for user '%s', domain '%s'\n",
-				tmp, g_creds->user, g_creds->domain);
+			       tmp, g_creds->user, g_creds->domain);
 			free(tmp);
 		}
 		goto bailout;
@@ -1365,10 +1362,7 @@ int main(int argc, char **argv) {
 	/*
 	 * If we're going to need a password, check we really have it.
 	 */
-	if (!ntlmbasic && (
-			(g_creds->hashnt && !g_creds->passnt)
-		     || (g_creds->hashlm && !g_creds->passlm)
-		     || (g_creds->hashntlm2 && !g_creds->passntlm2))) {
+	if (!ntlmbasic && ((g_creds->hashnt && !g_creds->passnt) || (g_creds->hashlm && !g_creds->passlm) || (g_creds->hashntlm2 && !g_creds->passntlm2))) {
 		syslog(LOG_ERR, "Parent proxy account password (or required hashes) missing.\n");
 		myexit(1);
 	}
@@ -1385,14 +1379,14 @@ int main(int argc, char **argv) {
 
 		i = fork();
 		if (i == -1) {
-			perror("Fork into background failed");		/* fork failed */
+			perror("Fork into background failed"); /* fork failed */
 			myexit(1);
 		} else if (i)
-			myexit(0);					/* parent */
+			myexit(0); /* parent */
 
 		setsid();
 		umask(0);
-		w = chdir("/");
+		chdir("/");
 		i = open("/dev/null", O_RDWR);
 		if (i >= 0) {
 			dup2(i, 0);
@@ -1462,7 +1456,7 @@ int main(int argc, char **argv) {
 			myexit(1);
 		}
 
-		tmp = new(50);
+		tmp = new (50);
 		snprintf(tmp, 50, "%d\n", getpid());
 		w = write(cd, tmp, (len = strlen(tmp)));
 		if (w != len) {
@@ -1573,11 +1567,9 @@ int main(int argc, char **argv) {
 				 */
 				if (acl_check(rules, caddr.sin_addr) != ACL_ALLOW) {
 					syslog(LOG_WARNING, "Connection denied for %s:%d\n",
-						inet_ntoa(caddr.sin_addr), ntohs(caddr.sin_port));
+					       inet_ntoa(caddr.sin_addr), ntohs(caddr.sin_port));
 					tmp = gen_denied_page(inet_ntoa(caddr.sin_addr));
-					w = write(cd, tmp, strlen(tmp));
-					// We don't really care about the result - shut up GCC warning (unused-but-set-variable)
-					if (!w) w = 1;
+					write(cd, tmp, strlen(tmp));
 					free(tmp);
 					close(cd);
 					continue;
@@ -1598,7 +1590,7 @@ int main(int argc, char **argv) {
 #endif
 
 				if (plist_in(proxyd_list, i)) {
-					data = (struct thread_arg_s *)new(sizeof(struct thread_arg_s));
+					data = (struct thread_arg_s *)new (sizeof(struct thread_arg_s));
 					data->fd = cd;
 					data->addr = caddr;
 					if (!serialize)
@@ -1606,12 +1598,12 @@ int main(int argc, char **argv) {
 					else
 						proxy_thread((void *)data);
 				} else if (plist_in(socksd_list, i)) {
-					data = (struct thread_arg_s *)new(sizeof(struct thread_arg_s));
+					data = (struct thread_arg_s *)new (sizeof(struct thread_arg_s));
 					data->fd = cd;
 					data->addr = caddr;
 					tid = pthread_create(&pthr, &pattr, socks5_thread, (void *)data);
 				} else {
-					data = (struct thread_arg_s *)new(sizeof(struct thread_arg_s));
+					data = (struct thread_arg_s *)new (sizeof(struct thread_arg_s));
 					data->fd = cd;
 					data->addr = caddr;
 					data->target = plist_get(tunneld_list, i);
@@ -1676,4 +1668,3 @@ bailout:
 
 	exit(0);
 }
-
