@@ -62,10 +62,11 @@ install: $(NAME)
 		install -M 644 -f $(MANDIR)/man1 doc/$(NAME).1; \
 		install -M 600 -c $(SYSCONFDIR) doc/$(NAME).conf; \
 	elif [ "`uname -s`" = "Darwin" ]; then \
-		install -d -m 755 -s $(NAME) $(BINDIR)/$(NAME); \
-		install -d -m 644 doc/$(NAME).1 $(MANDIR)/man1/$(NAME).1; \
+		install -d $(BINDIR) $(MANDIR)/man1/ $(SYSCONFDIR); \
+		install -m 755 -s $(NAME) $(BINDIR)/$(NAME); \
+		install -m 644 doc/$(NAME).1 $(MANDIR)/man1/$(NAME).1; \
 		[ -f $(SYSCONFDIR)/$(NAME).conf -o -z "$(SYSCONFDIR)" ] \
-			|| install -d -m 600 doc/$(NAME).conf $(SYSCONFDIR)/$(NAME).conf; \
+			|| install -m 600 doc/$(NAME).conf $(SYSCONFDIR)/$(NAME).conf; \
 	else \
 		install -D -m 755 -s $(NAME) $(BINDIR)/$(NAME); \
 		install -D -m 644 doc/$(NAME).1 $(MANDIR)/man1/$(NAME).1; \
