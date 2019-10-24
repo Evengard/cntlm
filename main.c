@@ -689,6 +689,7 @@ int main(int argc, char **argv) {
 	int tracefile = 0;
 	int cflags = 0;
 	int asdaemon = 1;
+	int apihash = 0;
 	char *myconfig = NULL;
 	plist_t tunneld_list = NULL;
 	plist_t proxyd_list = NULL;
@@ -717,7 +718,7 @@ int main(int argc, char **argv) {
 	syslog(LOG_INFO, "Starting cntlm version " VERSION " for LITTLE endian\n");
 #endif
 
-	while ((i = getopt(argc, argv, ":-:T:a:c:d:fghIl:p:r:su:vw:A:BD:F:G:HL:M:N:O:P:R:S:U:X:")) != -1) {
+	while ((i = getopt(argc, argv, ":-:T:a:c:d:fghIl:p:r:su:vw:A:BD:F:G:HL:M:N:O:P:R:S:U:X:Z")) != -1) {
 		switch (i) {
 			case 'A':
 			case 'D':
@@ -870,6 +871,9 @@ int main(int argc, char **argv) {
 				help = 1;
 #endif				
 				break;
+			case 'Z':
+				apihash = 1;
+				break;
 			case 'h':
 			default:
 				help = 1;
@@ -887,7 +891,7 @@ int main(int argc, char **argv) {
 			"newer. For more information about these matters, see the file LICENSE.\n"
 			"For copyright holders of included encryption routines see headers.\n\n");
 
-		fprintf(stderr, "Usage: %s [-AaBcDdFfgHhILlMPpSsTUuvw] <proxy_host>[:]<proxy_port> ...\n", argv[0]);
+		fprintf(stderr, "Usage: %s [-AaBcDdFfgHhILlMPpSsTUuvwXZ] <proxy_host>[:]<proxy_port> ...\n", argv[0]);
 		fprintf(stderr, "\t-A  <address>[/<net>]\n"
 				"\t    ACL allow rule. IP or hostname, net must be a number (CIDR notation)\n");
 		fprintf(stderr, "\t-a  ntlm | nt | lm\n"
@@ -944,7 +948,8 @@ int main(int argc, char **argv) {
 				"\t    Some proxies require correct NetBIOS hostname.\n");
 		fprintf(stderr, "\t-X  <sspi_handle_type>\n"
 				"\t    Use SSPI with specified handle type. Works only under Windows.\n"
-				"\t		Default is negotiate.\n\n");
+				"\t		Default is negotiate.\n");
+		fprintf(stderr, "\t-Z  Generate JSON password hashes for use in APIs (requires -p flag).\n\n");
 		exit(1);
 	}
 
@@ -1185,10 +1190,10 @@ int main(int argc, char **argv) {
 
 	config_close(cf);
 
-	if (!interactivehash && !parent_list)
+	if (!interactivehash && !parent_list && !apihash)
 		croak("Parent proxy address missing.\n", interactivepwd || magic_detect);
 
-	if (!interactivehash && !magic_detect && !proxyd_list)
+	if (!interactivehash && !magic_detect && !proxyd_list && !apihash)
 		croak("No proxy service ports were successfully opened.\n", interactivepwd);
 
 	/*
@@ -1266,6 +1271,13 @@ int main(int argc, char **argv) {
 		printf("\n");
 	}
 
+	if (apihash) {
+		if (strlen(cpassword) == 0) {
+			printf("Use '-p' flag to provide a password!\n");
+			goto bailout;
+		}
+	}
+
 	/*
 	 * Convert optional PassNT, PassLM and PassNTLMv2 strings to hashes
 	 * unless plaintext pass was used, which has higher priority.
@@ -1302,15 +1314,15 @@ int main(int argc, char **argv) {
 			free(tmp);
 		}
 	} else {
-		if (g_creds->hashnt || magic_detect || interactivehash) {
+		if (g_creds->hashnt || magic_detect || interactivehash || apihash) {
 			tmp = ntlm_hash_nt_password(cpassword);
 			auth_memcpy(g_creds, passnt, tmp, 21);
 			free(tmp);
-		} if (g_creds->hashlm || magic_detect || interactivehash) {
+		} if (g_creds->hashlm || magic_detect || interactivehash || apihash) {
 			tmp = ntlm_hash_lm_password(cpassword);
 			auth_memcpy(g_creds, passlm, tmp, 21);
 			free(tmp);
-		} if (g_creds->hashntlm2 || magic_detect || interactivehash) {
+		} if (g_creds->hashntlm2 || magic_detect || interactivehash || apihash) {
 			tmp = ntlm2_hash_password(cuser, cdomain, cpassword);
 			auth_memcpy(g_creds, passntlm2, tmp, 16);
 			free(tmp);
@@ -1359,6 +1371,32 @@ int main(int argc, char **argv) {
 				tmp, g_creds->user, g_creds->domain);
 			free(tmp);
 		}
+		goto bailout;
+	}
+
+	if (apihash) {
+		printf("[");
+		if (g_creds->passlm) {
+			tmp = printmem(g_creds->passlm, 16, 8);
+			printf("{\"PassLM\" : {\"hash\" : \"%s\"}}", tmp);
+			free(tmp);
+		}
+
+		if (g_creds->passnt) {
+			if (g_creds -> passlm) { printf(","); }
+			tmp = printmem(g_creds->passnt, 16, 8);
+			printf("{\"PassNT\" : {\"hash\" : \"%s\"}}", tmp);
+			free(tmp);
+		}
+
+		if (g_creds->passntlm2) {
+			if (g_creds -> passlm || g_creds -> passnt) { printf(","); }
+			tmp = printmem(g_creds->passntlm2, 16, 8);
+			printf("{\"PassNTLMv2\" : { \"hash\":\"%s\", \"user\":\"%s\", \"domain\":\"%s\" }}",
+				tmp, g_creds->user, g_creds->domain);
+			free(tmp);
+		}
+		printf("]\n");
 		goto bailout;
 	}
 
