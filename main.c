@@ -887,7 +887,7 @@ int main(int argc, char **argv) {
 			"newer. For more information about these matters, see the file LICENSE.\n"
 			"For copyright holders of included encryption routines see headers.\n\n");
 
-		fprintf(stderr, "Usage: %s [-AaBcDdFfgHhILlMPpSsTUuvw] <proxy_host>[:]<proxy_port> ...\n", argv[0]);
+		fprintf(stderr, "Usage: %s [-AaBcDdFfgHhILlMPpSsTUuvwX] <proxy_host>[:]<proxy_port> ...\n", argv[0]);
 		fprintf(stderr, "\t-A  <address>[/<net>]\n"
 				"\t    ACL allow rule. IP or hostname, net must be a number (CIDR notation)\n");
 		fprintf(stderr, "\t-a  ntlm | nt | lm\n"

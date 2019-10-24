@@ -5,7 +5,7 @@
 .SH SYNOPSIS
 .B cntlm
 [
-.B -AaBcDdFfgHhILlMPprSsTUuvw
+.B -AaBcDdFfgHhILlMPprSsTUuvwX
 ] [ \fIhost1\fP \fIport1\fP | \fIhost1\fP:\fIport1\fP ] ... \fIhostN\fP \fIportN\fP
 
 .SH DESCRIPTION
@@ -111,7 +111,7 @@ credentials and it is moderately easy to sniff them.
 .ne 6
 IMPORTANT: HTTP protocol obviously has means to negotiate authorization before letting you through, but TCP/IP
 doesn't (i.e. open port is open port). If you use NTLM-to-basic and DON'T specify some username/password in
-the configuration file, you are bound to loose tunneling features, because \fBcntlm\fP alone won't know your
+the configuration file, you are bound to lose tunneling features, because \fBcntlm\fP alone won't know your
 credentials.
 
 Because NTLM identification has at least three parts (username, password, domain) and the basic authentication
@@ -353,6 +353,10 @@ Proxy account/user name. Domain can be be entered as well.
 .TP
 .B -v
 Print debugging information. Automatically enables (\fB-f\fP).
+
+.TP
+.B -X <type>
+Use \fBSSPI\fP with specified handle type.  Works only under Windows.  Default is negotiate.
 
 .TP
 .B -w <workstation>\ \ \ \ (Workstation)
