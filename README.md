@@ -1,3 +1,6 @@
+PLEASE NOTE THAT THIS FORK IS NOT MAINTAINED! For the maintained fork please refer to https://github.com/versat/cntlm
+
+```
 Installation using packages
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
