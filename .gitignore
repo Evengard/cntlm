@@ -1,0 +1,11 @@
+﻿################################################################################
+# This .gitignore file was automatically created by Microsoft(R) Visual Studio.
+################################################################################
+
+*.o
+/config
+/.vs
+/configure-stamp
+/cntlm.exe
+/cntlm-0.93beta5
+/cntlm-0.93beta5-win32.exe
