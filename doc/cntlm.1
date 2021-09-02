@@ -5,7 +5,7 @@
 .SH SYNOPSIS
 .B cntlm
 [
-.B -AaBcDdFfgHhILlMPprSsTUuvw
+.B -AaBcDdFfgHhILlMPprSsTUuvwXZ
 ] [ \fIhost1\fP \fIport1\fP | \fIhost1\fP:\fIport1\fP ] ... \fIhostN\fP \fIportN\fP
 
 .SH DESCRIPTION
@@ -111,7 +111,7 @@ credentials and it is moderately easy to sniff them.
 .ne 6
 IMPORTANT: HTTP protocol obviously has means to negotiate authorization before letting you through, but TCP/IP
 doesn't (i.e. open port is open port). If you use NTLM-to-basic and DON'T specify some username/password in
-the configuration file, you are bound to loose tunneling features, because \fBcntlm\fP alone won't know your
+the configuration file, you are bound to lose tunneling features, because \fBcntlm\fP alone won't know your
 credentials.
 
 Because NTLM identification has at least three parts (username, password, domain) and the basic authentication
@@ -359,6 +359,17 @@ Print debugging information. Automatically enables (\fB-f\fP).
 Workstation NetBIOS name. Do not use full qualified domain name (FQDN) here. Just the first part. 
 If not specified, \fBcntlm\fP tries to get the system hostname and if that fails, uses "cntlm" - it's because
 some proxies require this field non-empty.
+
+.TP
+.B -X <type>
+Use \fBSSPI\fP with specified handle type.  Works only under Windows.  Default is negotiate.
+
+.TP
+.B -Z
+Requires the \fB-p\fP option.  Use this option to get hashes for password-less configuration in JSON format. In this
+mode, \fBcntlm\fP prints the results and exits. You ought to use this option with explicit \fB-u\fP and \fB-d\fP,
+because some hashes include the username and domain name in the calculation. Do see \fB-a\fP for security
+recommendations.
 
 .SH CONFIGURATION
 Configuration file is basically an INI file, except there are no "=" between keys and values. It comprises of
